@@ -1,0 +1,85 @@
+---
+- hosts: "{{ target_host | default('all') }}"
+  become: true
+  gather_facts: true
+
+  vars:
+    manage_filesystem: true
+    update_packages: true
+    install_requirements: true
+    install_motd: true
+    reboot_all: false
+    username: sthings
+    lvm_home_sizing: "15%"
+    lvm_root_sizing: "35%"
+    lvm_var_sizing: "50%"
+    send_to_msteams: true
+
+    # HOMERUN
+    address: "https://homerun.homerun-dev.sthings-vsphere.labul.sva.de/generic"
+    auth_token: "IhrGeheimerToken"
+    title: "BaseOS Setup executed"
+    message: "BaseOS Setup executed on {{ ansible_fqdn }}"
+    severity: "INFO"
+    author: "{{ ansible_user_id }}"
+    timestamp: "{{ ansible_date_time.date }}"
+    system: "ansible"
+    tags: "ansible,baseos"
+    assignee_address: "patrick.hermann@sva.de"
+    assignee_name: "patrick.hermann"
+    artifacts: "vm: {{ ansible_fqdn }}"
+    url: "https://10.31.101.51/"
+
+    vault_instances:
+      - https://vault.tiab.labda.sva.de:8200
+      - https://vault.labul.sva.de:8200
+      - https://vault-vsphere.labul.sva.de:8200
+      - https://vault-vsphere.tiab.labda.sva.de:8200
+
+  roles:
+    - role: manage-filesystem
+      when: manage_filesystem|bool
+
+    - role: install-requirements
+      when: install_requirements|bool
+
+  pre_tasks:
+    - name: Include vars
+      ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
+      when: path_to_vars_file is defined
+
+    - ansible.builtin.reboot:
+      when: reboot_all|bool
+
+  tasks:
+    - name: Install vault ca certificate to local system from multiple instances
+      ansible.builtin.include_role:
+        name: install-configure-vault
+        tasks_from: install-ca-auth
+      vars:
+        vault_url: "{{ vault_instance }}"
+      loop: "{{ vault_instances }}"
+      loop_control:
+        loop_var: vault_instance
+      when: vault_instances is defined
+
+    - name: Send webhook to msteams
+      ansible.builtin.include_role:
+        name: create-send-webhook
+      vars:
+        summary_text: base-os-setup was executed
+        msteams_url: "{{ msteams_webhook_url }}"
+        card_title: base-os-setup was executed
+        act_image: "{{ logo_pic }}"
+        act_title: "{{ quotes | random }}"
+        act_text: "{{ quotes | random }}"
+        os_facts: |
+          base-os-setup was executed on "{{ ansible_fqdn }}"
+        ms_teams_notification_type: "simple"
+      tags: notify
+      ignore_errors: true
+      when: send_to_msteams|bool
+
+    - name: Debug the response from homerun
+      debug:
+        var: homerun_result_message
