@@ -18,17 +18,21 @@
     # HOMERUN
     address: "https://homerun.homerun-dev.sthings-vsphere.labul.sva.de/generic"
     auth_token: "IhrGeheimerToken"
-    title: "BaseOS Setup executed"
-    message: "BaseOS Setup executed on {{ ansible_fqdn }}"
-    severity: "INFO"
-    author: "{{ ansible_user_id }}"
-    timestamp: "{{ ansible_date_time.date }}"
-    system: "ansible"
-    tags: "ansible,baseos"
-    assignee_address: "patrick.hermann@sva.de"
-    assignee_name: "patrick.hermann"
-    artifacts: "vm: {{ ansible_fqdn }}"
-    url: "https://10.31.101.51/"
+    event_title: "BaseOS Setup executed"
+    event_message: "BaseOS Setup executed on {{ ansible_fqdn }}"
+    event_severity: "INFO"
+    event_author: "{{ ansible_user_id }}"
+    event_timestamp: "{{ ansible_date_time.date }}"
+    event_system: "ansible"
+    event_tags: "ansible,baseos"
+    event_assignee_address: "patrick.hermann@sva.de"
+    event_assignee_name: "patrick.hermann"
+    event_artifacts: "vm: {{ ansible_fqdn }}"
+    event_url: "https://10.31.101.51/"
+
+
+
+
 
     vault_instances:
       - https://vault.tiab.labda.sva.de:8200
@@ -96,8 +100,8 @@
             "timestamp": "{{ event_timestamp }}",
             "system": "{{ event_system }}",
             "tags": "{{ event_tags }}",
-            "assigneeaddress": "{{ assignee_address }}",
-            "assigneename": "{{ assignee_name }}",
+            "assigneeaddress": "{{ event_assignee_address }}",
+            "assigneename": "{{ event_assignee_name }}",
             "artifacts": "{{ event_artifacts }}",
             "url": "{{ event_url }}"
           }
