@@ -80,6 +80,31 @@
       ignore_errors: true
       when: send_to_msteams|bool
 
+    - name: Send event notification to homerun
+      ansible.builtin.uri:
+        url: "{{ address }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          X-Auth-Token: "{{ auth_token }}"
+        body: >
+          {
+            "title": "{{ event_title }}",
+            "message": "{{ event_message }}",
+            "severity": "{{ event_severity }}",
+            "author": "{{ event_author }}",
+            "timestamp": "{{ event_timestamp }}",
+            "system": "{{ event_system }}",
+            "tags": "{{ event_tags }}",
+            "assigneeaddress": "{{ assignee_address }}",
+            "assigneename": "{{ assignee_name }}",
+            "artifacts": "{{ event_artifacts }}",
+            "url": "{{ event_url }}"
+          }
+        body_format: json
+        validate_certs: false
+      register: homerun_result_message
+
     - name: Debug the response from homerun
       debug:
         var: homerun_result_message
