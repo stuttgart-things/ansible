@@ -1,0 +1,218 @@
+---
+playbooks:
+  - name: rancher_kubeconfig
+    play: |
+      ---
+      - hosts: "{{ target_host | default('localhost') }}"
+        become: false
+        gather_facts: false
+
+        vars:
+          vault_approle_id: "{{ lookup('env', 'VAULT_ROLE_ID') }}"
+          vault_approle_secret: "{{ lookup('env', 'VAULT_SECRET_ID') }}"
+          vault_url: "{{ lookup('env', 'VAULT_ADDR') }}"
+          rancher_api_secret_path: apps/data/rancher:apiUrl
+          rancher_api_accesskey_path: apps/data/rancher:accessKey
+          rancher_api_secretkey_path: apps/data/rancher:secretKey
+          rancher_api_url: "{{ lookup('community.hashi_vault.hashi_vault', 'secret={{ rancher_api_secret_path }} validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}"
+          rancher_access_key: "{{ lookup('community.hashi_vault.hashi_vault', 'secret={{ rancher_api_accesskey_path }} validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}"
+          rancher_secret_key: "{{ lookup('community.hashi_vault.hashi_vault', 'secret={{ rancher_api_secretkey_path }} validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}"
+          secret_path_kubeconfig: kubeconfigs
+
+          upload_vault: true
+          check_kubeconfig: true
+          # cluster_name: app-dev-master
+          kubeconfig_destination: "/tmp/kubeconfig-{{ cluster_name }}"
+
+        tasks:
+          - name: Get cluster information
+            ansible.builtin.uri:
+              validate_certs: false
+              url: "{{ rancher_api_url }}/clusters?name={{ cluster_name }}"
+              user: "{{ rancher_access_key }}"
+              password: "{{ rancher_secret_key }}"
+              body_format: json
+              method: GET
+              force_basic_auth: yes
+              headers:
+                Content-Type: "application/json"
+            register: cluster_info
+
+          - name: Show clusterid
+            ansible.builtin.debug:
+              var:
+                cluster_info.json.data[0].id
+
+          - name: Get kubeconfig
+            ansible.builtin.uri:
+              validate_certs: false
+              url: "{{ rancher_api_url }}/clusters/{{ cluster_info.json.data[0].id }}?action=generateKubeconfig"
+              user: "{{ rancher_access_key }}"
+              password: "{{ rancher_secret_key }}"
+              body_format: json
+              method: POST
+              force_basic_auth: yes
+            register: kubeconfig
+
+          - name: Store kubeconfig to disk
+            ansible.builtin.copy:
+              content: "{{ kubeconfig.json.config  }}"
+              dest: "{{ kubeconfig_destination }}"
+
+          - name: Test if kubeconfig is valid
+            ansible.builtin.shell: |
+              kubectl get nodes --kubeconfig {{ kubeconfig_destination }}
+            register: cmd_result
+            retries: 20
+            delay: 30
+            until: ("NotReady" not in cmd_result.stdout)
+            when: check_kubeconfig|bool
+
+          - name: Write kubeconfig to vault using key value V2 engine
+            community.hashi_vault.vault_write:
+              auth_method: approle
+              url: "{{ vault_url }}"
+              role_id: "{{ vault_approle_id }}"
+              secret_id: "{{ vault_approle_secret }}"
+              validate_certs: false
+              path: "{{ secret_path_kubeconfig }}/data/{{ cluster_name }}"
+              data:
+                data:
+                  kubeconfig: "{{ lookup('ansible.builtin.file', kubeconfig_destination)|b64encode }}"
+            delegate_to: localhost
+            when: upload_vault|bool
+
+  - name: deploy_to_k8s
+    play: |
+      ---
+      - hosts: "{{ target_host | default('localhost') }}"
+        become: true
+
+        vars_files:
+          - "{{ path | default('.') }}/{{ profile }}.yaml"
+          - "{{ deployment_vars | default(omit) }}"
+
+        tasks:
+          - name: Create pre manifests
+            ansible.builtin.include_tasks: manifests.yaml
+            loop: "{{ q('ansible.builtin.dict', pre_manifests) }}"
+            when: pre_manifests is defined
+
+          - name: Configure and (un)install helm charts
+            block:
+              - name: Install helm requirements
+                ansible.builtin.include_tasks: helm_config.yaml
+
+              - name: Deploy helm chart(s)
+                ansible.builtin.include_tasks: helm.yaml
+                loop: "{{ q('ansible.builtin.dict', helm_releases) }}"
+            when: helm_releases is defined
+
+          - name: Create post manifests
+            ansible.builtin.include_tasks: manifests.yaml
+            loop: "{{ q('ansible.builtin.dict', post_manifests) }}"
+
+  - name: helm
+    play: |
+      ---
+      - name: Create helm values on disk
+        ansible.builtin.copy:
+          content: "{{ item.value.release_values }}" #().0
+          dest: "/tmp/{{ item.key }}-values.yaml.j2"
+        delegate_to: 127.0.0.1
+        when: state == "present" and item.value.values is defined
+
+      - name: Deploy helm charts
+        kubernetes.core.helm:
+          kubeconfig: "{{ path_to_kubeconfig }}"
+          name: "{{ item.key }}"
+          chart_ref: "{{ item.value.ref }}"
+          chart_version: "{{ item.value.version | default('latest') }}"
+          release_namespace: "{{ item.value.namespace }}"
+          create_namespace: true
+          state: "{{ state | default('present') }}"
+          values: "{{ lookup('template', '/tmp/{{ item.key }}-values.yaml.j2') | from_yaml | default(omit) }}"
+          wait: "{{ item.values.wait | default(omit) }}"
+        when: helm_releases is defined
+        ignore_errors: "{{ item.value.ignore | default(omit) }}"
+
+      # - name: Wait until pods are running
+      #   kubernetes.core.k8s_info:
+      #     kubeconfig: "{{ path_to_kubeconfig }}"
+      #     api_version: v1
+      #     kind: Pod
+      #     namespace: "{{ item.value.namespace }}"
+      #     wait_sleep: 30
+      #     wait_timeout: 360
+      #   register: pod_list
+      #   retries: "{{ item.values.wait_retries | default(15) }}"
+      #   delay: "{{ item.values.wait_delay | default(30) }}"
+      #   until: pod_list|json_query('resources[*].status.phase')|unique == ["Running"]
+      #   when: state == "present" and item.value.values is defined
+
+  - name: manifests
+    play: |
+      ---
+      - name: Create template on disk
+        ansible.builtin.copy:
+          content: "{{ item.value }}"
+          dest: "/tmp/{{ item.key }}.yaml.j2"
+        when: state == "present"
+
+      - name: Deploy additional manifests
+        kubernetes.core.k8s:
+          kubeconfig: "{{ path_to_kubeconfig }}"
+          state: "{{ state | default('present') }}"
+          definition: "{{ lookup('template', '/tmp/{{ item.key }}.yaml.j2') | from_yaml }}"
+
+  - name: kind
+    play: |
+      ---
+      - hosts: "{{ target_host | default('all') }}"
+        become: true
+        vars:
+          docker_install_compose: true
+          install_kind: true
+          kind_version: 0.26.0 # datasource=github-tags depName=kubernetes-sigs/kind
+          kubectl_version: v1.30.2 # datasource=github-tags depName=kubernetes/kubectl
+
+        roles:
+          - role: sthings.container.install_configure_docker
+
+  - name: helm_config
+    play: |
+      ---
+      - name: Add helm chart repositories
+        kubernetes.core.helm_repository:
+          name: "{{ item.key }}"
+          repo_url: "{{ item.value.url }}"
+          force_update: true
+        loop: "{{ q('ansible.builtin.dict', helm_repositories) }}"
+        when: helm_repositories is defined and state == "present"
+
+      - name: Install Helm Diff
+        kubernetes.core.helm_plugin:
+          plugin_path: "https://github.com/databus23/helm-diff"
+          state: present
+        when: state == "present"
+
+vars:
+  - name: cert-manager
+    file: |
+      ---
+      deployment_namespace: cert-manager
+      helm_repositories:
+        cert-manager:
+          url: https://charts.jetstack.io
+
+      helm_releases:
+        cert-manager:
+          ref: cert-manager/cert-manager
+          version: v1.16.0
+          namespace: "{{ deployment_namespace }}"
+          ignore: false
+          wait: true
+          release_values: |
+            installCRDs: true
+
+      post_manifests: {}
