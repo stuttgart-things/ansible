@@ -6,6 +6,7 @@ ansible collections, playbooks and examples.
 
 <details><summary>TASKS</summary>
 
+```bash
 task: Available tasks for this project:
 * branch:                 Create branch from main
 * build-collection:       Build ansible collection
@@ -13,6 +14,7 @@ task: Available tasks for this project:
 * commit:                 Commit + push code into branch
 * create-release:         Create release on github w/ artifact
 * pr:                     Create pull request into main
+```
 
 </details>
 

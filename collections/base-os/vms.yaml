@@ -189,7 +189,7 @@ playbooks:
 
 templates:
   - name: vm-vsphere
-    file: |
+    file: | #pragma: allowlist secret
       module {{ vmName }} {
         source                 = "{{ tf_module_source }}"
         vm_count               = {{ vmCount }}
@@ -248,7 +248,7 @@ templates:
       }
 
   - name: vm-proxmox
-    file: |
+    file: | #pragma: allowlist secret
       module "{{ vmName }}" {
         source                  = "{{ tf_module_source }}"
         vm_count                = {{ vmCount }}
@@ -424,7 +424,7 @@ vars:
       datacenter: "sthings-pve1"
 
   - name: tf-vars-vsphere
-    file: |
+    file: | #pragma: allowlist secret
       ---
       tf_vars:
         vsphere_server: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=cloud/data/vsphere:ip validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}"
@@ -434,7 +434,7 @@ vars:
         vm_ssh_password: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=cloud/data/vsphere:vm_ssh_password validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}"
 
   - name: tf-vars-proxmox
-    file: |
+    file: | #pragma: allowlist secret
       ---
       tf_vars:
         pve_api_url: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=cloud/data/pve:api_url validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}"
@@ -444,7 +444,7 @@ vars:
         vm_ssh_password: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=cloud/data/pve:ssh_password validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}"
 
   - name: terraform-vars
-    file: |
+    file: | #pragma: allowlist secret
       ---
       tf_project_path: "./terraform"
       state: "present"
@@ -455,7 +455,7 @@ vars:
       init_reconfigure: true
 
   - name: s3-instances
-    file: |
+    file: | #pragma: allowlist secret
       ---
       instances:
         labul-automation:
