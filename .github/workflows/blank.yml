@@ -1,0 +1,17 @@
+name: dagger
+on:
+  push:
+    branches: [main]
+
+jobs:
+  hello:
+    name: hello
+    runs-on: dagger-runner
+    steps:
+      - name: Call Dagger Function
+        uses: dagger/dagger-for-github@v7
+        with:
+          version: "latest"
+          verb: call
+          module: github.com/shykes/daggerverse/hello@v0.1.2
+          args: hello --greeting="bonjour" --name="monde"
