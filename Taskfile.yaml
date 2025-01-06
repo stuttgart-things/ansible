@@ -5,7 +5,7 @@ vars:
     sh: echo ${PROJECT}
   BRANCH:
     sh: if [ $(git rev-parse --abbrev-ref HEAD) != "main" ]; then echo $(git rev-parse --abbrev-ref HEAD); else echo main ; fi
-  DAGGER_ANSIBLE_MODULE: github.com/stuttgart-things/dagger/ansible
+  DAGGER_ANSIBLE_MODULE: github.com/stuttgart-things/dagger/ansible@v0.1.0
 
 tasks:
   create-release:
