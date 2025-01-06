@@ -13,8 +13,8 @@ on:
         default: main
 
 jobs:
-  hello:
-    name: hello
+  collection-build:
+    name: Collection Build
     runs-on: dagger
     steps:
       - name: Checkout Project
@@ -30,3 +30,7 @@ jobs:
           verb: call
           args: init-collection --src collections/${{ inputs.collection }} --progress plain export --path=/tmp/test
           module: github.com/stuttgart-things/dagger/ansible@v0.1.0
+
+      - name: List collection build
+        run: |
+          ls -lta /tmp/test
