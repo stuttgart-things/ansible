@@ -27,6 +27,6 @@ jobs:
         uses: dagger/dagger-for-github@v7
         with:
           version: "0.15.1"
-          verb: init-collection
-          args: --src collections/${{ inputs.collection }} --progress plain export --path=/tmp/test
+          verb: call
+          args: init-collection --src collections/${{ inputs.collection }} --progress plain export --path=/tmp/test
           module: github.com/stuttgart-things/dagger/ansible@v0.1.0
