@@ -1,0 +1,32 @@
+---
+name: Dispatch Collection Build
+on:
+  workflow_dispatch:
+    inputs:
+      collection:
+        description: COLLECTION NAME
+        type: string
+        default: container
+      branch-name:
+        type: string
+        description: BRANCH NAME
+        default: main
+
+jobs:
+  hello:
+    name: hello
+    runs-on: dagger
+    steps:
+      - name: Checkout Project
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: '0'
+          ref: ${{ inputs.branch-name }}
+
+      - name: Init Collection structure
+        uses: dagger/dagger-for-github@v7
+        with:
+          version: "0.15.1"
+          verb: init-collection
+          args: --src collections/${{ inputs.collection }} --progress plain export --path=/tmp/test
+          module: github.com/stuttgart-things/dagger/ansible@v0.1.0
