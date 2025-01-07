@@ -9,6 +9,7 @@ jobs:
   Analyze-Collection-Config:
     container:
       image: ghcr.io/stuttgart-things/github.com/stuttgart-things/machineshop:v2.6.13
+    environment: ${{ inputs.environment-name }}     
     # outputs:
     #   tf_working_dir: ${{ steps.set.outputs.TF_WORKING_DIR }}
     #   branch: ${{ steps.set.outputs.BRANCH }}
