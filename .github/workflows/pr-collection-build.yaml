@@ -10,14 +10,8 @@ jobs:
     container:
       image: ghcr.io/stuttgart-things/github.com/stuttgart-things/machineshop:v2.6.13
     environment: k8s
-    # outputs:
-    #   tf_working_dir: ${{ steps.set.outputs.TF_WORKING_DIR }}
-    #   branch: ${{ steps.set.outputs.BRANCH }}
-    #   operation: ${{ steps.set.outputs.OPERATION }}
-    #   working_image: ${{ steps.set.outputs.WORKING_IMAGE }}
-    #   environment: ${{ steps.set.outputs.ENVIRONMENT }}
-    #   runs_on: ${{ steps.set.outputs.RUNS_ON }}
-    #   tffolders: ${{ steps.changed-files.outputs.tffolders }}
+    outputs:
+      collection_folders: ${{ steps.changed-files.outputs.collection_folders }}
     runs-on: ghr-ansible-skyami-cicd
     steps:
       - name: Get Modified Files by PullRequest
@@ -30,3 +24,29 @@ jobs:
           jq -r '.[].filename')
 
           echo "ALL_CHANGED_FILES=${FILES}"
+          ALL_CHANGED_FOLDERS=$(echo "$FILES" | tr ' ' '\n' | while read file; do dirname "$file"; done | sort | uniq | paste -sd ',')
+          echo "ALL_CHANGED_FOLDERS=${ALL_CHANGED_FOLDERS}"
+
+          # SET CHANGED_FOLDERS AS MATRIX JSON
+          tf_folders=$(echo "\"${ALL_CHANGED_FOLDERS}\"" | sed 's/,/", "/g')
+          JSON_FOLDERS='{ "terraform-dir": ['"${tf_folders}"'] }'
+          echo ${JSON_FOLDERS}
+          echo "collection_folders=${JSON_FOLDERS}" >> "$GITHUB_OUTPUT"
+
+  # Build-Collections:
+  #   needs: Get-Changed-Collectionfiles
+  #   if: ${{ needs.Get-Changed-Collectionfiles.outputs.collections!= '[]' && needs.Get-Changed-Collectionfiles.outputs.collections != '' }}
+  #   strategy:
+  #     fail-fast: false
+  #     matrix: ${{ fromJson(needs.Get-Changed-Collectionfiles.outputs.collections) }}
+  #     # matrix:
+  #     #   collection-directory: [base-os, container, awx]
+  #   uses: stuttgart-things/stuttgart-things/.github/workflows/call-ansible-collection.yaml@main
+  #   with:
+  #     runs-on: ghr-stuttgart-things-skyami-cicd
+  #     environment-name: labul-vsphere #k8s
+  #     continue-error: false
+  #     collection-directory: ansible/collections/${{ matrix.collection-directory }} #.yaml
+  #     s3-instance-profiles: ansible/s3-instances.yaml
+  #     requirements-file: ansible/requirements-dev.yaml
+  #   secrets: inherit
