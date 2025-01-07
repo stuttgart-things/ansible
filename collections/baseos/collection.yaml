@@ -1,6 +1,8 @@
 ---
 name: baseos
 namespace: sthings
+authors:
+  - patrick
 requirements: |
   roles:
     - src: https://github.com/stuttgart-things/download-install-binary.git

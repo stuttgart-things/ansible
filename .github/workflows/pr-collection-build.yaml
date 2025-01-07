@@ -1,0 +1,31 @@
+name: PR Collection Build
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+
+jobs:
+  Analyze-Collection-Config:
+    container:
+      image: ghcr.io/stuttgart-things/github.com/stuttgart-things/machineshop:v2.6.13
+    # outputs:
+    #   tf_working_dir: ${{ steps.set.outputs.TF_WORKING_DIR }}
+    #   branch: ${{ steps.set.outputs.BRANCH }}
+    #   operation: ${{ steps.set.outputs.OPERATION }}
+    #   working_image: ${{ steps.set.outputs.WORKING_IMAGE }}
+    #   environment: ${{ steps.set.outputs.ENVIRONMENT }}
+    #   runs_on: ${{ steps.set.outputs.RUNS_ON }}
+    #   tffolders: ${{ steps.changed-files.outputs.tffolders }}
+    runs-on: ghr-ansible-skyami-cicd
+    steps:
+      - name: Get Modified Files by PullRequest
+        id: changed-files
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          FILES=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "${{ github.event.pull_request.url }}/files" | \
+          jq -r '.[].filename')
+
+          echo "ALL_CHANGED_FILES=${FILES}"
