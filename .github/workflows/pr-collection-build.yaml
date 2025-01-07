@@ -29,24 +29,21 @@ jobs:
 
           # SET CHANGED_FOLDERS AS MATRIX JSON
           tf_folders=$(echo "\"${ALL_CHANGED_FOLDERS}\"" | sed 's/,/", "/g')
-          JSON_FOLDERS='{ "terraform-dir": ['"${tf_folders}"'] }'
+          JSON_FOLDERS='{ "collection-directory": ['"${tf_folders}"'] }'
           echo ${JSON_FOLDERS}
           echo "collection_folders=${JSON_FOLDERS}" >> "$GITHUB_OUTPUT"
 
-  # Build-Collections:
-  #   needs: Get-Changed-Collectionfiles
-  #   if: ${{ needs.Get-Changed-Collectionfiles.outputs.collections!= '[]' && needs.Get-Changed-Collectionfiles.outputs.collections != '' }}
-  #   strategy:
-  #     fail-fast: false
-  #     matrix: ${{ fromJson(needs.Get-Changed-Collectionfiles.outputs.collections) }}
-  #     # matrix:
-  #     #   collection-directory: [base-os, container, awx]
-  #   uses: stuttgart-things/stuttgart-things/.github/workflows/call-ansible-collection.yaml@main
-  #   with:
-  #     runs-on: ghr-stuttgart-things-skyami-cicd
-  #     environment-name: labul-vsphere #k8s
-  #     continue-error: false
-  #     collection-directory: ansible/collections/${{ matrix.collection-directory }} #.yaml
-  #     s3-instance-profiles: ansible/s3-instances.yaml
-  #     requirements-file: ansible/requirements-dev.yaml
-  #   secrets: inherit
+  Build-Collections:
+    needs: Analyze-Collection-Config
+    if: ${{ needs.Analyze-Collection-Config.outputs.collection_folders != '[]' && needs.Analyze-Collection-Config.outputs.collection_folders != '' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.Analyze-Collection-Config.outputs.collection_folders) }}
+    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-ansible-collection.yaml@feature/add-homerun-task-go
+    with:
+      runs-on: dagger
+      environment-name: k8s
+      collection-directory: ${{ matrix.collection-directory }}
+      dagger-module-version: v0.1.1
+      branch-name: ${{ github.event.pull_request.head.ref }}
+    secrets: inherit # pragma: allowlist secret
