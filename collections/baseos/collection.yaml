@@ -1,5 +1,5 @@
 ---
-name: base_os
+name: baseos
 namespace: sthings
 requirements: |
   roles:

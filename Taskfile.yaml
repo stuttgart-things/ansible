@@ -5,13 +5,14 @@ vars:
     sh: echo ${PROJECT}
   BRANCH:
     sh: if [ $(git rev-parse --abbrev-ref HEAD) != "main" ]; then echo $(git rev-parse --abbrev-ref HEAD); else echo main ; fi
-  DAGGER_ANSIBLE_MODULE: github.com/stuttgart-things/dagger/ansible@v0.1.0
+  DAGGER_ANSIBLE_MODULE: github.com/stuttgart-things/dagger/ansible
+  DAGGER_ANSIBLE_MODULE_VERSION: v0.1.1
 
 tasks:
-  create-release:
-    desc: Create release on github w/ artifact
-    cmds:
-      - gh release create {{ .PROJECT }}-{{ .VERSION_NUMBER_PREFIX }}{{ .UPDATED_VERSION_NUMBER }} --notes "released chart artifcact for {{ .PROJECT }}" {{ .PACKAGE }}
+  # create-release:
+  #   desc: Create release on github w/ artifact
+  #   cmds:
+  #     - gh release create {{ .PROJECT }}-{{ .VERSION_NUMBER_PREFIX }}{{ .UPDATED_VERSION_NUMBER }} --notes "released chart artifcact for {{ .PROJECT }}" {{ .PACKAGE }}
 
 
   build-collection:
@@ -22,15 +23,15 @@ tasks:
         read COLLECTION;
 
         rm -rf {{ .WIP_DIR }}/*
-        dagger call -m {{ .DAGGER_ANSIBLE_MODULE }} init-collection --src {{ .SOURCE_COLLECTION_PATH }}/${COLLECTION} --progress plain export --path={{ .WIP_DIR }}
+        dagger call -m {{ .DAGGER_ANSIBLE_MODULE }}@{{ .DAGGER_ANSIBLE_MODULE_VERSION }} init-collection --src {{ .SOURCE_COLLECTION_PATH }}/${COLLECTION} --progress plain export --path={{ .WIP_DIR }}
         echo "Initialized collection dir in: {{ .WIP_DIR }}/{{ .NAMESPACE }}/${COLLECTION}" && ls -lta {{ .WIP_DIR }}/{{ .NAMESPACE }}/${COLLECTION}
 
         rm -rf {{ .BUILD_DIR }}/*
-        dagger call -m {{ .DAGGER_ANSIBLE_MODULE }} modify-role-includes --src {{ .WIP_DIR }}/{{ .NAMESPACE }}/${COLLECTION} --progress plain export --path {{ .BUILD_DIR }}
+        dagger call -m {{ .DAGGER_ANSIBLE_MODULE }}@{{ .DAGGER_ANSIBLE_MODULE_VERSION }} modify-role-includes --src {{ .WIP_DIR }}/{{ .NAMESPACE }}/${COLLECTION} --progress plain export --path {{ .BUILD_DIR }}
         echo "Modified collection in: {{ .BUILD_DIR }}" && ls -lta {{ .BUILD_DIR }}
 
         rm -rf {{ .OUTPUT_DIR }}/*
-        dagger call -m {{ .DAGGER_ANSIBLE_MODULE }} build --src {{ .BUILD_DIR }} --progress plain export --path {{ .OUTPUT_DIR }}
+        dagger call -m {{ .DAGGER_ANSIBLE_MODULE }}@{{ .DAGGER_ANSIBLE_MODULE_VERSION }} build --src {{ .BUILD_DIR }} --progress plain export --path {{ .OUTPUT_DIR }}
         echo package $(ls {{ .OUTPUT_DIR }}/*tar.gz)
 
         ansible-galaxy collection install $(ls {{ .OUTPUT_DIR }}/*tar.gz)
