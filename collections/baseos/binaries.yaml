@@ -99,11 +99,11 @@ vars:
           target_version: "v{{ yq_version }}"
         machineshop:
           bin_name: machineshop
-          bin_version: "{{ machineshop_version }}"
+          bin_version: "v{{ machineshop_version }}"
           check_bin_version_before_installing: true
-          source_url: https://github.com/stuttgart-things/machineshop/releases/download/{{ machineshop_version }}/machineshop_Linux_x86_64.tar.gz
+          source_url: https://github.com/stuttgart-things/machineshop/releases/download/v{{ machineshop_version }}/machineshop_Linux_x86_64.tar.gz
           bin_to_copy: machineshop
           to_remove: ""
           bin_dir: "/usr/bin"
           version_cmd: " version"
-          target_version: "{{ machineshop_version }}"
+          target_version: "v{{ machineshop_version }}"
