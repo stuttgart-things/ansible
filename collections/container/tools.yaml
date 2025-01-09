@@ -95,14 +95,14 @@ vars:
           target_version: "{{ kubectl_version }}"
         k9s:
           bin_name: "k9s"
-          bin_version: "{{ k9s_version }}"
+          bin_version: "v{{ k9s_version }}"
           check_bin_version_before_installing: true
-          source_url: "https://github.com/derailed/k9s/releases/download/{{ k9s_version }}/k9s_Linux_amd64.tar.gz"
+          source_url: "https://github.com/derailed/k9s/releases/download/v{{ k9s_version }}/k9s_Linux_amd64.tar.gz"
           bin_to_copy: "k9s"
           to_remove: "k9s"
           bin_dir: "/usr/local/bin"
           version_cmd: " version --short"
-          target_version: "{{ k9s_version }}"
+          target_version: "v{{ k9s_version }}"
         velero:
           bin_name: velero
           bin_version: "{{ velero_version }}"
