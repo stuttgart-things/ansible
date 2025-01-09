@@ -51,7 +51,7 @@ playbooks:
             register: check_golang
 
           - name: Get checksum of golang dir
-            sthings.base_os.get_checksum:
+            sthings.baseos.get_checksum:
               path: "{{ golang_install_dir }}/go"
               checksum_type: "{{ go_checksum_type }}"
             register: checksum_existing
@@ -106,7 +106,7 @@ playbooks:
               chdir: "{{ golang_install_dir }}/go/bin/"
             when: install_addons|bool
         roles:
-          - role: sthings.base_os.download_install_binary
+          - role: sthings.baseos.download_install_binary
 
 modules:
   - name: get_checksum

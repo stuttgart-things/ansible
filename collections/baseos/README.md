@@ -7,7 +7,7 @@
 ### RANDOM CONFIG + UPLOAD
 
 ```bash
-ansible-playbook sthings.base_os.render_upload_vm -vv \
+ansible-playbook sthings.baseos.render_upload_vm -vv \
 -e lab=labul \
 -e cloud=vsphere \
 -e s3=labul-automation
@@ -17,7 +17,7 @@ ansible-playbook sthings.base_os.render_upload_vm -vv \
 
 ```bash
 # Render w/ given name and size
-ansible-playbook sthings.base_os.render_upload_vm -vv \
+ansible-playbook sthings.baseos.render_upload_vm -vv \
 -e lab=labul \
 -e cloud=vsphere \
 -e vmSize=l \
@@ -27,7 +27,7 @@ ansible-playbook sthings.base_os.render_upload_vm -vv \
 
 ```bash
 # Render with changed VM attributes
-ansible-playbook sthings.base_os.render_upload_vm -vv \
+ansible-playbook sthings.baseos.render_upload_vm -vv \
 -e lab=labul \
 -e cloud=vsphere \
 -e vmName=test-vm \

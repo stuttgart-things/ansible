@@ -263,7 +263,7 @@ playbooks:
           - "{{ profile | default('users') }}.yaml"
 
         roles:
-          - role: sthings.base_os.create_os_user
+          - role: sthings.baseos.create_os_user
 
 vars:
   - name: users

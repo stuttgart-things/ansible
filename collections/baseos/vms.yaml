@@ -41,7 +41,7 @@ playbooks:
         pre_tasks:
           - name: call role and install terraform
             ansible.builtin.include_role:
-              name: sthings.base_os.download_install_binary
+              name: sthings.baseos.download_install_binary
               apply:
                 become: true
             when: install_terraform|bool and state == "present"
@@ -102,7 +102,7 @@ playbooks:
               node: "{{ pve_node }}"
 
         roles:
-          - role: sthings.base_os.manage_proxmox_resources
+          - role: sthings.baseos.manage_proxmox_resources
 
   - name: delete_proxmox_vm
     play: |
@@ -123,7 +123,7 @@ playbooks:
               node: "{{ pve_node }}"
 
         roles:
-          - role: sthings.base_os.manage_proxmox_resources
+          - role: sthings.baseos.manage_proxmox_resources
 
   - name: render_upload_vm
     play: |
