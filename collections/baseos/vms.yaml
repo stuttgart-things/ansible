@@ -135,7 +135,7 @@ playbooks:
           vault_url: "{{ lookup('env', 'VAULT_ADDR') }}"
           AWS_ACCESS_KEY_ID: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=apps/data/artifacts:accessKey validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}"
           AWS_SECRET_ACCESS_KEY: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=apps/data/artifacts:secretKey validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}"
-          bucket_name: andre-vm-config
+          bucket_name: tf-{{ lab }}-{{ cloud }}
           rendered_all: "tf-config-all.tf"
           bucket_permission: [private]
           path: "vars"
@@ -342,7 +342,7 @@ vars:
             - "/LabUL/network/LAB-10.31.103"
             - "/LabUL/network/LAB-10.31.104"
           subfolderpath: "testing"
-          bucket_name: "andre-vm-config"
+          bucket_name: "tf-{{ lab }}-{{ cloud }}"
         proxmox:
           template:
             ubuntu22: "ubuntu22"
@@ -357,7 +357,7 @@ vars:
             - "vmbr103"
             - "vmbr104"
           subfolderpath: "stuttgart-things"
-          bucket_name: "andre-vm-config"
+          bucket_name: "tf-{{ lab }}-{{ cloud }}"
 
   - name: vm-defaults
     file: |
