@@ -30,10 +30,6 @@
     event_artifacts: "vm: {{ ansible_fqdn }}"
     event_url: "https://10.31.101.51/"
 
-
-
-
-
     vault_instances:
       - https://vault.tiab.labda.sva.de:8200
       - https://vault.labul.sva.de:8200

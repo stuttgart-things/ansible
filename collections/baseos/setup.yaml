@@ -1,5 +1,105 @@
 ---
 playbooks:
+  - name: prepare_env
+    play: |
+      ---
+      - hosts: localhost
+        become: false
+        vars:
+          home_dir: "{{ lookup('env','HOME') }}"
+          targets_list: "{{ targets.split(';') }}"
+          vault_approle_id: "{{ lookup('env', 'VAULT_ROLE_ID') }}"
+          vault_approle_secret: "{{ lookup('env', 'VAULT_SECRET_ID') }}"
+          vault_url: "{{ lookup('env', 'VAULT_ADDR') }}"
+          ssh_key: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=ssh/data/sthings:privateKey validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}" # pragma: allowlist secret
+
+        pre_tasks:
+          - name: Include vars
+            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
+
+        tasks:
+          - name: Create hosts
+            ansible.builtin.set_fact:
+              target_hosts: "{{ targets_list | join('\n') }}"
+            when: inventory_groups is not defined
+            ignore_errors: true
+
+          - name: Write vars on inv file
+            ansible.builtin.blockinfile:
+              path: "{{ inv_path }}"
+              block: |
+                [all]
+                {{ target_hosts }}
+            when: inventory_groups is not defined
+            ignore_errors: true
+
+          - name: Append lines to the end of the file
+            ansible.builtin.blockinfile:
+              path: "{{ inv_path }}"
+              block: |
+                [all:vars]
+                ansible_user=sthings
+                host_key_checking=false
+              insertafter: EOF
+            when: inventory_groups is not defined
+            ignore_errors: false
+
+          - ansible.builtin.set_fact:
+              inventory_file: |
+                {% for host_groups in inventory_groups.keys() %}
+                {% for group in inventory_groups[host_groups].keys() %}
+                [{{ group }}]
+                {% for host in inventory_groups[host_groups][group] %}
+                {{ host }}
+                {% endfor %}
+                {% endfor %}
+                {% endfor %}
+                [all:vars]
+                ansible_user=sthings
+                host_key_checking=false
+            when: inventory_groups is defined
+
+          - ansible.builtin.debug:
+              var: inventory_file
+            when: inventory_groups is defined
+
+          - ansible.builtin.copy:
+              content: "{{ inventory_file }}"
+              dest: "{{ inv_path }}"
+            when: inventory_groups is defined
+
+          - name: Creating ssh directory
+            ansible.builtin.file:
+              path: "{{ home_dir }}/.ssh/"
+              state: directory
+
+          - name: Creating ssh private key file
+            ansible.builtin.copy:
+              dest: "{{ home_dir }}/.ssh/id_rsa"
+              content: "{{ ssh_key | b64decode }}"
+              mode: '0600'
+
+          - name: Show inventory
+            ansible.builtin.debug: msg="{{ lookup('file', inv_path) }}"
+
+          - name: Refresh inventory
+            ansible.builtin.meta: refresh_inventory
+
+          - name: "Pause for {{ pause_time | default(1) }} minutes for machines to be build"
+            ansible.builtin.pause:
+              minutes: "{{ pause_time | default(1) }}"
+            when: pause_time is defined
+
+          - name: "Wait for SSH (delay: {{ delay_time | default(1) }})"
+            ansible.builtin.wait_for:
+              host: "{{ item }}"
+              port: 22
+              delay: "{{ delay_time | default(1) }}"
+              timeout: 1200
+              sleep: 10
+            with_items:
+              - "{{ groups['all'] }}"
+
   - name: setup
     play: |
       ---
@@ -18,22 +118,33 @@ playbooks:
           lvm_root_sizing: "35%"
           lvm_var_sizing: "50%"
           send_to_msteams: true
-          msteams_webhook_url: "https://365sva.webhook.office.com/webhookb2/2f14a9f8-4736-46dd-9c8c-31547ec37180@0a65cb1e-37d5-41ff-980a-647d9d0e4f0b/IncomingWebhook/37a805a0a2624dc2ac1aedd7dec6ad49/dc3a27ed-396c-40b7-a9b2-f1a2b6b44efe"
+
+          # HOMERUN
+          address: "https://homerun.homerun-dev.sthings-vsphere.labul.sva.de/generic"
+          auth_token: "IhrGeheimerToken"
+          event_title: "BaseOS Setup executed"
+          event_message: "BaseOS Setup executed on {{ ansible_fqdn }}"
+          event_severity: "INFO"
+          event_author: "{{ ansible_user_id }}"
+          event_timestamp: "{{ ansible_date_time.date }}"
+          event_system: "ansible"
+          event_tags: "ansible,baseos"
+          event_assignee_address: "patrick.hermann@sva.de"
+          event_assignee_name: "patrick.hermann"
+          event_artifacts: "vm: {{ ansible_fqdn }}"
+          event_url: "https://10.31.101.51/"
+
           vault_instances:
             - https://vault.tiab.labda.sva.de:8200
             - https://vault.labul.sva.de:8200
             - https://vault-vsphere.labul.sva.de:8200
-            # - https://vault-pve.labul.sva.de:8200
             - https://vault-vsphere.tiab.labda.sva.de:8200
-          python_modules:
-            - name: boto3
-              version: 1.34.119
 
         roles:
-          - role: sthings.base_os.manage_filesystem
+          - role: manage-filesystem
             when: manage_filesystem|bool
 
-          - role: sthings.base_os.install_requirements
+          - role: install-requirements
             when: install_requirements|bool
 
         pre_tasks:
@@ -47,7 +158,7 @@ playbooks:
         tasks:
           - name: Install vault ca certificate to local system from multiple instances
             ansible.builtin.include_role:
-              name: sthings.base_os.install_configure_vault
+              name: install-configure-vault
               tasks_from: install-ca-auth
             vars:
               vault_url: "{{ vault_instance }}"
@@ -58,10 +169,10 @@ playbooks:
 
           - name: Send webhook to msteams
             ansible.builtin.include_role:
-              name: sthings.base_os.create_send_webhook
+              name: create-send-webhook
             vars:
               summary_text: base-os-setup was executed
-              msteams_url: "https://365sva.webhook.office.com/webhookb2/2f14a9f8-4736-46dd-9c8c-31547ec37180@0a65cb1e-37d5-41ff-980a-647d9d0e4f0b/IncomingWebhook/37a805a0a2624dc2ac1aedd7dec6ad49/dc3a27ed-396c-40b7-a9b2-f1a2b6b44efe"
+              msteams_url: "{{ msteams_webhook_url }}"
               card_title: base-os-setup was executed
               act_image: "{{ logo_pic }}"
               act_title: "{{ quotes | random }}"
@@ -73,25 +184,34 @@ playbooks:
             ignore_errors: true
             when: send_to_msteams|bool
 
+          - name: Send event notification to homerun
+            ansible.builtin.uri:
+              url: "{{ address }}"
+              method: POST
+              headers:
+                Content-Type: "application/json"
+                X-Auth-Token: "{{ auth_token }}"
+              body: >
+                {
+                  "title": "{{ event_title }}",
+                  "message": "{{ event_message }}",
+                  "severity": "{{ event_severity }}",
+                  "author": "{{ event_author }}",
+                  "timestamp": "{{ event_timestamp }}",
+                  "system": "{{ event_system }}",
+                  "tags": "{{ event_tags }}",
+                  "assigneeaddress": "{{ event_assignee_address }}",
+                  "assigneename": "{{ event_assignee_name }}",
+                  "artifacts": "{{ event_artifacts }}",
+                  "url": "{{ event_url }}"
+                }
+              body_format: json
+              validate_certs: false
+            register: homerun_result_message
 
-          - name: Send webhook to homerun
-            ansible.builtin.include_role:
-              name: sthings.base_os.create_send_webhook
-            vars:
-              title: "Testnachricht"
-              message: "Das ist eine Testnachricht"
-              severity: "Info"
-              author: "Max Mustermann"
-              timestamp: "{{ ansible_date_time.date }} {{ ansible_date_time.hour }}:{{ ansible_date_time.minute }}:{{ ansible_date_time.second }}"
-              system: "Testsystem"
-              technologyTags: "Test"
-              assigneeAddress: ""
-              assigneeName: "Max Mustermann"
-              artifacts: "https://www.google.com"
-              url: "https://www.google.com"
-            tags: notify
-            ignore_errors: true
-            when: send_to_homerun|bool
+          - name: Debug the response from homerun
+            debug:
+              var: homerun_result_message
 
   - name: ansible
     play: |
