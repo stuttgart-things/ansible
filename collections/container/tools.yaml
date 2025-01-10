@@ -115,14 +115,14 @@ vars:
           target_version: "{{ velero_version }}"
         kubectl_slice:
           bin_name: kubectl-slice
-          bin_version: "{{ kubectl_slice_version }}"
+          bin_version: "v{{ kubectl_slice_version }}"
           check_bin_version_before_installing: true
-          source_url: "https://github.com/patrickdappollonio/kubectl-slice/releases/download/{{ kubectl_slice_version }}/kubectl-slice_linux_x86_64.tar.gz"
+          source_url: "https://github.com/patrickdappollonio/kubectl-slice/releases/download/v{{ kubectl_slice_version }}/kubectl-slice_linux_x86_64.tar.gz"
           bin_to_copy: kubectl-slice
           to_remove: kubectl-slice
           bin_dir: "/usr/bin"
           version_cmd: " --version"
-          target_version: "{{ kubectl_slice_version }}"
+          target_version: "v{{ kubectl_slice_version }}"
         helmfile:
           bin_name: helmfile
           bin_version: "v{{ helmfile_version }}"
@@ -157,7 +157,7 @@ vars:
           bin_name: dagger
           bin_version: "{{ dagger_version }}"
           check_bin_version_before_installing: true
-          source_url: "https://github.com/dagger/dagger/releases/download/v0.13.3/dagger_v{{ dagger_version }}_linux_amd64.tar.gz"
+          source_url: "https://github.com/dagger/dagger/releases/download/v{{ dagger_version }}/dagger_v{{ dagger_version }}_linux_amd64.tar.gz"
           bin_to_copy: dagger
           to_remove: ""
           bin_dir: "/usr/bin/dagger"

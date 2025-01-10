@@ -2,6 +2,15 @@
 
 ## BASEOS
 
+<details><summary>INSTALL COLLECTION</summary>
+
+```bash
+VERSION=25.4.933
+ansible-galaxy collection install /tmp/ansible/collections/artifacts/sthings-baseos-${VERSION}.tar.gz -f
+```
+
+</details>
+
 <details><summary>RENDERING OF VM CONFIG + UPLOAD</summary>
 
 ### RANDOM CONFIG + UPLOAD
