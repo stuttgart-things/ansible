@@ -5,8 +5,8 @@
 <details><summary>INSTALL COLLECTION</summary>
 
 ```bash
-VERSION=25.4.933
-ansible-galaxy collection install /tmp/ansible/collections/artifacts/sthings-baseos-${VERSION}.tar.gz -f
+COLLECTION_VERSION=25.4.1257
+ansible-galaxy collection install https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-${COLLECTION_VERSION}/sthings-baseos-${COLLECTION_VERSION}.tar.gz -f
 ```
 
 </details>
