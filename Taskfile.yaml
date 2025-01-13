@@ -8,6 +8,12 @@ vars:
   DAGGER_ANSIBLE_MODULE: github.com/stuttgart-things/dagger/ansible
   DAGGER_ANSIBLE_MODULE_VERSION: v0.1.2
 
+# PRECONDITION TO CHECK IF THE VIRTUAL ENVIRONMENT IS ACTIVATED
+venv-precondition: &venv
+  - sh: |
+      pip -V | grep '.venv' >/dev/null 2>&1
+    msg: "The pip version output does not contain .venv, Halting. Run task setup-molecule and/or source ansible/.venv/bin/activate"
+
 tasks:
   create-release:
     desc: Create release on github w/ artifact
@@ -67,6 +73,29 @@ tasks:
     desc: "Run pre-commit hooks"
     cmds:
       - pre-commit run -a
+
+  run-molecule:
+    preconditions: *venv
+    cmds:
+      - |
+        echo "Enter to be tested collection name (baseos|container - sthings. is prefixed):"
+        read COLLECTION_NAME;
+        cd ansible && molecule test -s sthings.${COLLECTION_NAME} #container
+
+  setup-molecule:
+    preconditions: *venv
+    cmds:
+      - pip install -U setuptools pip 'molecule'
+      - pip install molecule-docker
+      - pip install netaddr
+      - molecule --version
+
+  setup-venv:
+    desc: "Setup python virtual environment"
+    cmds:
+      - rm -rf ansible/.venv
+      - python3 -m venv ansible/.venv
+      - echo "DON'T FORGET TO RUN - source ansible/.venv/bin/activate"
 
   commit:
     desc: Commit + push code into branch
