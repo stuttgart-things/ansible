@@ -1,4 +1,19 @@
 ---
+- name: Converge
+  hosts: all
+
+  pre_tasks:
+    - name: update apt cache
+      apt:
+        update_cache: yes
+      when: ansible_os_family == 'Debian'
+      changed_when: no
+
+    - name: Install unzip
+      apt:
+        name: unzip
+        state: present
+
 - name: Create user for golang setup and to test users creation
   ansible.builtin.import_playbook: sthings.baseos.users
   vars:
@@ -18,10 +33,10 @@
 - name: Install binaries
   ansible.builtin.import_playbook: sthings.baseos.binaries
 
-- name: Install golang
-  ansible.builtin.import_playbook: sthings.baseos.golang
-  vars:
-    install_addons: false
+# - name: Install golang
+#   ansible.builtin.import_playbook: sthings.baseos.golang
+#   vars:
+#     install_addons: false
 
-- name: Install ansible
-  ansible.builtin.import_playbook: sthings.baseos.ansible
+# - name: Install ansible
+#   ansible.builtin.import_playbook: sthings.baseos.ansible

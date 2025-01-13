@@ -80,7 +80,7 @@ tasks:
       - |
         echo "Enter to be tested collection name (baseos|container - sthings. is prefixed):"
         read COLLECTION_NAME;
-        cd ansible && molecule test -s sthings.${COLLECTION_NAME} #container
+        molecule test -s sthings.${COLLECTION_NAME}
 
   setup-molecule:
     preconditions: *venv
@@ -89,13 +89,14 @@ tasks:
       - pip install molecule-docker
       - pip install netaddr
       - molecule --version
+      - ansible-galaxy collection install community.docker
 
   setup-venv:
     desc: "Setup python virtual environment"
     cmds:
-      - rm -rf ansible/.venv
-      - python3 -m venv ansible/.venv
-      - echo "DON'T FORGET TO RUN - source ansible/.venv/bin/activate"
+      - rm -rf ./.venv
+      - python3 -m venv ./.venv
+      - echo "DON'T FORGET TO RUN - source .venv/bin/activate"
 
   commit:
     desc: Commit + push code into branch
