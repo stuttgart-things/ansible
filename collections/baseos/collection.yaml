@@ -7,7 +7,7 @@ requirements: |
   roles:
     - src: https://github.com/stuttgart-things/download-install-binary.git
       scm: git
-      version: 2024.09.06
+      version: 2025.01.14
     - src: https://github.com/stuttgart-things/create-os-user.git
       scm: git
       version: 2024.05.03
@@ -23,8 +23,3 @@ requirements: |
     - src: https://github.com/stuttgart-things/create-send-webhook.git
       scm: git
       version: 2024.09.06
-    - src: https://github.com/stuttgart-things/manage-proxmox-resources.git
-      scm: git
-      version: 2024.05.27
-    - src: https://github.com/stuttgart-things/manage-proxmox-resources.git
-      scm: git
