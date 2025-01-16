@@ -16,6 +16,7 @@ playbooks:
           install_terraform: "true"
           s3: "homerun-dev"
           terraform_version: 1.10.4 # datasource=custom.hashicorp
+          object_name: "{{ ansible_date_time.date }}-{{ vmName }}.tf"
 
           bin:
             terraform:
@@ -39,6 +40,10 @@ playbooks:
           AWS_SECRET_ACCESS_KEY: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=apps/data/artifacts:secretKey validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}"
 
         pre_tasks:
+          - name: Output object name
+            ansible.builtin.debug:
+              var: object_name
+
           - name: call role and install terraform
             ansible.builtin.include_role:
               name: sthings.baseos.download_install_binary
@@ -140,6 +145,7 @@ playbooks:
           bucket_permission: [private]
           path: "vars"
           s3: "homerun-dev"
+          object_name: "{{ ansible_date_time.date }}-{{ vmName }}.tf"
 
           #-e lab=labul -e cloud=vsphere -vv
 
@@ -165,7 +171,7 @@ playbooks:
           - name: Upload config to S3 Bucket
             amazon.aws.s3_object:
               bucket: "{{ bucket_name }}"
-              object: "{{ ansible_date_time.date }}-{{ vmName }}.tf"
+              object: "{{ object_name }}"
               src: "{{ rendered_all }}"
               mode: put
               access_key: "{{ AWS_ACCESS_KEY_ID }}"
@@ -186,6 +192,11 @@ playbooks:
             ansible.builtin.file:
               path: "{{ rendered_all }}"
               state: absent
+
+          - name: Set variable for next jobs
+            ansible.builtin.set_stats:
+              data:
+                object_name: "{{ object_name }}"
 
 templates:
   - name: vm-vsphere

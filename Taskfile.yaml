@@ -31,7 +31,7 @@ tasks:
     cmds:
       - |
         echo "Enter to be build collection:"
-        read COLLECTION;
+        COLLECTION=$(gum choose "baseos" "container")
 
         rm -rf {{ .WIP_DIR }}/*
         dagger call -m {{ .DAGGER_ANSIBLE_MODULE }}@{{ .DAGGER_ANSIBLE_MODULE_VERSION }} init-collection --src {{ .SOURCE_COLLECTION_PATH }}/${COLLECTION} --progress plain export --path={{ .WIP_DIR }}
@@ -78,8 +78,7 @@ tasks:
     preconditions: *venv
     cmds:
       - |
-        echo "Enter to be tested collection name (baseos|container - sthings. is prefixed):"
-        read COLLECTION_NAME;
+        COLLECTION_NAME=$(gum choose "baseos" "container")
         molecule test -s sthings.${COLLECTION_NAME}
 
   setup-molecule:
