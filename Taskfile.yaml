@@ -30,8 +30,8 @@ tasks:
     desc: Build ansible collection
     cmds:
       - |
-        echo "Enter to be build collection:"
-        COLLECTION=$(gum choose "baseos" "container")
+        echo "Choose to be build collection:"
+        COLLECTION=$(gum choose {{ .ALL_COLLECTIONS }})
 
         rm -rf {{ .WIP_DIR }}/*
         dagger call -m {{ .DAGGER_ANSIBLE_MODULE }}@{{ .DAGGER_ANSIBLE_MODULE_VERSION }} init-collection --src {{ .SOURCE_COLLECTION_PATH }}/${COLLECTION} --progress plain export --path={{ .WIP_DIR }}
@@ -54,6 +54,8 @@ tasks:
       WIP_DIR: "{{ .COLLECTION_TMP_DIR }}/wip"
       BUILD_DIR: "{{ .COLLECTION_TMP_DIR }}/build/"
       OUTPUT_DIR: "{{ .COLLECTION_TMP_DIR }}/artifacts/"
+      ALL_COLLECTIONS:
+        sh: ls {{ .SOURCE_COLLECTION_PATH }} | xargs -n1 printf '"%s" '
 
   branch:
     desc: Create branch from main
