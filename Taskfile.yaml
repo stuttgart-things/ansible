@@ -43,9 +43,22 @@ tasks:
 
         rm -rf {{ .OUTPUT_DIR }}/*
         dagger call -m {{ .DAGGER_ANSIBLE_MODULE }}@{{ .DAGGER_ANSIBLE_MODULE_VERSION }} build --src {{ .BUILD_DIR }} --progress plain export --path {{ .OUTPUT_DIR }}
-        echo package $(ls {{ .OUTPUT_DIR }}/*tar.gz)
+
+        ARTIFACT_PATH=$(ls {{ .OUTPUT_DIR }}/*tar.gz)
+        RELEASE_TAG=$(basename "${ARTIFACT_PATH}" .tar.gz)
+
+        echo package ${ARTIFACT_PATH} --tag ${RELEASE_TAG}
 
         ansible-galaxy collection install $(ls {{ .OUTPUT_DIR }}/*tar.gz)
+
+        dagger call --progress plain -m github.com/sagikazarmark/daggerverse/gh@main \
+        release create --repo {{ .GH_REPO }} \
+        --token=env:GITHUB_TOKEN \
+        --files ${ARTIFACT_PATH} \
+        --notes "release ${RELEASE_TAG}" \
+        --tag ${RELEASE_TAG} \
+        --title ${RELEASE_TAG}
+
     vars:
       NAMESPACE: sthings
       SOURCE_COLLECTION_PATH: ./collections
@@ -56,6 +69,7 @@ tasks:
       OUTPUT_DIR: "{{ .COLLECTION_TMP_DIR }}/artifacts/"
       ALL_COLLECTIONS:
         sh: ls {{ .SOURCE_COLLECTION_PATH }} | xargs -n1 printf '"%s" '
+      GH_REPO: stuttgart-things/ansible
 
   branch:
     desc: Create branch from main

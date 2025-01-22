@@ -1,7 +1,7 @@
 ---
 playbooks:
   - name: k3s
-    play: |
+    play: | #pragma: allowlist secret
       - hosts: all
         gather_facts: true
         become: true
