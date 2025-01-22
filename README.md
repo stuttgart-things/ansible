@@ -4,6 +4,17 @@ ansible collections, playbooks and examples.
 
 ## DEV
 
+<details><summary>BUILD ANSIBLE COLLECTION</summary>
+
+```bash
+task build-collection
+```
+
+</details>
+
+
+## TASKS
+
 <details><summary>TASKS</summary>
 
 ```bash
@@ -14,6 +25,7 @@ task: Available tasks for this project:
 * commit:                 Commit + push code into branch
 * create-release:         Create release on github w/ artifact
 * pr:                     Create pull request into main
+* setup-venv:             Setup python virtual environment
 ```
 
 </details>
