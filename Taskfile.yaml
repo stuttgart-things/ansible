@@ -30,16 +30,16 @@ tasks:
     desc: Build ansible collection
     cmds:
       - |
-        echo "Choose to be build collection:"
+        echo "CHOOSE TO BE BUILD COLLECTION:"
         COLLECTION=$(gum choose {{ .ALL_COLLECTIONS }})
 
         rm -rf {{ .WIP_DIR }}/*
         dagger call -m {{ .DAGGER_ANSIBLE_MODULE }}@{{ .DAGGER_ANSIBLE_MODULE_VERSION }} init-collection --src {{ .SOURCE_COLLECTION_PATH }}/${COLLECTION} --progress plain export --path={{ .WIP_DIR }}
-        echo "Initialized collection dir in: {{ .WIP_DIR }}/{{ .NAMESPACE }}/${COLLECTION}" && ls -lta {{ .WIP_DIR }}/{{ .NAMESPACE }}/${COLLECTION}
+        echo "INITIALIZED COLLECTION DIR IN: {{ .WIP_DIR }}/{{ .NAMESPACE }}/${COLLECTION}" && ls -lta {{ .WIP_DIR }}/{{ .NAMESPACE }}/${COLLECTION}
 
         rm -rf {{ .BUILD_DIR }}/*
         dagger call -m {{ .DAGGER_ANSIBLE_MODULE }}@{{ .DAGGER_ANSIBLE_MODULE_VERSION }} modify-role-includes --src {{ .WIP_DIR }}/{{ .NAMESPACE }}/${COLLECTION} --progress plain export --path {{ .BUILD_DIR }}
-        echo "Modified collection in: {{ .BUILD_DIR }}" && ls -lta {{ .BUILD_DIR }}
+        echo "MODIFIED COLLECTION IN: {{ .BUILD_DIR }}" && ls -lta {{ .BUILD_DIR }}
 
         rm -rf {{ .OUTPUT_DIR }}/*
         dagger call -m {{ .DAGGER_ANSIBLE_MODULE }}@{{ .DAGGER_ANSIBLE_MODULE_VERSION }} build --src {{ .BUILD_DIR }} --progress plain export --path {{ .OUTPUT_DIR }}
@@ -58,7 +58,6 @@ tasks:
         --notes "release ${RELEASE_TAG}" \
         --tag ${RELEASE_TAG} \
         --title ${RELEASE_TAG}
-
     vars:
       NAMESPACE: sthings
       SOURCE_COLLECTION_PATH: ./collections

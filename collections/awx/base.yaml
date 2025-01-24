@@ -461,7 +461,7 @@ vars:
           state: present
 
   - name: scm-creds-sthings
-    file: |
+    file: | # pragma: allowlist secret
       ---
       scmCredentials:
         sthingsSCM:
@@ -486,7 +486,7 @@ vars:
           scm_update_cache_timeout: 60
 
   - name: machine-creds-sthings
-    file: |
+    file: | # pragma: allowlist secret
       ---
       machineCredentials:
         sthingsSSH:
@@ -635,7 +635,7 @@ vars:
       vault_url: "{{ lookup('env', 'VAULT_ADDR') }}"
 
   - name: s3-instances
-    file: |
+    file: | # pragma: allowlist secret
       ---
       instances:
         labul-automation:

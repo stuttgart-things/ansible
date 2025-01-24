@@ -2,7 +2,7 @@
 ---
 templates:
   - name: vm-vsphere
-    file: |
+    file: | # pragma: allowlist secret
       module {{ vmName }} {
         source                 = "{{ tf_module_source }}"
         vm_count               = {{ vmCount }}
@@ -61,7 +61,7 @@ templates:
       }
 
   - name: vm-proxmox
-    file: |
+    file: | # pragma: allowlist secret
       module "{{ vmName }}" {
         source                  = "{{ tf_module_source }}"
         vm_count                = {{ vmCount }}
