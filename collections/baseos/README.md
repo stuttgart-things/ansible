@@ -11,6 +11,16 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 </details>
 
+<details><summary>INSTALL BINARIES</summary>
+
+```bash
+ansible-playbook sthings.baseos.binaries -vv \
+-i /tmp/hosts
+```
+
+</details>
+
+
 <details><summary>RENDERING OF VM CONFIG + UPLOAD</summary>
 
 ### RANDOM CONFIG + UPLOAD
