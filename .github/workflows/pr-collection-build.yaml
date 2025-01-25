@@ -4,6 +4,8 @@ on:
     types:
       - opened
       - reopened
+    paths:
+      - 'collections/**'
 
 jobs:
   Analyze-Collection-Config:
