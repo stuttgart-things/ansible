@@ -1,13 +1,16 @@
 # stuttgart-things/ansible
 
-ansible collections, playbooks and examples.
+ansible collections, playbooks and examples
 
 ## DEV
 
 <details><summary>BUILD ANSIBLE COLLECTION</summary>
 
 ```bash
-task build-collection
+task branch # create branch
+# make changes
+task build-collection # build collection w/ dagger
+task pr # create pr
 ```
 
 </details>
