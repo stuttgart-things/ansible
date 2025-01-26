@@ -40,3 +40,8 @@ ansible-playbook sthings.rke.rke2 \
 ```
 
 </details>
+
+
+<details><summary>DEPLOY MULTI-NODE K3s CLUSTER</summary>
+
+</details>
