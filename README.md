@@ -2,6 +2,11 @@
 
 ansible collections, playbooks and examples
 
+## /COLLECTIONS
+
+- [AWX](collections/awx/README.md)
+
+
 ## DEV
 
 <details><summary>BUILD ANSIBLE COLLECTION</summary>
