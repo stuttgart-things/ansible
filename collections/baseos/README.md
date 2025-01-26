@@ -1,6 +1,6 @@
 # stuttgart-things/ansible/collections/baseos
 
-## BASEOS
+## INSTALL
 
 <details><summary>INSTALL COLLECTION</summary>
 
