@@ -18,7 +18,6 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 Deploys a rke2 multi-node cluster.
 
 ```bash
-# CREATE INVENTORY
 cat <<EOF > rke2
 [initial_master_node]
 10.100.136.151
