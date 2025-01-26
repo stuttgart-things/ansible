@@ -29,6 +29,10 @@ jobs:
           ALL_CHANGED_FOLDERS=$(echo "$FILES" | tr ' ' '\n' | while read file; do dirname "$file"; done | sort | uniq | paste -sd ',')
           echo "ALL_CHANGED_FOLDERS=${ALL_CHANGED_FOLDERS}"
 
+          # REMOVE DOT FROM FOLDER NAME
+          ALL_CHANGED_FOLDERS=${ALL_CHANGED_FOLDERS//.,/}
+          echo "ALL_CHANGED_FOLDERS=${ALL_CHANGED_FOLDERS//.}"
+
           # SET CHANGED_FOLDERS AS MATRIX JSON
           tf_folders=$(echo "\"${ALL_CHANGED_FOLDERS}\"" | sed 's/,/", "/g')
           JSON_FOLDERS='{ "collection-directory": ['"${tf_folders}"'] }'

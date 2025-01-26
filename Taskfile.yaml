@@ -135,6 +135,7 @@ tasks:
   pr:
     desc: Create pull request into main
     cmds:
+      - task: commit
       - |
         if gh pr list | grep -q "{{.BRANCH}}"; then
           echo "⚠️ PR already exists for branch {{.BRANCH}}, closing it..."
@@ -142,7 +143,6 @@ tasks:
         else
           echo "✅ No existing PR found for branch {{.BRANCH}}."
         fi
-      - task: commit
       - gh pr create -t "{{ .BRANCH }}" -b "{{ .BRANCH }} branch into main"
       - sleep 20s
       - gh pr checks $(gh pr list | grep "^[^#;]" | grep '{{ .BRANCH }}' | awk '{print $1}') --watch
