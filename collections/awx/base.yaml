@@ -272,6 +272,7 @@ playbooks:
                   - identifier: baseos
                 failure_nodes: []
                 always_nodes: []
+                # adding the baseos template to the workflow
             - identifier: baseos
               unified_job_template:
                 organization:
