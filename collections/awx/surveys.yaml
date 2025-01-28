@@ -99,6 +99,15 @@ vars:
           max: "null"
           choices: '["vsphere", "proxmox"]'
           default: "vsphere"
+        backend_host_url:
+          name: Backend host URL?
+          description: Enter backend host URL
+          required: true
+          type: text
+          variable: backend_host_url
+          min: "null"
+          max: "null"
+          default: "https://artifacts.automation.sthings-vsphere.labul.sva.de"
 
   - name: survey-get-execute-terraform
     file: |
@@ -179,6 +188,15 @@ vars:
           max: "null"
           choices: '["vsphere", "proxmox"]'
           default: "vsphere"
+        backend_host_url:
+          name: Backend host URL?
+          description: Enter backend host URL
+          required: true
+          type: text
+          variable: backend_host_url
+          min: "null"
+          max: "null"
+          default: "https://artifacts.automation.sthings-vsphere.labul.sva.de"
 
   - name: survey-create-vm-workflow
     file: |
