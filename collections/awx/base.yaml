@@ -267,6 +267,23 @@ playbooks:
                   organization:
                     name: "{{ item.value.organization }}"
                 type: inventory_source
+              related:
+                success_nodes:
+                  - identifier: baseos
+                failure_nodes: []
+                always_nodes: []
+            - identifier: baseos
+              unified_job_template:
+                organization:
+                  name: "{{ item.value.organization }}"
+                name: baseos
+                type: job_template
+              credentials: "{{ item.value.credentials }}"
+              extra_data: "{{ item.value.extra_data_baseos}}"
+              related:
+                success_nodes: []
+                failure_nodes: []
+                always_nodes: []
         loop: "{{ lookup('dict', workflow_job_templates, wantlist=True) }}"
         when: workflow_job_templates is defined
 

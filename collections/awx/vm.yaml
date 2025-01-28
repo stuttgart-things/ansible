@@ -134,8 +134,10 @@ vars:
           state: present
           survey_enabled: true
           survey_spec: "{{ lookup('file', 'vars/rendered.json') }}"
-          extra_data_render: "{'target_host': 'localhost', 'bucket_name': 'andre-vm-config'}"
-          extra_data_execute: "{'target_host': 'andre-dev-u22', 'bucket_name': 'andre-vm-config'}"
+          extra_data_render: "{'target_host': 'localhost', 'bucket_name': 'vsphervm-labul'}"
+          extra_data_execute: "{'target_host': 'rahul-awx-test', 'bucket_name': 'vspherevm-labul'}"
+          extra_data_baseos: "{'target_host': 'rahul-awx-as-code'}"
+          extra_vars: "{'ansible_ssh_retries': 10}"
 
   - name: labul
     file: |
