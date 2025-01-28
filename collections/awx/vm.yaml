@@ -134,6 +134,7 @@ vars:
           state: present
           survey_enabled: true
           survey_spec: "{{ lookup('file', 'vars/rendered.json') }}"
+          # target_host, bucket_name can be changed
           extra_data_render: "{'target_host': 'localhost', 'bucket_name': 'vspherevm-labul'}"
           extra_data_execute: "{'target_host': 'rahul-awx-test', 'bucket_name': 'vspherevm-labul'}"
           extra_data_baseos: "{'target_host': 'rahul-awx-as-code'}"
