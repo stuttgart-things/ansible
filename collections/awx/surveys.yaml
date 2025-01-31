@@ -319,8 +319,8 @@ vars:
           variable: nerdctl_version
           min: "null"
           max: "null"
-          choices: '["1.7.5", "1.7.6", "2.0.0-beta.5"]'
-          default: 1.7.6
+          choices: '["2.0.3", "2.0.2", "2.0.1"]'
+          default: 2.0.3
 
   - name: survey-golang
     file: |
@@ -342,7 +342,7 @@ vars:
           variable: golang_version
           min: "null"
           max: "null"
-          default: "1.22.3"
+          default: "1.23.5"
         golang_checksum:
           name: Checksum of target version?
           description: Enter checksum
@@ -351,7 +351,7 @@ vars:
           variable: golang_checksum
           min: "null"
           max: "null"
-          default: "5fb8b3ed4a78a8eab444dfcb472b8c07a06980dcaee62ce3645edd6d130004c6"
+          default: "cbcad4a6482107c7c7926df1608106c189417163428200ce357695cc7e01d091"
         source_url:
           name: Source url of Golang?
           description: Enter URL
@@ -360,7 +360,7 @@ vars:
           variable: source_url
           min: "null"
           max: "null"
-          default: "https://go.dev/dl/go1.22.3.linux-amd64.tar.gz"
+          default: "https://go.dev/dl/go1.23.5.linux-amd64.tar.gz"
         user:
           name: Which user?
           description: Enter user name
@@ -429,8 +429,8 @@ vars:
           variable: kind_version
           min: "null"
           max: "null"
-          choices: '["0.23.0", "0.22.0", "0.21.0", "0.20.0"]'
-          default: "0.22.0"
+          choices: '["0.26.0", "0.25.0", "0.24.0", "0.23.0"]'
+          default: "0.26.0"
         kubectl_version:
           name: Kubectl version?
           description: Choose kind version
@@ -439,8 +439,8 @@ vars:
           variable: kubectl_version
           min: "null"
           max: "null"
-          choices: '["1.30.0", "1.29.0", "1.28.0", "1.27.0"]'
-          default: "1.30.0"
+          choices: '["1.32.0", "1.31.0", "1.30.0", "1.29.0"]'
+          default: "1.32.0"
 
   - name: survey-baseos
     file: |
