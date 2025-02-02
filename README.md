@@ -1,6 +1,6 @@
 # stuttgart-things/ansible
 
-ansible collections, playbooks and examples.
+ansible collections, playbooks and snippets.
 
 ## DEV
 
