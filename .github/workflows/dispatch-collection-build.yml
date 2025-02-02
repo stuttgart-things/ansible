@@ -27,7 +27,7 @@ jobs:
           fetch-depth: '0'
           ref: ${{ inputs.branch-name }}
 
-      - name: Init Collection structure
+      - name: Build Collection
         uses: dagger/dagger-for-github@v7
         with:
           version: "0.15.2"
