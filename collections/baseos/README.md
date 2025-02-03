@@ -11,6 +11,14 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 </details>
 
+<details><summary>CREATE PDNS-ENTRY</summary>
+
+```bash
+ansible-playbook sthings.baseos.pdns-entry -vv
+```
+
+</details>
+
 <details><summary>INSTALL BINARIES</summary>
 
 ```bash
