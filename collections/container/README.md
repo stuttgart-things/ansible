@@ -15,7 +15,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 ```bash
 ansible-playbook sthings.container.tools -vv \
--i /tmp/hosts
+-i /tmp/hosts # example inv
 ```
 
 </details>
