@@ -44,6 +44,23 @@ playbooks:
           systemd_services:
             - containerd
             - buildkit
+
+      # Additions to the playbook #
+        pre-tasks:
+          - name: Stop and disable buildkitd service
+            ansible.builtin.systemd_service:
+              name: buildkit
+              enabled: false
+              state: stopped
+              masked: true
+            become: true
+
+          - name: Kill any running buildkitd process
+            ansible.builtin.shell: |
+              pkill -9 buildkitd || true
+            become: true
+      # End of additions to the playbook #
+
         roles:
           - role: sthings.container.download_install_binary
 
@@ -79,7 +96,8 @@ playbooks:
               name: "{{ item }}"
               enabled: true
               daemon_reload: true
-              state: started
+              state: restarted # restart the service
+              masked: false # unmask the service
             become: true
             with_items:
               - "{{ systemd_services }}"
