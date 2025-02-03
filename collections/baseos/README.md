@@ -20,7 +20,6 @@ ansible-playbook sthings.baseos.binaries -vv \
 
 </details>
 
-
 <details><summary>RENDERING OF VM CONFIG + UPLOAD</summary>
 
 ### RANDOM CONFIG + UPLOAD
