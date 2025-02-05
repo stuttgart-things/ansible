@@ -45,6 +45,9 @@ playbooks:
               target_version: "{{ ko_version }}"
 
         pre_tasks:
+          - name: Include vars
+            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
+
           - name: Check if Golang is already installed
             ansible.builtin.stat:
               path: "{{ golang_install_dir }}/go"
