@@ -269,6 +269,19 @@ playbooks:
                 type: inventory_source
               related:
                 success_nodes:
+                  - identifier: set-stats
+                failure_nodes: []
+                always_nodes: []
+            - identifier: set-stats
+              unified_job_template:
+                organization:
+                  name: "{{ item.value.organization }}"
+                name: set-stats
+                type: job_template
+              credentials: "{{ item.value.credentials }}"
+              #extra_data: "{{ item.value.extra_data_execute }}"
+              related:
+                success_nodes:
                   - identifier: baseos
                 failure_nodes: []
                 always_nodes: []
@@ -280,7 +293,8 @@ playbooks:
                 name: baseos
                 type: job_template
               credentials: "{{ item.value.credentials }}"
-              extra_data: "{{ item.value.extra_data_baseos}}"
+              #extra_data: "{{ item.value.extra_data_baseos}}"
+              extra_data: {}
               related:
                 success_nodes: []
                 failure_nodes: []

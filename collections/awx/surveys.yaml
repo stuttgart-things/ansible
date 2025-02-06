@@ -224,12 +224,11 @@ vars:
           name: VM count?
           description: Choose VM count
           required: false
-          type: multiplechoice
+          type: integer
           variable: vmCount
-          min: "null"
+          min: "0"
           max: "null"
-          choices: '["1", "2", "3", "4", "5"]'
-          default: "1"
+          default: ""
         OS:
           name: Which VM OS-template?
           description: Choose OS
