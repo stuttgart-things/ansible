@@ -213,46 +213,6 @@ playbooks:
             debug:
               var: homerun_result_message
 
-  - name: ansible
-    play: |
-      ---
-      - hosts: "{{ target_host | default('all') }}"
-        become: true
-        gather_facts: true
-
-        vars:
-          update_packages: true
-          ansible_username: sthings
-          os_packages:
-            - sshpass
-
-          python_modules:
-            - name: ansible
-              version: 10.4.0
-            - name: kubernetes
-              version: 31.0.0
-            - name: openshift
-              version: 0.13.2
-            - name: hvac[parser]
-              version: 2.3.0
-            - name: pyvmomi
-              version: 8.0.3.0.1
-
-        roles:
-          - install-requirements
-
-        post_tasks:
-          - name: Download requirements file from git
-            uri:
-              url: https://raw.githubusercontent.com/stuttgart-things/stuttgart-things/main/ansible/requirements.yaml
-              dest: /tmp/requirements.yaml
-
-          - name: Install requirements
-            ansible.builtin.shell: |
-              ansible --version
-              ansible-galaxy install -r /tmp/requirements.yaml -f
-            become_user: "{{ ansible_username }}"
-
   - name: users
     play: |
       ---
