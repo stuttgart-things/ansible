@@ -1,0 +1,72 @@
+
+
+
+---
+playbooks:
+  - name: pre-commit
+    play: |
+      ---
+      - hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: true
+
+        tasks:
+          - name: Install pre-commit
+            ansible.builtin.package:
+              name: pre-commit
+              state: present
+              update_cache: yes
+
+  - name: semantic-release
+    play: |
+      ---
+      - hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: true
+
+        vars:
+          developer: sthings
+          nvm_version: 0.40.1
+          npm_packages:
+            - semantic-release
+            - "@semantic-release/commit-analyzer"
+            - "@semantic-release/release-notes-generator"
+            - "@semantic-release/changelog"
+            - "@semantic-release/git"
+            - "@semantic-release/github"
+            - "@semantic-release/gitlab"
+
+        tasks:
+          - name: Install npm
+            ansible.builtin.package:
+              name: npm
+              state: present
+              update_cache: yes
+
+          - name: Download and install NVM
+            ansible.builtin.shell: |
+              curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v{{ nvm_version }}/install.sh | bash
+            args:
+              creates: ~/.nvm/nvm.sh
+            become: yes
+            become_user: "{{ developer }}"
+
+          - name: Install and use Node.js 20
+            ansible.builtin.shell: |
+              source ~/.nvm/nvm.sh
+              nvm install 20
+              nvm use 20
+            args:
+              executable: /bin/bash
+            become: yes
+            become_user: "{{ developer }}"
+
+          - name: Install NPM packages globally for {{ developer }}
+            ansible.builtin.shell: |
+              source ~/.nvm/nvm.sh
+              npm install -g --save-dev {{ item }}
+            loop: "{{ npm_packages }}"
+            args:
+              executable: /bin/bash
+            become: yes
+            become_user: "{{ developer }}"
