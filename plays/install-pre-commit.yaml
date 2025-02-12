@@ -1,0 +1,11 @@
+---
+- hosts: "{{ target_host | default('all') }}"
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Install pre-commit
+      ansible.builtin.package:
+        name: pre-commit
+        state: present
+        update_cache: yes
