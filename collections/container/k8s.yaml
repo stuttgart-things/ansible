@@ -112,6 +112,7 @@ playbooks:
             ansible.builtin.include_tasks: manifests.yaml
             loop: "{{ q('ansible.builtin.dict', post_manifests) }}"
             when: post_manifests is defined
+
   - name: helm
     play: |
       ---
