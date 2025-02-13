@@ -118,7 +118,6 @@ vars:
             controller:
               hostNetwork: true
 
-        post_manifests: {}
   - name: k3s
     file: |
       ---
