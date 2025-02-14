@@ -1,5 +1,18 @@
 ---
 playbooks:
+  - name: rke2_workflow
+    play: |
+      - hosts: all
+        gather_facts: true
+        become: true
+
+        pre_tasks:
+          - name: Include vars
+            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
+
+        roles:
+          - role: sthings.deploy_rke.deploy_configure_rke
+
   - name: rke2
     play: |
       - hosts: all
