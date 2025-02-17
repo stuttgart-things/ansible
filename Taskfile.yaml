@@ -94,7 +94,7 @@ tasks:
     cmds:
       - |
         COLLECTION_NAME=$(gum choose "baseos" "container")
-        molecule test -s sthings.${COLLECTION_NAME}
+        molecule test -s ${COLLECTION_NAME}
 
   setup-molecule:
     preconditions: *venv

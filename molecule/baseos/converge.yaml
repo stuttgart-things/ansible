@@ -33,6 +33,13 @@
 - name: Install binaries
   ansible.builtin.import_playbook: sthings.baseos.binaries
 
+- name: Install pre-commit
+  ansible.builtin.import_playbook: sthings.baseos.pre_commit
+
+- name: Install semantic-release
+  ansible.builtin.import_playbook: sthings.baseos.semantic_release
+
+
 # - name: Install golang
 #   ansible.builtin.import_playbook: sthings.baseos.golang
 #   vars:

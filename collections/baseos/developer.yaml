@@ -1,6 +1,3 @@
-
-
-
 ---
 playbooks:
   - name: ansible
@@ -89,7 +86,7 @@ playbooks:
             become: yes
             become_user: "{{ developer }}"
 
-  - name: pre-commit
+  - name: pre_commit
     play: |
       ---
       - hosts: "{{ target_host | default('all') }}"
@@ -103,7 +100,7 @@ playbooks:
               state: present
               update_cache: yes
 
-  - name: semantic-release
+  - name: semantic_release
     play: |
       ---
       - hosts: "{{ target_host | default('all') }}"
