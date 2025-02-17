@@ -36,7 +36,7 @@ verifier:
   name: ansible
 
 scenario:
-  name: sthings.baseos
+  name: baseos
   test_sequence:
     - destroy
     - dependency
