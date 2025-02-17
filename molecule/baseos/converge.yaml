@@ -9,9 +9,11 @@
       when: ansible_os_family == 'Debian'
       changed_when: no
 
-    - name: Install unzip
-      apt:
-        name: unzip
+    - name: Install Python3 and venv
+      ansible.builtin.package:
+        name:
+          - unzip
+          - git
         state: present
 
 - name: Create user for golang setup and to test users creation
@@ -24,7 +26,7 @@
         name: sthings user
         groups: ['{{ admin_group }}']
         uid: 1005
-        home: /home/rke
+        home: /home/sthings
         profile: |
           alias ll='ls -ahl'
         generate_ssh_key: false
@@ -36,14 +38,17 @@
 - name: Install pre-commit
   ansible.builtin.import_playbook: sthings.baseos.pre_commit
 
-- name: Install semantic-release
-  ansible.builtin.import_playbook: sthings.baseos.semantic_release
+# - name: Install semantic-release
+#   ansible.builtin.import_playbook: sthings.baseos.semantic_release
 
+- name: Install golang
+  ansible.builtin.import_playbook: sthings.baseos.golang
+  vars:
+    install_addons: false
 
-# - name: Install golang
-#   ansible.builtin.import_playbook: sthings.baseos.golang
-#   vars:
-#     install_addons: false
+- name: ansible
+  ansible.builtin.import_playbook: sthings.baseos.ansible
+
 
 # - name: Install ansible
 #   ansible.builtin.import_playbook: sthings.baseos.ansible
