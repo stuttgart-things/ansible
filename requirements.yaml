@@ -19,7 +19,8 @@ collections:
   - name: ansible.netcommon
     version: 7.1.0
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-25.5.499/sthings-container-25.5.499.tar.gz
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-25.4.1257/sthings-baseos-25.4.1257.tar.gz
+  # - name: sthings.baseos
+    #src: "/tmp/ansible/collections/artifacts/sthings-baseos-25.1.530.tar.gz"
 
 roles:
   - src: https://github.com/stuttgart-things/deploy-configure-rke.git
