@@ -1,5 +1,23 @@
 ---
 playbooks:
+  - name: dev
+    play: |
+      ---
+      - name: Install binaries
+        ansible.builtin.import_playbook: sthings.baseos.binaries
+
+      - name: Install ansible
+        ansible.builtin.import_playbook: sthings.baseos.ansible
+
+      - name: Install golang
+        ansible.builtin.import_playbook: sthings.baseos.golang
+
+      - name: Install pre_commit
+        ansible.builtin.import_playbook: sthings.baseos.pre_commit
+
+      - name: Install semantic_release
+        ansible.builtin.import_playbook: sthings.baseos.semantic_release
+
   - name: ansible
     play: |
       ---
