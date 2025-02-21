@@ -5,9 +5,29 @@ playbooks:
       ---
       - hosts: "{{ target_host | default('all') }}"
         become: true
+        tasks:
+          - name: Install Podman on Debian/Ubuntu
+            apt:
+              name: podman
+              state: present
+              update_cache: yes
+            when: ansible_os_family == "Debian"
 
-        roles:
-          - role: sthings.container.install_configure_podman
+          - name: Install Podman on RHEL-based distros
+            dnf:
+              name: podman
+              state: present
+              update_cache: yes
+            when: ansible_os_family == "RedHat"
+
+          - name: Verify Podman installation
+            command: podman --version
+            register: podman_version
+            changed_when: false
+
+          - name: Show installed Podman version
+            debug:
+              msg: "Installed Podman version: {{ podman_version.stdout }}"
 
   - name: docker
     play: |
