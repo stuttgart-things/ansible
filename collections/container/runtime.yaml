@@ -29,6 +29,11 @@ playbooks:
             debug:
               msg: "Installed Podman version: {{ podman_version.stdout }}"
 
+          - name: Restart containerd service
+            ansible.builtin.service:
+              name: containerd
+              state: restarted
+
   - name: docker
     play: |
       ---

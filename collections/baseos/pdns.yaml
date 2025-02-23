@@ -1,6 +1,6 @@
 ---
 playbooks:
-  - name: pdns-entry
+  - name: pdns
     play: |
       ---
       - hosts: localhost
