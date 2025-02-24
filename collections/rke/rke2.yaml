@@ -11,7 +11,7 @@ playbooks:
             ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
 
         roles:
-          - role: sthings.deploy_rke.deploy_configure_rke
+          - role: sthings.rke.deploy_configure_rke
 
   - name: rke2
     play: |
@@ -43,7 +43,7 @@ playbooks:
               release_values: "{{ values_cilium }}"
 
         roles:
-          - role: sthings.deploy_rke.deploy_configure_rke
+          - role: sthings.rke.deploy_configure_rke
 
   - name: helm
     play: |
