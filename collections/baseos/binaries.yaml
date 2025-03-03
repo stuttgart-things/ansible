@@ -19,7 +19,7 @@ vars:
       gum_version: 0.15.2 # datasource=github-tags depName=charmbracelet/gum
       gh_version: 2.67.0 # datasource=github-tags depName=cli/cli
       task_version: 3.41.0 # datasource=github-tags depName=go-task/task
-      hugo_version: 0.144.2 # datasource=github-tags depName=gohugoio/hugo
+      hugo_version: 0.145.0 # datasource=github-tags depName=gohugoio/hugo
       terraform_version: 1.11.0 # datasource=custom.hashicorp
       packer_version: 1.12.0 # datasource=custom.hashicorp
       yq_version: 4.45.1 # datasource=github-tags depName=mikefarah/yq
