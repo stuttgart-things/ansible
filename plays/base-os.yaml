@@ -54,7 +54,7 @@
   tasks:
     - name: Install vault ca certificate to local system from multiple instances
       ansible.builtin.include_role:
-        name: install-configure-vault
+        name: install_configure_vault
         tasks_from: install-ca-auth
       vars:
         vault_url: "{{ vault_instance }}"
