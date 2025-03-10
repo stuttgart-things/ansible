@@ -30,7 +30,7 @@ ansible-playbook sthings.baseos.binaries -vv \
 
 <details><summary>RENDERING OF VM CONFIG + UPLOAD</summary>
 
-### RANDOM CONFIG + UPLOAD
+### GENERATE RANDOM VM CONFIG + UPLOAD TO S3
 
 ```bash
 ansible-playbook sthings.baseos.render_upload_vm -vv \
