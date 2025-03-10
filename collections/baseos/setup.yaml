@@ -142,10 +142,10 @@ playbooks:
 
         roles:
           - role: manage-filesystem
-            when: manage_filesystem|bool
+            when: sthings.baseos.manage_filesystem|bool
 
           - role: install-requirements
-            when: install_requirements|bool
+            when: sthings.baseos.install_requirements|bool
 
         pre_tasks:
           - name: Include vars
@@ -158,7 +158,7 @@ playbooks:
         tasks:
           - name: Install vault ca certificate to local system from multiple instances
             ansible.builtin.include_role:
-              name: install-configure-vault
+              name: sthings.baseos.install_configure_vault
               tasks_from: install-ca-auth
             vars:
               vault_url: "{{ vault_instance }}"
@@ -169,7 +169,7 @@ playbooks:
 
           - name: Send webhook to msteams
             ansible.builtin.include_role:
-              name: create-send-webhook
+              name: sthings.baseos.create_send_webhook
             vars:
               summary_text: base-os-setup was executed
               msteams_url: "{{ msteams_webhook_url }}"
