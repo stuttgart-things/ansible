@@ -45,7 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.Analyze-Collection-Config.outputs.collection_folders) }}
-    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-ansible-collection.yaml@feature/add-homerun-task-go
+    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-ansible-collection.yaml@golang-1.24.0
     with:
       runs-on: dagger
       environment-name: k8s
