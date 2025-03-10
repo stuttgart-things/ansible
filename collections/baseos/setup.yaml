@@ -141,11 +141,11 @@ playbooks:
             - https://vault-vsphere.tiab.labda.sva.de:8200
 
         roles:
-          - role: manage-filesystem
-            when: sthings.baseos.manage_filesystem|bool
+          - role: sthings.baseos.manage_filesystem
+            when: manage_filesystem|bool
 
-          - role: install-requirements
-            when: sthings.baseos.install_requirements|bool
+          - role: sthings.baseos.install_requirements
+            when: install_requirements|bool
 
         pre_tasks:
           - name: Include vars
