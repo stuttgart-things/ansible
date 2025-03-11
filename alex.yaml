@@ -1,0 +1,16 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  labels:
+    app: alex
+    app.kubernetes.io/managed-by: Alex
+  name: alex-ingress
+  namespace: homerun
+spec:
+  commonName: alex.homerun-dev.sthings-vsphere.labul.sva.de
+  dnsNames:
+  - alex.homerun-dev.sthings-vsphere.labul.sva.de
+  issuerRef:
+    kind: ClusterIssuer
+    name: vault-approle
+  secretName: alex-ingress-tls
