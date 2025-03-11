@@ -11,6 +11,38 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 </details>
 
+<details><summary>DEPLOY DEV MACHINE</summary>
+
+```bash
+cat <<EOF > ./inv-dev-vm
+# EXAMPLE | CHANGE TO YOUR FQDN/IP
+10.100.136.151
+[defaults]
+host_key_checking = False
+EOF
+
+cat <<EOF > ./dev-vars.yaml
+---
+golang_version: 1.24.1
+manage_filesystem: true
+update_packages: true
+install_requirements: true
+install_motd: true
+username: sthings
+lvm_home_sizing: '15%'
+lvm_root_sizing: '35%'
+lvm_var_sizing: '50%'
+event_author: crossplane
+event_tags: ansible,baseos,crossplane,tekton
+send_to_msteams: true
+reboot_all: false
+EOF
+
+ansible-playbook -i ./inv-dev-vm sthings.baseos.dev -e path_to_vars_file=$(pwd)/dev-vars -vv
+```
+
+</details>
+
 <details><summary>CREATE PDNS-ENTRY</summary>
 
 ```bash
