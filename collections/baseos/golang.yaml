@@ -109,6 +109,16 @@ playbooks:
             args:
               chdir: "{{ golang_install_dir }}/go/bin/"
             when: install_addons|bool
+
+          - name: Install protobuf compiler & gen go
+            ansible.builtin.apt:
+              name: "{{ item }}"
+              state: present
+              update_cache: yes
+            loop:
+              - protobuf-compiler
+              - protoc-gen-go
+
         roles:
           - role: sthings.baseos.download_install_binary
 
