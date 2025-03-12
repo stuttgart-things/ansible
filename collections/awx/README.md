@@ -3,7 +3,7 @@
 ## INSTALL
 
 ```bash
-ansible-galaxy collection install https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-25.4.1280/sthings-awx-25.4.1280.tar.gz -f
+ansible-galaxy collection install https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-25.4.1409.tar.gz/sthings-awx-25.4.1409.tar.gz -f
 ```
 
 ## EXPORT AWX-CREDS
@@ -12,6 +12,13 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 export CONTROLLER_HOST=https://awx-dev.homerun-dev.sthings-vsphere.labul.sva.de
 export CONTROLLER_USERNAME=admin
 export CONTROLLER_PASSWORD=<PASSWORD>
+export CONTROLLER_VERIFY_SSL=TRUE # OR FALSE
+```
+
+<details><summary>HELLO</summary>
+
+```bash
+ansible-playbook sthings.awx.hello_awx -vv
 ```
 
 <details><summary>DOCKER</summary>
