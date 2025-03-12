@@ -1,5 +1,28 @@
 ---
 playbooks:
+  - name: dev_config
+    play: |
+      ---
+      - hosts: "{{ target_host | default('all') }}"
+        become: true
+        vars:
+          developer: sthings
+          developer_user_dir: "/home/{{ developer }}"
+
+        tasks:
+          - name: Restart containerd service
+            ansible.builtin.systemd:
+              name: containerd
+              state: restarted
+
+          - name: Create ~/.kube dir for {{ developer }}
+            ansible.builtin.file:
+              path: "{{ developer_user_dir }}/.kube"
+              state: directory
+              owner: "{{ developer }}"
+              group: "{{ developer }}"
+              mode: '0755'
+
   - name: dev
     play: |
       - name: Base setup
@@ -28,6 +51,12 @@ playbooks:
 
       - name: Install nerdctl
         import_playbook: sthings.container.nerdctl
+
+      - name: Install podman
+        import_playbook: sthings.container.podman
+
+      - name: Execute dev config
+        import_playbook: sthings.container.dev_config
 
   - name: ansible
     play: |

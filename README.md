@@ -2,6 +2,13 @@
 
 ansible collections, playbooks and snippets.
 
+## COLLECTIONS
+
+* [BASEOS](collections/baseos/README.md)
+* [CONTAINER](collections/container/README.md)
+* [RKE](collections/rke/README.md)
+* [AWX](collections/awx/README.md)
+
 ## DEV
 
 <details><summary>BUILD ANSIBLE COLLECTION</summary>
@@ -11,7 +18,6 @@ task build-collection
 ```
 
 </details>
-
 
 ## TASKS
 
@@ -24,6 +30,7 @@ task: Available tasks for this project:
 * check:                  Run pre-commit hooks
 * commit:                 Commit + push code into branch
 * create-release:         Create release on github w/ artifact
+* do:                     Select a task to run
 * pr:                     Create pull request into main
 * setup-venv:             Setup python virtual environment
 ```
@@ -50,6 +57,8 @@ limitations under the License.
 
 </details>
 
+```bash
 Author Information
 ------------------
 Patrick Hermann, stuttgart-things 11/2024
+```
