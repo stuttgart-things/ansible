@@ -11,6 +11,8 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 </details>
 
+## USAGE
+
 <details><summary>DEPLOY DEV MACHINE</summary>
 
 ```bash

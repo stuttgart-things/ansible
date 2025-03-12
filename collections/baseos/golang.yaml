@@ -108,7 +108,6 @@ playbooks:
               ./go install github.com/golangci/golangci-lint/cmd/golangci-lint@{{ golangci_version }}
             args:
               chdir: "{{ golang_install_dir }}/go/bin/"
-            when: install_addons|bool
 
           - name: Install protobuf compiler & gen go
             ansible.builtin.apt:
