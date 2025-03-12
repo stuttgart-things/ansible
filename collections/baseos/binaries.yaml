@@ -20,7 +20,7 @@ vars:
       gh_version: 2.68.1 # datasource=github-tags depName=cli/cli
       task_version: 3.42.1 # datasource=github-tags depName=go-task/task
       hugo_version: 0.145.0 # datasource=github-tags depName=gohugoio/hugo
-      terraform_version: 1.11.1 # datasource=custom.hashicorp
+      terraform_version: 1.11.2 # datasource=custom.hashicorp
       packer_version: 1.12.0 # datasource=custom.hashicorp
       yq_version: 4.45.1 # datasource=github-tags depName=mikefarah/yq
       jq_version: 1.7.1 # datasource=github-tags depName=jqlang/jq
