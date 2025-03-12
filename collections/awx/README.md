@@ -3,7 +3,7 @@
 ## INSTALL
 
 ```bash
-ansible-galaxy collection install https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-25.4.1409.tar.gz/sthings-awx-25.4.1409.tar.gz -f
+ansible-galaxy collection install https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-25.3.709/sthings-awx-25.3.709.tar.gz -f
 ```
 
 ## EXPORT AWX-CREDS
