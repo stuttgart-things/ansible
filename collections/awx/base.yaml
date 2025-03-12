@@ -7,6 +7,7 @@ playbooks:
         ansible.builtin.uri:
           url: "{{ controller_host }}/api/v2"
           method: GET
+          validate_certs: "{{ tower_verify_ssl }}"
         register: _result
         until: _result.status == 200
         retries: 10
@@ -665,6 +666,7 @@ vars:
       vault_approle_id: "{{ lookup('env', 'VAULT_ROLE_ID') }}"
       vault_approle_secret: "{{ lookup('env', 'VAULT_SECRET_ID') }}"
       vault_url: "{{ lookup('env', 'VAULT_ADDR') }}"
+      tower_verify_ssl: "{{ lookup('env', 'CONTROLLER_VERIFY_SSL') }}"
 
   - name: s3-instances
     file: | # pragma: allowlist secret

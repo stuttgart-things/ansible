@@ -21,7 +21,7 @@ collections:
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-25.3.391/sthings-container-25.3.391.tar.gz
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-25.3.412/sthings-baseos-25.3.412.tar.gz
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-rke-25.5.532.tar.gz/sthings-rke-25.5.532.tar.gz
-
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-25.4.1409.tar.gz/sthings-awx-25.4.1409.tar.gz
 roles:
   - src: https://github.com/stuttgart-things/deploy-configure-rke.git
     scm: git
