@@ -54,7 +54,7 @@ playbooks:
           - ansible.builtin.import_tasks: render_survey.yaml
           - ansible.builtin.import_tasks: creation_tasks.yaml
 
-  - name: set-stats
+  - name: set_stats
     play: |
       ---
       - hosts: "{{ target_host | default('localhost') }}"
