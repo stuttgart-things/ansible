@@ -59,6 +59,7 @@ limitations under the License.
 
 ```bash
 Author Information
-------------------
+-------------------
 Patrick Hermann, stuttgart-things 11/2024
+
 ```
