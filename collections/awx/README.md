@@ -20,6 +20,7 @@ export CONTROLLER_VERIFY_SSL=TRUE # OR FALSE
 ```bash
 ansible-playbook sthings.awx.hello_awx -vv
 ```
+</details>
 
 <details><summary>DOCKER</summary>
 
