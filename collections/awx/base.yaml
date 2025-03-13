@@ -208,7 +208,7 @@ playbooks:
           execution_environment: "{{ item.value.executionenv }}"
           state: "{{ item.value.state }}"
           ask_verbosity_on_launch: "{{ item.value.ask_verbosity_on_launch }}"
-          validate_certs: false
+          validate_certs: false # this should be a global variable
           survey_enabled: "{{ item.value.survey_enabled | default(omit) }}"
           survey_spec: "{{ item.value.survey_spec | default(omit) }}"
           extra_vars: "{{ item.value.extraVars | default(omit) }}"
