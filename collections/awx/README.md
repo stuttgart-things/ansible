@@ -30,3 +30,36 @@ ansible-playbook sthings.awx.docker -vv
 ```
 
 </details>
+
+<details><summary>DEPLOY JOBS SCRIPT</summary>
+
+Replace/Add/Remove job names inside arr-Variable if you want to deploy specific jobs
+
+```bash
+export CONTROLLER_HOST=https://awx.<DOMAIN>.sva.de #EXAMPLE!
+export CONTROLLER_USERNAME=admin #EXAMPLE!
+export CONTROLLER_PASSWORD=<PASSWORD>
+
+arr=("baseos" "golang" "nerdctl" "docker")
+for i in ${!arr[@]};
+do
+  echo $i "${arr[i]}";
+  ansible-playbook sthings.awx."${arr[i]}" -vv;
+done
+```
+
+
+```bash
+export CONTROLLER_HOST=https://awx.<DOMAIN>.sva.de #EXAMPLE!
+export CONTROLLER_USERNAME=admin #EXAMPLE!
+export CONTROLLER_PASSWORD=<PASSWORD>
+
+arr=("set_stats" "render_upload_template" "get_execute_terraform" "create_vm_workflow")
+for i in ${!arr[@]};
+do
+  echo $i "${arr[i]}";
+  ansible-playbook sthings.awx."${arr[i]}" -vv;
+done
+```
+
+</details>
