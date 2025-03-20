@@ -34,9 +34,6 @@ provisioner:
   name: ansible
   playbooks:
     converge: ${MOLECULE_PLAYBOOK:-converge.yaml}
-  config_options:
-    defaults:
-      remote_tmp: /home/sthings/.ansible/tmp/ansible-$USER
 
 verifier:
   name: ansible
