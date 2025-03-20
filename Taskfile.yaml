@@ -100,7 +100,7 @@ tasks:
     preconditions: *venv
     cmds:
       - |
-        COLLECTION_NAME=$(gum choose "baseos" "container")
+        COLLECTION_NAME=$(gum choose "baseos" "container" "awx" )
         molecule test -s ${COLLECTION_NAME}
 
   setup-molecule:

@@ -4,13 +4,21 @@ dependency:
   enabled: True
   options:
     ignore-certs: True
-    requirements-file: requirements.yaml
+    #requirements-file: requirements.yaml
     ignore-errors: false
     force: True
 
 driver:
   name: docker
 platforms:
+  # - name: rocky9
+  #   image: "geerlingguy/docker-${MOLECULE_DISTRO:-rockylinux9}-ansible:latest"
+  #   command: ${MOLECULE_DOCKER_COMMAND:-""}
+  #   volumes:
+  #     - /sys/fs/cgroup:/sys/fs/cgroup:rw
+  #   cgroupns_mode: host
+  #   privileged: true
+  #   pre_build_image: true
   - name: ubuntu24
     image: geerlingguy/docker-ubuntu2404-ansible@sha256:129f93fb11c00d2452f541fc926234a2ecf7957d7348fb07832bd0bf6973f503
     command: ${MOLECULE_DOCKER_COMMAND:-""} #sudo apt update -y && sudo apt upgrade -y
@@ -28,7 +36,7 @@ verifier:
   name: ansible
 
 scenario:
-  name: container
+  name: awx
   test_sequence:
     - destroy
     - dependency

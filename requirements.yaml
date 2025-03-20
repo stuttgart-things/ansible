@@ -1,27 +1,4 @@
 ---
-collections:
-  - name: community.crypto
-    version: 2.26.0
-  - name: community.general
-    version: 10.4.0
-  - name: ansible.posix
-    version: 2.0.0
-  - name: kubernetes.core
-    version: 5.0.0
-  - name: community.docker
-    version: 4.5.1
-  - name: community.vmware
-    version: 5.4.0
-  - name: awx.awx
-    version: 24.6.1
-  - name: community.hashi_vault
-    version: 6.2.0
-  - name: ansible.netcommon
-    version: 7.1.0
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-25.3.391/sthings-container-25.3.391.tar.gz
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-25.3.412/sthings-baseos-25.3.412.tar.gz
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-rke-25.5.532.tar.gz/sthings-rke-25.5.532.tar.gz
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-25.4.1409.tar.gz/sthings-awx-25.4.1409.tar.gz
 roles:
   - src: https://github.com/stuttgart-things/deploy-configure-rke.git
     scm: git
@@ -56,3 +33,27 @@ roles:
   - src: https://github.com/stuttgart-things/manage-proxmox-resources.git
     scm: git
     version: 2024.05.27
+
+collections:
+  - name: community.crypto
+    version: 2.26.0
+  - name: community.general
+    version: 10.4.0
+  - name: ansible.posix
+    version: 2.0.0
+  - name: kubernetes.core
+    version: 5.1.0
+  - name: community.docker
+    version: 4.5.1
+  - name: community.vmware
+    version: 5.4.0
+  - name: awx.awx
+    version: 24.6.1
+  - name: community.hashi_vault
+    version: 6.2.0
+  - name: ansible.netcommon
+    version: 7.1.0
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-25.1.1019.tar.gz/sthings-container-25.1.1019.tar.gz
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-25.5.138.tar.gz/sthings-baseos-25.5.138.tar.gz
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-25.4.800.tar.gz/sthings-awx-25.4.800.tar.gz
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-rke-25.1.568.tar.gz/sthings-rke-25.1.568.tar.gz

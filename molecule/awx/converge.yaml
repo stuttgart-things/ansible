@@ -1,0 +1,25 @@
+---
+- name: Converge
+  hosts: all
+  gather_facts: false
+
+- name: Create baseos job
+  ansible.builtin.import_playbook: sthings.awx.baseos
+
+- name: Create schedule_baseos job
+  ansible.builtin.import_playbook: sthings.awx.schedule_baseos
+
+- name: Create hello_awx job
+  ansible.builtin.import_playbook: sthings.awx.hello_awx
+
+- name: Create render_upload_template job
+  ansible.builtin.import_playbook: sthings.awx.render_upload_template
+
+- name: Create get_execute_terraform job
+  ansible.builtin.import_playbook: sthings.awx.get_execute_terraform
+
+- name: Create set_stats job
+  ansible.builtin.import_playbook: sthings.awx.set_stats
+
+- name: Create create_vm_workflow job
+  ansible.builtin.import_playbook: sthings.awx.create_vm_workflow
