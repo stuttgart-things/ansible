@@ -21,14 +21,18 @@ platforms:
     pre_build_image: true
 provisioner:
   name: ansible
+  options:
+    vvv: true
   playbooks:
     converge: ${MOLECULE_PLAYBOOK:-converge.yaml}
+  env:
+    MY_ENV_VAR: "Set from molecule.yml"
 
 verifier:
   name: ansible
 
 scenario:
-  name: container
+  name: awx
   test_sequence:
     - destroy
     - dependency

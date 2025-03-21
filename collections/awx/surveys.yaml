@@ -584,7 +584,7 @@ vars:
           max: "null"
           default: "baseos"
         cron_date:
-          name: "On which date should this job run? (Format: 2024-06-30)"
+          name: On which date should this job run? (e.g 2024-06-30)
           description: Enter first day to schedule
           required: true
           type: text
