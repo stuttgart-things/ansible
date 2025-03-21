@@ -226,8 +226,8 @@ vars:
           required: false
           type: integer
           variable: vmCount
-          min: "0"
-          max: "null"
+          min: "1"
+          max: "5"
           default: ""
         OS:
           name: Which VM OS-template?
@@ -584,7 +584,7 @@ vars:
           max: "null"
           default: "baseos"
         cron_date:
-          name: On which date should this job run? (Format: 2024-06-30)
+          name: "On which date should this job run? (Format: 2024-06-30)"
           description: Enter first day to schedule
           required: true
           type: text

@@ -106,7 +106,7 @@ playbooks:
         when: scmCredentials is defined
 
       - name: Create custom credential type
-        awx.awx.tower_credential_type:
+        awx.awx.credential_type:
           name: "{{ item.value.name }}"
           kind: "{{ item.value.kind }}"
           state: "{{ item.value.state }}"
@@ -117,7 +117,7 @@ playbooks:
         when: custom_credential_types is defined
 
       - name: Create custom credential from custom credential type
-        awx.awx.tower_credential:
+        awx.awx.credential:
           name: "{{ item.value.name }}"
           organization: "{{ item.value.organization }}"
           credential_type: "{{ item.value.credential_type }}"
