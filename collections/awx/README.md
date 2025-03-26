@@ -6,7 +6,7 @@
 ansible-galaxy collection install https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-25.4.800.tar.gz/sthings-awx-25.4.800.tar.gz -f
 ```
 
-## EXPORT AWX-CREDS
+## SET AWX CREDENTIALS
 
 ```bash
 export CONTROLLER_HOST=https://awx-dev.homerun-dev.sthings-vsphere.labul.sva.de
