@@ -118,6 +118,44 @@ vars:
             controller:
               hostNetwork: true
 
+  - name: cilium-kind
+    file: |
+      ---
+      cilium_version: v1.7.2
+      deployment_namespace: cilium
+      helm_repositories:
+        cilium:
+          url: https://helm.cilium.io
+
+      helm_releases:
+        cilium:
+          ref: cilium/cilium
+          version: "{{ cilium_version }}"
+          namespace: "{{ deployment_namespace }}"
+          ignore: false
+          wait: true
+          release_values: |
+            kubeProxyReplacement: true
+            routingMode: "native"
+            ipv4NativeRoutingCIDR: "10.244.0.0/16"
+            k8sServiceHost: {{ cluster_name }}-control-plane
+            k8sServicePort: 6443
+
+            l2announcements:
+              enabled: true
+              leaseDuration: "3s"
+              leaseRenewDeadline: "1s"
+              leaseRetryPeriod: "500ms"
+
+            devices: ["eth0", "net0"]
+            externalIPs:
+              enabled: true
+              
+            autoDirectNodeRoutes: true
+            operator:
+              replicas: 2
+          
+
   - name: k3s
     file: |
       ---
