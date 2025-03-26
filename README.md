@@ -61,5 +61,5 @@ limitations under the License.
 Author Information
 -------------------
 Patrick Hermann, stuttgart-things 11/2024
-
+Andre Ebert, stuttgart-things 04/2024
 ```
