@@ -130,7 +130,7 @@ vars:
       helm_releases:
         cilium:
           ref: cilium/cilium
-          version: "{{ cilium_version }}"
+          version: "{{ cilium_version | default('v1.7.2') }}"
           namespace: "{{ deployment_namespace }}"
           ignore: false
           wait: true
