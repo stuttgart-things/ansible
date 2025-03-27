@@ -166,20 +166,6 @@ playbooks:
           state: "{{ state | default('present') }}"
           definition: "{{ lookup('template', '/tmp/{{ item.key }}.yaml.j2') | from_yaml }}"
 
-  - name: kind
-    play: |
-      ---
-      - hosts: "{{ target_host | default('all') }}"
-        become: true
-        vars:
-          docker_install_compose: true
-          install_kind: true
-          kind_version: 0.27.0 # datasource=github-tags depName=kubernetes-sigs/kind
-          kubectl_version: v1.30.2 # datasource=github-tags depName=kubernetes/kubectl
-
-        roles:
-          - role: sthings.container.install_configure_docker
-
   - name: helm_config
     play: |
       ---
