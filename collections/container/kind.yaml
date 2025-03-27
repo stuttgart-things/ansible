@@ -25,6 +25,37 @@ playbooks:
         roles:
           - role: sthings.container.install_configure_docker
 
+  - name: ingress-nginx-kind
+    file: |
+      ---
+      ingress_nginx_version: 4.11.2
+      deployment_namespace: ingress-nginx
+      helm_repositories:
+        ingress-nginx:
+          url: https://kubernetes.github.io/ingress-nginx
+      helm_releases:
+        ingress-nginx:
+          ref: ingress-nginx/ingress-nginx
+          version: "{{ ingress_nginx_version | default('4.11.2') }}"
+          namespace: "{{ deployment_namespace }}"
+          ignore: false
+          wait: true
+          release_values: |
+            controller:
+              nodeSelector:
+                ingress-ready: "true"
+                node-role.kubernetes.io/control-plane: ""
+              tolerations:
+                - key: "node-role.kubernetes.io/control-plane"
+                  operator: "Exists"
+                  effect: "NoSchedule"
+              service:
+                type: NodePort
+              admissionWebhooks:
+                enabled: false
+              hostPort:
+                enabled: true
+
   - name: cilium-kind
     file: |
       ---
@@ -86,3 +117,30 @@ playbooks:
               matchExpressions:
               - key: node-role.kubernetes.io/control-plane
                 operator: DoesNotExist
+
+  - name: cert-manager-kind
+    file: |
+      ---
+      deployment_namespace: cert-manager
+      helm_repositories:
+        cert-manager:
+          url: https://charts.jetstack.io
+
+      helm_releases:
+        cert-manager:
+          ref: cert-manager/cert-manager
+          version: "{{ cert_manager_version | default('v1.16.0') }}"
+          namespace: "{{ deployment_namespace }}"
+          ignore: false
+          wait: true
+          release_values: |
+            installCRDs: true
+
+      post_manifests:
+        cluster-issuer:
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: selfsigned
+          spec:
+              selfSigned: {}
