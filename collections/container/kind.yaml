@@ -65,6 +65,10 @@ playbooks:
         cilium:
           url: https://helm.cilium.io
 
+      crd_checks:
+        - "ciliumloadbalancerippools.cilium.io"
+        - "ciliuml2announcementpolicies.cilium.io"
+
       helm_releases:
         cilium:
           ref: cilium/cilium
@@ -92,6 +96,7 @@ playbooks:
             autoDirectNodeRoutes: true
             operator:
               replicas: 2
+
       post_manifests:
         CiliumLoadBalancerIPPool:
           apiVersion: "cilium.io/v2alpha1"
