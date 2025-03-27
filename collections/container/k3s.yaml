@@ -150,7 +150,7 @@ vars:
             devices: ["eth0", "net0"]
             externalIPs:
               enabled: true
-              
+
             autoDirectNodeRoutes: true
             operator:
               replicas: 2
@@ -179,7 +179,6 @@ vars:
               matchExpressions:
               - key: node-role.kubernetes.io/control-plane
                 operator: DoesNotExist
-          
 
   - name: k3s
     file: |
