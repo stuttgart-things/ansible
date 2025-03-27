@@ -1,0 +1,88 @@
+---
+playbooks:
+  - name: kind
+    play: |
+      ---
+      - hosts: "{{ target_host | default('all') }}"
+        become: true
+
+        vars:
+          docker_install_compose: true
+          install_kind: true
+
+          ansible_user: sthings
+          kind_version: 0.27.0 # datasource=github-tags depName=kubernetes-sigs/kind
+          kind_cluster_name: kind1
+
+          # ALSO KIND KUBERNETES VERSION
+          kubectl_version: 1.32.3 # datasource=github-tags depName=kubernetes/kubectl
+          create_kind_cluster: true
+          count_worker_nodes: 3
+          count_controlplane_nodes: 1
+          enable_ingress_ports: true
+          enable_host_paths: true
+
+        roles:
+          - role: sthings.container.install_configure_docker
+
+  - name: cilium-kind
+    file: |
+      ---
+      cilium_version: v1.17.2
+      deployment_namespace: cilium
+      helm_repositories:
+        cilium:
+          url: https://helm.cilium.io
+
+      helm_releases:
+        cilium:
+          ref: cilium/cilium
+          version: "{{ cilium_version | default('v1.17.2') }}"
+          namespace: "{{ deployment_namespace }}"
+          ignore: false
+          wait: true
+          release_values: |
+            kubeProxyReplacement: true
+            routingMode: "native"
+            ipv4NativeRoutingCIDR: "10.244.0.0/16"
+            k8sServiceHost: {{ cluster_name }}-control-plane
+            k8sServicePort: 6443
+
+            l2announcements:
+              enabled: true
+              leaseDuration: "3s"
+              leaseRenewDeadline: "1s"
+              leaseRetryPeriod: "500ms"
+
+            devices: ["eth0", "net0"]
+            externalIPs:
+              enabled: true
+
+            autoDirectNodeRoutes: true
+            operator:
+              replicas: 2
+      post_manifests:
+        CiliumLoadBalancerIPPool:
+          apiVersion: "cilium.io/v2alpha1"
+          kind: CiliumLoadBalancerIPPool
+          metadata:
+            name: ip-pool
+          spec:
+            blocks:
+              - start: "{{ ipRangeStart | default('172.18.250.0') }}"
+                stop: "{{ ipRangeEnd | default('172.18.250.50') }}"
+        ciliumL2AnnouncementPolicy:
+          apiVersion: cilium.io/v2alpha1
+          kind: CiliumL2AnnouncementPolicy
+          metadata:
+            name: default-l2-announcement-policy
+            namespace: "{{ deployment_namespace }}"
+          spec:
+            externalIPs: false
+            loadBalancerIPs: true
+            interfaces:
+              - ^eth[0-9]+
+            nodeSelector:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
