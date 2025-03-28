@@ -78,24 +78,21 @@ playbooks:
           wait: true
           release_values: |
             kubeProxyReplacement: true
-            routingMode: "native"
-            ipv4NativeRoutingCIDR: "10.244.0.0/16"
+            routingMode: native
+            ipv4NativeRoutingCIDR: "{{ cilium_cids | default("10.244.0.0/16") }}"
             k8sServiceHost: {{ cluster_name }}-control-plane
-            k8sServicePort: 6443
-
+            k8sServicePort: {{ ciliumK8sServicePort | default(6443) }}
             l2announcements:
               enabled: true
               leaseDuration: "3s"
               leaseRenewDeadline: "1s"
               leaseRetryPeriod: "500ms"
-
             devices: ["eth0", "net0"]
             externalIPs:
               enabled: true
-
             autoDirectNodeRoutes: true
             operator:
-              replicas: 2
+              replicas: {{ cilium_replcias | default(2) }}
 
       post_manifests:
         CiliumLoadBalancerIPPool:

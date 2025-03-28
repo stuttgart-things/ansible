@@ -11,6 +11,21 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 </details>
 
+
+<details><summary>DEPLOY KIND CLUSTER</summary>
+
+```bash
+ansible-playbook sthings.container.kind -vv \
+-e kind_cluster_name=kind1 \
+-e kubectl_version=1.32.3 \
+-e count_worker_nodes=3 \
+-e count_controlplane_nodes=1 \
+-i /tmp/hosts \
+-vv
+```
+
+</details>
+
 <details><summary>INSTALL TOOLS</summary>
 
 ```bash
