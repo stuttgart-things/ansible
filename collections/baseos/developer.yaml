@@ -25,7 +25,7 @@ playbooks:
               mode: '0755'
 
           - name: Install Crossplane cli
-            ansible.builtin.bash: |
+            ansible.builtin.shell: |
               curl -sL "{{ crossplane_cli_url }}" | sh
 
   - name: dev
