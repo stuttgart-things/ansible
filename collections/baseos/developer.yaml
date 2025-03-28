@@ -61,7 +61,7 @@ playbooks:
         import_playbook: sthings.container.podman
 
       - name: Execute dev config
-        import_playbook: sthings.container.dev_config
+        import_playbook: sthings.baseos.dev_config
 
   - name: ansible
     play: |
