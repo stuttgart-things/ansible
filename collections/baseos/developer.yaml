@@ -9,6 +9,7 @@ playbooks:
           developer: sthings
           developer_user_dir: "/home/{{ developer }}"
           crossplane_cli_url: https://raw.githubusercontent.com/crossplane/crossplane/main/install.sh
+          bin_dir: /usr/local/bin
 
         tasks:
           - name: Restart containerd service
@@ -27,6 +28,9 @@ playbooks:
           - name: Install Crossplane cli
             ansible.builtin.shell: |
               curl -sL "{{ crossplane_cli_url }}" | sh
+              mv crossplane {{ bin_dir }}
+            args:
+              chdir: /tmp
 
   - name: dev
     play: |

@@ -28,8 +28,10 @@ playbooks:
 vars:
   - name: cilium-kind
     file: |
+      ---
       deployment_namespace: kube-system
       cilium_version: v1.17.2
+
       helm_repositories:
         cilium:
           url: https://helm.cilium.io
@@ -37,7 +39,7 @@ vars:
       helm_releases:
         cilium:
           ref: cilium/cilium
-          version: "{{  cilium_version }}"
+          version: "{{  cilium_version}}"
           namespace: "{{ deployment_namespace }}"
           ignore: false
           wait: true
@@ -63,31 +65,31 @@ vars:
         - "ciliumloadbalancerippools.cilium.io"
         - "ciliuml2announcementpolicies.cilium.io"
 
-  # post_manifests:
-  #   CiliumLoadBalancerIPPool:
-  #     apiVersion: "cilium.io/v2alpha1"
-  #     kind: CiliumLoadBalancerIPPool
-  #     metadata:
-  #       name: ip-pool
-  #     spec:
-  #       blocks:
-  #         - start: "{{ ipRangeStart | default('172.18.250.0') }}"
-  #           stop: "{{ ipRangeEnd | default('172.18.250.50') }}"
-  #   ciliumL2AnnouncementPolicy:
-  #     apiVersion: cilium.io/v2alpha1
-  #     kind: CiliumL2AnnouncementPolicy
-  #     metadata:
-  #       name: default-l2-announcement-policy
-  #       namespace: "{{ deployment_namespace }}"
-  #     spec:
-  #       externalIPs: false
-  #       loadBalancerIPs: true
-  #       interfaces:
-  #         - ^eth[0-9]+
-  #       nodeSelector:
-  #         matchExpressions:
-  #         - key: node-role.kubernetes.io/control-plane
-  #           operator: DoesNotExist
+      post_manifests:
+        CiliumLoadBalancerIPPool:
+          apiVersion: "cilium.io/v2alpha1"
+          kind: CiliumLoadBalancerIPPool
+          metadata:
+            name: ip-pool
+          spec:
+            blocks:
+              - start: "{{ ipRangeStart | default('172.18.250.0') }}"
+                stop: "{{ ipRangeEnd | default('172.18.250.50') }}"
+        ciliumL2AnnouncementPolicy:
+          apiVersion: cilium.io/v2alpha1
+          kind: CiliumL2AnnouncementPolicy
+          metadata:
+            name: default-l2-announcement-policy
+            namespace: "{{ deployment_namespace }}"
+          spec:
+            externalIPs: false
+            loadBalancerIPs: true
+            interfaces:
+              - ^eth[0-9]+
+            nodeSelector:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
 
   - name: cert-manager-kind
     file: |
