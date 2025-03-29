@@ -28,28 +28,23 @@ playbooks:
 vars:
   - name: cilium-kind
     file: |
-      ---
-      cilium_version: v1.17.2
-      deployment_namespace: cilium
+      deployment_namespace: kube-system
+
       helm_repositories:
         cilium:
           url: https://helm.cilium.io
 
-      crd_checks:
-        - "ciliumloadbalancerippools.cilium.io"
-        - "ciliuml2announcementpolicies.cilium.io"
-
       helm_releases:
         cilium:
           ref: cilium/cilium
-          version: "{{ cilium_version | default('v1.17.2') }}"
+          version: "{{  cilium_version}}"
           namespace: "{{ deployment_namespace }}"
           ignore: false
           wait: true
           release_values: |
             kubeProxyReplacement: true
             routingMode: native
-            ipv4NativeRoutingCIDR: "{{ cilium_cids | default("10.244.0.0/16") }}"
+            ipv4NativeRoutingCIDR: {{ cilium_cids | default('10.244.0.0/16') }}
             k8sServiceHost: {{ cluster_name }}-control-plane
             k8sServicePort: {{ ciliumK8sServicePort | default(6443) }}
             l2announcements:
@@ -64,31 +59,35 @@ vars:
             operator:
               replicas: {{ cilium_replcias | default(2) }}
 
-      post_manifests:
-        CiliumLoadBalancerIPPool:
-          apiVersion: "cilium.io/v2alpha1"
-          kind: CiliumLoadBalancerIPPool
-          metadata:
-            name: ip-pool
-          spec:
-            blocks:
-              - start: "{{ ipRangeStart | default('172.18.250.0') }}"
-                stop: "{{ ipRangeEnd | default('172.18.250.50') }}"
-        ciliumL2AnnouncementPolicy:
-          apiVersion: cilium.io/v2alpha1
-          kind: CiliumL2AnnouncementPolicy
-          metadata:
-            name: default-l2-announcement-policy
-            namespace: "{{ deployment_namespace }}"
-          spec:
-            externalIPs: false
-            loadBalancerIPs: true
-            interfaces:
-              - ^eth[0-9]+
-            nodeSelector:
-              matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
+      crd_checks:
+        - "ciliumloadbalancerippools.cilium.io"
+        - "ciliuml2announcementpolicies.cilium.io"
+
+  # post_manifests:
+  #   CiliumLoadBalancerIPPool:
+  #     apiVersion: "cilium.io/v2alpha1"
+  #     kind: CiliumLoadBalancerIPPool
+  #     metadata:
+  #       name: ip-pool
+  #     spec:
+  #       blocks:
+  #         - start: "{{ ipRangeStart | default('172.18.250.0') }}"
+  #           stop: "{{ ipRangeEnd | default('172.18.250.50') }}"
+  #   ciliumL2AnnouncementPolicy:
+  #     apiVersion: cilium.io/v2alpha1
+  #     kind: CiliumL2AnnouncementPolicy
+  #     metadata:
+  #       name: default-l2-announcement-policy
+  #       namespace: "{{ deployment_namespace }}"
+  #     spec:
+  #       externalIPs: false
+  #       loadBalancerIPs: true
+  #       interfaces:
+  #         - ^eth[0-9]+
+  #       nodeSelector:
+  #         matchExpressions:
+  #         - key: node-role.kubernetes.io/control-plane
+  #           operator: DoesNotExist
 
   - name: cert-manager-kind
     file: |
