@@ -170,6 +170,7 @@ playbooks:
         ansible.builtin.copy:
           content: "{{ item.value }}"
           dest: "/tmp/{{ item.key }}.yaml.j2"
+        delegate_to: localhost
         when: state == "present"
 
       - name: Deploy additional manifests
