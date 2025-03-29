@@ -11,7 +11,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 </details>
 
-<details><summary>DEPLOY KIND CLUSTER</summary>
+<details><summary>DEPLOY TO K8S</summary>
 
 ```bash
 ansible-playbook sthings.container.kind -vv \
@@ -24,7 +24,6 @@ ansible-playbook sthings.container.kind -vv \
 ```
 
 </details>
-
 
 <details><summary>DEPLOY KIND CLUSTER</summary>
 
@@ -39,8 +38,6 @@ ansible-playbook sthings.container.deploy_to_k8s \
 ```
 
 </details>
-
-
 
 <details><summary>INSTALL TOOLS</summary>
 
