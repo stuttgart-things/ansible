@@ -29,7 +29,7 @@ vars:
   - name: cilium-kind
     file: |
       deployment_namespace: kube-system
-
+      cilium_version: v1.17.2
       helm_repositories:
         cilium:
           url: https://helm.cilium.io
@@ -37,7 +37,7 @@ vars:
       helm_releases:
         cilium:
           ref: cilium/cilium
-          version: "{{  cilium_version}}"
+          version: "{{  cilium_version }}"
           namespace: "{{ deployment_namespace }}"
           ignore: false
           wait: true
