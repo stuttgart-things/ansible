@@ -139,7 +139,7 @@ playbooks:
 
       - name: "Wait for pods to be Ready"
         ansible.builtin.command: >
-          kubectl wait --for=condition=Ready --all pods -n {{ {{ deployment_namespace }} }} --timeout=300s
+          kubectl wait --for=condition=Ready --all pods -n {{ deployment_namespace }} --timeout=300s
         environment:
           KUBECONFIG: "{{ path_to_kubeconfig }}"
         register: wait_result
@@ -148,15 +148,6 @@ playbooks:
         delay: "{{ delay_seconds }}"
         ignore_errors: true
         changed_when: false
-
-  - name: manifests
-    play: |
-      ---
-      - name: Create template on disk
-        ansible.builtin.copy:
-          content: "{{ item.value }}"
-          dest: "/tmp/{{ item.key }}.yaml.j2"
-        when: state == "present"
 
       - name: Check for CRDs
         ansible.builtin.command: >
@@ -171,6 +162,15 @@ playbooks:
         loop: "{{ crd_checks }}"
         changed_when: false
         when: crd_checks is defined
+
+  - name: manifests
+    play: |
+      ---
+      - name: Create template on disk
+        ansible.builtin.copy:
+          content: "{{ item.value }}"
+          dest: "/tmp/{{ item.key }}.yaml.j2"
+        when: state == "present"
 
       - name: Deploy additional manifests
         kubernetes.core.k8s:
