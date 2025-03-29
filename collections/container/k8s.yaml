@@ -144,8 +144,8 @@ playbooks:
           KUBECONFIG: "{{ path_to_kubeconfig }}"
         register: wait_result
         until: wait_result.rc == 0
-        retries: "{{ max_retries }}"
-        delay: "{{ delay_seconds }}"
+        retries: "{{ max_retries | default (25) }}"
+        delay: "{{ delay_seconds | default (5) }}"
         ignore_errors: true
         changed_when: false
 
@@ -156,7 +156,7 @@ playbooks:
           KUBECONFIG: "{{ path_to_kubeconfig }}"
         register: crd_check
         until: crd_check.rc == 0
-        retries: "{{ max_retries | default (3) }}"
+        retries: "{{ max_retries | default (25) }}"
         delay: "{{ delay_seconds | default (5) }}"
         ignore_errors: true
         loop: "{{ crd_checks }}"

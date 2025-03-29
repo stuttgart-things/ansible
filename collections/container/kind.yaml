@@ -5,25 +5,51 @@ playbooks:
       ---
       - hosts: "{{ target_host | default('all') }}"
         become: true
-
         vars:
-          docker_install_compose: true
-          install_kind: true
-
           ansible_user: sthings
-          kind_version: 0.27.0 # datasource=github-tags depName=kubernetes-sigs/kind
           kind_cluster_name: kind1
-
-          # ALSO KIND KUBERNETES VERSION
+          path_to_kubeconfig: "/home/{{ ansible_user }}/.kube/{{ kind_cluster_name }}"
+          kind_version: 0.27.0 # datasource=github-tags depName=kubernetes-sigs/kind
           kubectl_version: 1.32.3 # datasource=github-tags depName=kubernetes/kubectl
-          create_kind_cluster: true
           count_worker_nodes: 3
           count_controlplane_nodes: 1
           enable_ingress_ports: true
           enable_host_paths: true
 
+          docker_install_compose: true
+          install_kind: true
+          deploy_cilium: true
+          deploy_cert_manager: true
+          deploy_ingress_nginx: true
+          create_kind_cluster: true
+
         roles:
           - role: sthings.container.install_configure_docker
+
+        post_tasks:
+          - name: Deploy cilium
+            ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
+            vars:
+              profile: cilium-kind
+              path_to_kubeconfig: "{{ path_to_kubeconfig }}"
+              target_host: "{{ target_host | default('all') }}"
+            when: deploy_cilium|bool
+
+          - name: Deploy Ingress nginx
+            ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
+            vars:
+              profile: ingress-nginx-kind
+              path_to_kubeconfig: "{{ path_to_kubeconfig }}"
+              target_host: "{{ target_host | default('all') }}"
+            when: deploy_ingress_nginx|bool
+
+          - name: Deploy Cert manager
+            ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
+            vars:
+              profile: cert-manager-kind
+              path_to_kubeconfig: "{{ path_to_kubeconfig }}"
+              target_host: "{{ target_host | default('all') }}"
+            when: deploy_ingress_nginx|bool
 
 vars:
   - name: cilium-kind
@@ -129,7 +155,7 @@ vars:
       helm_releases:
         ingress-nginx:
           ref: ingress-nginx/ingress-nginx
-          version: "{{ ingress_nginx_version | default('4.11.2') }}"
+          version: "{{ ingress_nginx_version }}"
           namespace: "{{ deployment_namespace }}"
           ignore: false
           wait: true
