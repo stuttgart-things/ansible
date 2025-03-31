@@ -25,12 +25,16 @@ playbooks:
               group: "{{ developer }}"
               mode: '0755'
 
-          - name: Install Crossplane cli
+          - name: Install Crossplane CLI
             ansible.builtin.shell: |
               curl -sL "{{ crossplane_cli_url }}" | sh
               mv crossplane {{ bin_dir }}
             args:
               chdir: /tmp
+
+          - name: Install KCL
+            ansible.builtin.shell: |
+              wget -q https://kcl-lang.io/script/install-cli.sh -O - | /bin/bash
 
   - name: dev
     play: |
