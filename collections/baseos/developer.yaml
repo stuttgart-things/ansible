@@ -57,19 +57,52 @@ playbooks:
         ansible.builtin.import_playbook: sthings.baseos.semantic_release
 
       - name: Install docker
-        ansible.builtin.import_playbook: sthings.container.docker
+        import_playbook: sthings.container.docker
 
       - name: Install container tools
-        ansible.builtin.import_playbook: sthings.container.tools
+        import_playbook: sthings.container.tools
 
       - name: Install nerdctl
-        ansible.builtin.import_playbook: sthings.container.nerdctl
+        import_playbook: sthings.container.nerdctl
 
       - name: Install podman
-        ansible.builtin.import_playbook: sthings.container.podman
+        import_playbook: sthings.container.podman
 
       - name: Execute dev config
-        ansible.builtin.import_playbook: sthings.baseos.dev_config
+        import_playbook: sthings.baseos.dev_config
+
+      - name: Execute dev config
+        import_playbook: sthings.container.kind
+        vars:
+          kind_cluster_name: dev
+          ansible_user: sthings
+
+      - name: Deploy cilium on dev kind cluster
+        import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          profile: cilium-kind
+          state: present
+          path_to_kubeconfig: /home/sthings/.kube/dev
+          target_host: all
+          cluster_name: dev
+
+      - name: Deploy cert-manager on dev kind cluster
+        import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          profile: cert-manager-kind
+          state: present
+          path_to_kubeconfig: /home/sthings/.kube/dev
+          target_host: all
+          cluster_name: dev
+
+      - name: Deploy ingress-nginx on dev kind cluster
+        import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          profile: ingress-nginx-kind
+          state: present
+          path_to_kubeconfig: /home/sthings/.kube/dev
+          target_host: all
+          cluster_name: dev
 
   - name: ansible
     play: |
