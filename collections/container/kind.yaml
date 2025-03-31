@@ -26,31 +26,6 @@ playbooks:
         roles:
           - role: sthings.container.install_configure_docker
 
-        post_tasks:
-          - name: Deploy cilium
-            ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
-            vars:
-              profile: cilium-kind
-              path_to_kubeconfig: "{{ path_to_kubeconfig }}"
-              target_host: "{{ target_host | default('all') }}"
-            when: deploy_cilium|bool
-
-          - name: Deploy Ingress nginx
-            ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
-            vars:
-              profile: ingress-nginx-kind
-              path_to_kubeconfig: "{{ path_to_kubeconfig }}"
-              target_host: "{{ target_host | default('all') }}"
-            when: deploy_ingress_nginx|bool
-
-          - name: Deploy Cert manager
-            ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
-            vars:
-              profile: cert-manager-kind
-              path_to_kubeconfig: "{{ path_to_kubeconfig }}"
-              target_host: "{{ target_host | default('all') }}"
-            when: deploy_ingress_nginx|bool
-
 vars:
   - name: cilium-kind
     file: |
