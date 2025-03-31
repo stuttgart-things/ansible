@@ -137,7 +137,7 @@ playbooks:
         when: helm_releases is defined
         ignore_errors: "{{ item.value.ignore | default(omit) }}"
 
-      - name: "Wait for pods to be Ready"
+      - name: Waiting for pods beeing ready
         ansible.builtin.command: >
           kubectl wait --for=condition=Ready --all pods -n {{ deployment_namespace }} --timeout=300s
         environment:
@@ -208,7 +208,7 @@ vars:
       helm_releases:
         cert-manager:
           ref: cert-manager/cert-manager
-          version: v1.16.0
+          version: v1.17.1
           namespace: "{{ deployment_namespace }}"
           ignore: false
           wait: true
