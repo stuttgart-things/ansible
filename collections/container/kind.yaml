@@ -18,9 +18,6 @@ playbooks:
 
           docker_install_compose: true
           install_kind: true
-          deploy_cilium: true
-          deploy_cert_manager: true
-          deploy_ingress_nginx: true
           create_kind_cluster: true
 
         roles:
@@ -67,7 +64,7 @@ vars:
         - "ciliuml2announcementpolicies.cilium.io"
 
       post_manifests:
-        CiliumLoadBalancerIPPool:
+        ciliumloadbalancerippool:
           apiVersion: "cilium.io/v2alpha1"
           kind: CiliumLoadBalancerIPPool
           metadata:
@@ -76,7 +73,7 @@ vars:
             blocks:
               - start: "{{ ipRangeStart | default('172.18.250.0') }}"
                 stop: "{{ ipRangeEnd | default('172.18.250.50') }}"
-        ciliumL2AnnouncementPolicy:
+        ciliuml2announcementpolicy:
           apiVersion: cilium.io/v2alpha1
           kind: CiliumL2AnnouncementPolicy
           metadata:
@@ -91,7 +88,6 @@ vars:
               matchExpressions:
               - key: node-role.kubernetes.io/control-plane
                 operator: DoesNotExist
-
 
   - name: cert-manager-kind
     file: |

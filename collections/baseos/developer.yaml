@@ -71,11 +71,14 @@ playbooks:
       - name: Execute dev config
         import_playbook: sthings.baseos.dev_config
 
-      - name: Execute dev config
+      - name: Create kind dev cluster
         import_playbook: sthings.container.kind
         vars:
           kind_cluster_name: dev
           ansible_user: sthings
+          count_worker_nodes: 3
+          count_controlplane_nodes: 1
+          kubectl_version: 1.32.3
 
       - name: Deploy cilium on dev kind cluster
         import_playbook: sthings.container.deploy_to_k8s
