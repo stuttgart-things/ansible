@@ -107,6 +107,15 @@ playbooks:
           target_host: all
           cluster_name: dev
 
+      - name: Deploy awx-operator and awx-instance on dev kind cluster
+        import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          profile: awx-operator-kind
+          state: present
+          path_to_kubeconfig: /home/sthings/.kube/dev
+          target_host: all
+          cluster_name: dev
+
   - name: ansible
     play: |
       ---
