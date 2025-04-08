@@ -439,8 +439,8 @@ vars:
       ---
       tf_vars:
         vsphere_server: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=cloud/data/vsphere:ip validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}"
-        vsphere_user: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=cloud/data/vsphere:username validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}"
-        vsphere_password: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=cloud/data/vsphere:password validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}"
+        vsphere_user: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=cloud/data/vsphere:username_for_awx validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}"
+        vsphere_password: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=cloud/data/vsphere:password_for_awx validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}"
         vm_ssh_user: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=cloud/data/vsphere:vm_ssh_user validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}"
         vm_ssh_password: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=cloud/data/vsphere:vm_ssh_password validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}"
 
