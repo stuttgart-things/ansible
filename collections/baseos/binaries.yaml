@@ -25,7 +25,7 @@ vars:
       yq_version: 4.45.1 # datasource=github-tags depName=mikefarah/yq
       jq_version: 1.7.1 # datasource=github-tags depName=jqlang/jq
       machineshop_version: 2.11.0 # datasource=github-tags depName=stuttgart-things/machineshop
-      mc_version: RELEASE.2025-03-12T17-29-24Z
+      mc_version: RELEASE.2025-04-08T15-39-49Z
 
       bin:
         gum:
@@ -123,7 +123,7 @@ vars:
           bin_name: mc
           bin_version: "{{ mc_version }}"
           check_bin_version_before_installing: true
-          source_url: https://dl.min.io/client/mc/release/linux-amd64/mc.{{ mc_version }}
+          source_url: https://github.com/minio/mc/archive/refs/tags/{{ mc_version }}.tar.gz
           bin_to_copy: mc.{{ mc_version }}
           to_remove: ""
           bin_dir: "/usr/bin"
