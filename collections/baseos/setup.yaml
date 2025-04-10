@@ -118,6 +118,8 @@ playbooks:
           lvm_root_sizing: "35%"
           lvm_var_sizing: "50%"
           send_to_msteams: true
+          python_modules:
+            - name: kubernetes
 
           # HOMERUN
           address: "https://homerun.homerun-dev.sthings-vsphere.labul.sva.de/generic"
