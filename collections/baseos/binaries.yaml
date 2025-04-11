@@ -124,7 +124,7 @@ vars:
           bin_version: "{{ mc_version }}"
           check_bin_version_before_installing: true
           source_url: https://github.com/minio/mc/archive/refs/tags/{{ mc_version }}.zip
-          bin_to_copy: mc.{{ mc_version }}
+          bin_to_copy: mc-{{ mc_version }}
           to_remove: ""
           bin_dir: "/usr/bin"
           version_cmd: " version"
