@@ -120,6 +120,7 @@ tasks:
   check:
     desc: "Run pre-commit hooks"
     cmds:
+      - pre-commit autoupdate
       - pre-commit run -a
 
   setup-molecule:
