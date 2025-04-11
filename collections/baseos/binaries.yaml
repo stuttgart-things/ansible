@@ -25,7 +25,7 @@ vars:
       yq_version: 4.45.1 # datasource=github-tags depName=mikefarah/yq
       jq_version: 1.7.1 # datasource=github-tags depName=jqlang/jq
       machineshop_version: 2.11.0 # datasource=github-tags depName=stuttgart-things/machineshop
-      mc_version: RELEASE.2025-04-08T15-39-49Z
+      mc_version: RELEASE.2025-04-08T15-39-49Z #
 
       bin:
         gum:
