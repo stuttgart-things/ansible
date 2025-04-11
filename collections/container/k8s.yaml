@@ -196,6 +196,36 @@ playbooks:
           state: present
         when: state == "present"
 
+  - name: get_controlplane_ip
+    play: |
+      ---
+      - hosts: "{{ target_host | default('all') }}"
+        become: true
+        vars:
+          kind_cluster_name: dev
+          ansible_user: sthings
+      
+        tasks:
+          - name: Get control plane node name
+            command: kubectl get nodes --kubeconfig /home/{{ ansible_user }}/.kube/{{ kind_cluster_name }} -o json
+            register: nodes_json
+      
+          - name: Parse control plane node name
+            shell: echo '{{ nodes_json.stdout }}' | jq -r '.items[] | select(.metadata.labels["node-role.kubernetes.io/control-plane"]) | .metadata.name'
+            register: control_plane_node
+      
+          - name: Get control plane IP
+            command: kubectl get node {{ control_plane_node.stdout }} --kubeconfig /home/{{ ansible_user }}/.kube/{{ kind_cluster_name }} -o json
+            register: node_json
+      
+          - name: Parse control plane IP
+            shell: echo '{{ node_json.stdout }}' | jq -r '.status.addresses[] | select(.type=="InternalIP") | .address'
+            register: control_plane_ip
+          
+          - name: Set control plane IP fact
+            set_fact:
+              control_plane_ip: "{{ control_plane_ip.stdout }}"
+
 vars:
   - name: cert-manager
     file: |
