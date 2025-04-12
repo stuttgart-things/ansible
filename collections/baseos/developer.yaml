@@ -68,6 +68,9 @@ playbooks:
       - name: Install podman
         import_playbook: sthings.container.podman
 
+      - name: Reboot
+        import_playbook: sthings.container.reboot_vm
+
       - name: Execute dev config
         import_playbook: sthings.baseos.dev_config
 

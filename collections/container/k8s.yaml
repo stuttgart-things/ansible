@@ -226,6 +226,18 @@ playbooks:
             set_fact:
               control_plane_ip: "{{ control_plane_ip.stdout }}"
 
+  - name: reboot_vm
+    play: |
+      ---
+      - name: Reboot the machine
+        hosts: all
+        become: yes
+        tasks:
+          - name: Reboot the machine
+            ansible.builtin.reboot:
+              reboot_timeout: 600
+            when: ansible_facts['os_family'] in ['Debian', 'RedHat', 'Suse']
+
 vars:
   - name: cert-manager
     file: |
