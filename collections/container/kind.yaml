@@ -23,6 +23,39 @@ playbooks:
         roles:
           - role: sthings.container.install_configure_docker
 
+      - name: Deploy cilium on dev kind cluster
+        import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          profile: cilium-kind
+          state: present
+          path_to_kubeconfig: /home/sthings/.kube/dev
+          target_host: all
+          cluster_name: dev
+
+      - name: Deploy cert-manager on dev kind cluster
+        import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          profile: cert-manager-kind
+          state: present
+          path_to_kubeconfig: /home/sthings/.kube/dev
+          target_host: all
+          cluster_name: dev
+
+      - name: Deploy ingress-nginx on dev kind cluster
+        import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          profile: ingress-nginx-kind
+          state: present
+          path_to_kubeconfig: /home/sthings/.kube/dev
+          target_host: all
+          cluster_name: dev
+
+      - name: Set fact Controlplane IP
+        import_playbook: sthings.container.get_controlplane_ip
+        vars:
+          kind_cluster_name: dev
+          ansible_user: sthings
+
 vars:
   - name: cilium-kind
     file: |
