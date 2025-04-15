@@ -44,7 +44,7 @@ playbooks:
         import_playbook: sthings.container.deploy_to_k8s
         vars:
           profile: cert-manager-kind
-          state: present
+          state: "{{ state }}"
           path_to_kubeconfig: "{{ path_to_kubeconfig }}"
           target_host: all
           cluster_name: "{{ kind_cluster_name }}"
