@@ -83,49 +83,6 @@ playbooks:
           count_controlplane_nodes: 1
           kubectl_version: 1.32.3
 
-      - name: Deploy cilium on dev kind cluster
-        import_playbook: sthings.container.deploy_to_k8s
-        vars:
-          profile: cilium-kind
-          state: present
-          path_to_kubeconfig: /home/sthings/.kube/dev
-          target_host: all
-          cluster_name: dev
-
-      - name: Deploy cert-manager on dev kind cluster
-        import_playbook: sthings.container.deploy_to_k8s
-        vars:
-          profile: cert-manager-kind
-          state: present
-          path_to_kubeconfig: /home/sthings/.kube/dev
-          target_host: all
-          cluster_name: dev
-
-      - name: Deploy ingress-nginx on dev kind cluster
-        import_playbook: sthings.container.deploy_to_k8s
-        vars:
-          profile: ingress-nginx-kind
-          state: present
-          path_to_kubeconfig: /home/sthings/.kube/dev
-          target_host: all
-          cluster_name: dev
-
-      - name: Set fact Controlplane IP
-        import_playbook: sthings.container.get_controlplane_ip
-        vars:
-          kind_cluster_name: dev
-          ansible_user: sthings
-
-      - name: Deploy awx-operator and awx-instance on kind cluster
-        import_playbook: sthings.container.deploy_to_k8s
-        vars:
-          profile: awx-operator-kind
-          state: present
-          path_to_kubeconfig: /home/{{ ansible_user }}/.kube/{{ kind_cluster_name }}
-          target_host: all
-          cluster_name: "{{ kind_cluster_name }}"
-          control_plane_ip: "{{ control_plane_ip }}"
-
   - name: ansible
     play: |
       ---
