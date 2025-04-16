@@ -1,4 +1,33 @@
 ---
+- name: Check Kind/Docker-mapped ports on the Molecule host
+  hosts: localhost
+  gather_facts: false
+  vars:
+    ports_to_check:
+      - "0.0.0.0:80"
+      - "0.0.0.0:443"
+
+  tasks:
+    - name: Get Docker port mappings
+      ansible.builtin.command: docker ps --format "{{ '{{' }}.Ports{{ '}}' }}"
+      register: docker_ports
+
+    - name: Flatten docker port output
+      ansible.builtin.set_fact:
+        docker_port_list: "{{ docker_ports.stdout_lines | map('regex_findall', '\\d+\\.\\d+\\.\\d+\\.\\d+:\\d+') | flatten }}"
+
+    - name: Fail if any critical ports are already mapped
+      ansible.builtin.fail:
+        msg: "Port {{ item }} is already in use by a Docker container!"
+      loop: "{{ ports_to_check }}"
+      when: item in docker_port_list
+
+- import_playbook: sthings.container.kind
+  vars:
+    target_host: localhost
+    cluster_name: awx
+    state: present
+
 - name: Converge
   hosts: all
   gather_facts: false
