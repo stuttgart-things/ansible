@@ -12,3 +12,182 @@ playbooks:
           target_host: all
           cluster_name: "{{ kind_cluster_name }}"
           control_plane_ip: "{{ control_plane_ip }}"
+
+  - name: check_deployment
+    play: |
+      ---
+      - name: Wait for all AWX components to be ready
+        hosts: "{{ target_host | default('localhost') }}"
+        vars:
+          path_to_kubeconfig: "~/.kube/dev"
+          namespace: "awx"
+          timeout_seconds: 600
+          retry_delay: 30
+          max_retries: 20
+
+        tasks:
+          - name: Wait for AWX Operator pod
+            kubernetes.core.k8s_info:
+              api_version: v1
+              kind: Pod
+              namespace: "{{ namespace }}"
+              label_selectors:
+                - "control-plane=controller-manager"
+                - "helm.sh/chart=awx-operator"
+              kubeconfig: "{{ path_to_kubeconfig | expanduser }}"
+              wait: yes
+              wait_timeout: "{{ timeout_seconds }}"
+              wait_condition:
+                type: Ready
+                status: "True"
+            register: awx_operator_pod
+            ignore_errors: yes
+            retries: "{{ max_retries }}"
+            delay: "{{ retry_delay }}"
+
+          - name: Wait for PostgreSQL pod
+            kubernetes.core.k8s_info:
+              api_version: v1
+              kind: Pod
+              namespace: "{{ namespace }}"
+              label_selectors:
+                - "app.kubernetes.io/component=database"
+                - "app.kubernetes.io/instance=postgres-15-awx"
+              kubeconfig: "{{ path_to_kubeconfig | expanduser }}"
+              wait: yes
+              wait_timeout: "{{ timeout_seconds }}"
+              wait_condition:
+                type: Ready
+                status: "True"
+            register: postgres_pod
+            ignore_errors: yes
+            retries: "{{ max_retries }}"
+            delay: "{{ retry_delay }}"
+
+          - name: Wait for AWX Web pod
+            kubernetes.core.k8s_info:
+              api_version: v1
+              kind: Pod
+              namespace: "{{ namespace }}"
+              label_selectors:
+                - "app.kubernetes.io/component=awx"
+                - "app.kubernetes.io/name=awx-web"
+              kubeconfig: "{{ path_to_kubeconfig | expanduser }}"
+              wait: yes
+              wait_timeout: "{{ timeout_seconds }}"
+              wait_condition:
+                type: Ready
+                status: "True"
+            register: awx_web_pod
+            ignore_errors: yes
+            retries: "{{ max_retries }}"
+            delay: "{{ retry_delay }}"
+
+          - name: Wait for AWX Task pod
+            kubernetes.core.k8s_info:
+              api_version: v1
+              kind: Pod
+              namespace: "{{ namespace }}"
+              label_selectors:
+                - "app.kubernetes.io/component=awx"
+                - "app.kubernetes.io/name=awx-task"
+              kubeconfig: "{{ path_to_kubeconfig | expanduser }}"
+              wait: yes
+              wait_timeout: "{{ timeout_seconds }}"
+              wait_condition:
+                type: Ready
+                status: "True"
+            register: awx_task_pod
+            ignore_errors: yes
+            retries: "{{ max_retries }}"
+            delay: "{{ retry_delay }}"
+
+          - name: Display pod information
+            block:
+              - name: Show AWX Operator pod info
+                ansible.builtin.debug:
+                  msg: |
+                    AWX Operator Pod:
+                      Name: {{ awx_operator_pod.resources[0].metadata.name }}
+                      Status: {{ awx_operator_pod.resources[0].status.phase }}
+                      Ready: {{ awx_operator_pod.resources[0].status.conditions|selectattr('type', 'equalto', 'Ready')|map(attribute='status')|first }}
+                when: awx_operator_pod.resources is defined and awx_operator_pod.resources|length > 0
+
+              - name: Show PostgreSQL pod info
+                ansible.builtin.debug:
+                  msg: |
+                    PostgreSQL Pod:
+                      Name: {{ postgres_pod.resources[0].metadata.name }}
+                      Status: {{ postgres_pod.resources[0].status.phase }}
+                      Ready: {{ postgres_pod.resources[0].status.conditions|selectattr('type', 'equalto', 'Ready')|map(attribute='status')|first }}
+                when: postgres_pod.resources is defined and postgres_pod.resources|length > 0
+
+              - name: Show AWX Web pod info
+                ansible.builtin.debug:
+                  msg: |
+                    AWX Web Pod:
+                      Name: {{ awx_web_pod.resources[0].metadata.name }}
+                      Status: {{ awx_web_pod.resources[0].status.phase }}
+                      Ready Containers: {{ awx_web_pod.resources[0].status.containerStatuses|selectattr('ready')|list|length }}/{{ awx_web_pod.resources[0].status.containerStatuses|list|length }}
+                when: awx_web_pod.resources is defined and awx_web_pod.resources|length > 0
+
+              - name: Show AWX Task pod info
+                ansible.builtin.debug:
+                  msg: |
+                    AWX Task Pod:
+                      Name: {{ awx_task_pod.resources[0].metadata.name }}
+                      Status: {{ awx_task_pod.resources[0].status.phase }}
+                      Ready Containers: {{ awx_task_pod.resources[0].status.containerStatuses|selectattr('ready')|list|length }}/{{ awx_task_pod.resources[0].status.containerStatuses|list|length }}
+                when: awx_task_pod.resources is defined and awx_task_pod.resources|length > 0
+
+          - name: Fail if pods not ready
+            ansible.builtin.fail:
+              msg: |
+                {% if awx_operator_pod.resources is not defined or awx_operator_pod.resources|length == 0 or
+                    (awx_operator_pod.resources[0].status.conditions is defined and
+                    awx_operator_pod.resources[0].status.conditions|selectattr('type', 'equalto', 'Ready')|map(attribute='status')|first != 'True') %}
+                AWX Operator pod not ready.
+                {% if awx_operator_pod.resources is defined and awx_operator_pod.resources|length > 0 %}
+                Current status: {{ awx_operator_pod.resources[0].status|to_nice_json }}
+                {% endif %}
+                {% endif %}
+
+                {% if postgres_pod.resources is not defined or postgres_pod.resources|length == 0 or
+                    (postgres_pod.resources[0].status.conditions is defined and
+                    postgres_pod.resources[0].status.conditions|selectattr('type', 'equalto', 'Ready')|map(attribute='status')|first != 'True') %}
+                PostgreSQL pod not ready.
+                {% if postgres_pod.resources is defined and postgres_pod.resources|length > 0 %}
+                Current status: {{ postgres_pod.resources[0].status|to_nice_json }}
+                {% endif %}
+                {% endif %}
+
+                {% if awx_web_pod.resources is not defined or awx_web_pod.resources|length == 0 or
+                    (awx_web_pod.resources[0].status.containerStatuses is defined and
+                    awx_web_pod.resources[0].status.containerStatuses|selectattr('ready')|list|length != awx_web_pod.resources[0].status.containerStatuses|list|length) %}
+                AWX Web pod not ready.
+                {% if awx_web_pod.resources is defined and awx_web_pod.resources|length > 0 %}
+                Current status: {{ awx_web_pod.resources[0].status|to_nice_json }}
+                {% endif %}
+                {% endif %}
+
+                {% if awx_task_pod.resources is not defined or awx_task_pod.resources|length == 0 or
+                    (awx_task_pod.resources[0].status.containerStatuses is defined and
+                    awx_task_pod.resources[0].status.containerStatuses|selectattr('ready')|list|length != awx_task_pod.resources[0].status.containerStatuses|list|length) %}
+                AWX Task pod not ready.
+                {% if awx_task_pod.resources is defined and awx_task_pod.resources|length > 0 %}
+                Current status: {{ awx_task_pod.resources[0].status|to_nice_json }}
+                {% endif %}
+                {% endif %}
+            when: >
+              (awx_operator_pod.resources is not defined or awx_operator_pod.resources|length == 0 or
+              (awx_operator_pod.resources[0].status.conditions is defined and
+                awx_operator_pod.resources[0].status.conditions|selectattr('type', 'equalto', 'Ready')|map(attribute='status')|first != 'True')) or
+              (postgres_pod.resources is not defined or postgres_pod.resources|length == 0 or
+              (postgres_pod.resources[0].status.conditions is defined and
+                postgres_pod.resources[0].status.conditions|selectattr('type', 'equalto', 'Ready')|map(attribute='status')|first != 'True')) or
+              (awx_web_pod.resources is not defined or awx_web_pod.resources|length == 0 or
+              (awx_web_pod.resources[0].status.containerStatuses is defined and
+                awx_web_pod.resources[0].status.containerStatuses|selectattr('ready')|list|length != awx_web_pod.resources[0].status.containerStatuses|list|length)) or
+              (awx_task_pod.resources is not defined or awx_task_pod.resources|length == 0 or
+              (awx_task_pod.resources[0].status.containerStatuses is defined and
+                awx_task_pod.resources[0].status.containerStatuses|selectattr('ready')|list|length != awx_task_pod.resources[0].status.containerStatuses|list|length))
