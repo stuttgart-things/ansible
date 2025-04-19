@@ -1,52 +1,41 @@
 ---
-- name: Check Kind/Docker-mapped ports on the Molecule host
-  hosts: localhost
-  gather_facts: false
-  vars:
-    ports_to_check:
-      - "0.0.0.0:80"
-      - "0.0.0.0:443"
-
-  tasks:
-    - name: Get Docker port mappings
-      ansible.builtin.command: docker ps --format "{{ '{{' }}.Ports{{ '}}' }}"
-      register: docker_ports
-
-    - name: Flatten docker port output
-      ansible.builtin.set_fact:
-        docker_port_list: "{{ docker_ports.stdout_lines | map('regex_findall', '\\d+\\.\\d+\\.\\d+\\.\\d+:\\d+') | flatten }}"
-
-    - name: Fail if any critical ports are already mapped
-      ansible.builtin.fail:
-        msg: "Port {{ item }} is already in use by a Docker container!"
-      loop: "{{ ports_to_check }}"
-      when: item in docker_port_list
-
-- import_playbook: sthings.container.kind
+- name: Create kind cluster
+  ansible.builtin.import_playbook: sthings.container.kind
   vars:
     target_host: localhost
-    cluster_name: awx
-    state: present
+    cluster_name: dev
+    kind_cluster_name: dev
 
-- name: Converge
-  hosts: all
-  gather_facts: false
+- name: Deploy awx
+  ansible.builtin.import_playbook: sthings.awx.deploy
+  vars:
+    target_host: localhost
+    cluster_name: dev
+    control_plane_ip: "{{ control_plane_ip }}"
 
-  tasks:
-    - name: Check if AWX environment variables are set
-      ansible.builtin.set_fact:
-        missing_vars: "{{ missing_vars | default([]) + [item] }}"
-      when: lookup('env', item, default='') | length == 0
-      loop:
-        - CONTROLLER_HOST
-        - CONTROLLER_USERNAME
-        - CONTROLLER_PASSWORD
-        - CONTROLLER_VERIFY_SSL
-        - VAULT_ROLE_ID
-        - VAULT_SECRET_ID
-        - VAULT_ADDR
+- name: Wait for all AWX components to be ready
+  ansible.builtin.import_playbook: sthings.awx.deploy
+  vars:
+    target_host: localhost
+    cluster_name: dev
+    path_to_kubeconfig: /home/sthings/.kube/dev
 
-    - name: Fail if required environment variables are missing
-      ansible.builtin.fail:
-        msg: "Missing required environment variables: {{ missing_vars | join(', ') }}"
-      when: missing_vars is defined and missing_vars | length > 0
+
+  # post_tasks:
+  #   - name: Check if awx environment variables are set
+  #     ansible.builtin.set_fact:
+  #       missing_vars: "{{ missing_vars | default([]) + [item] }}"
+  #     when: lookup('env', item, default='') | length == 0
+  #     loop:
+  #       - CONTROLLER_HOST
+  #       - CONTROLLER_USERNAME
+  #       - CONTROLLER_PASSWORD
+  #       - CONTROLLER_VERIFY_SSL
+  #       - VAULT_ROLE_ID
+  #       - VAULT_SECRET_ID
+  #       - VAULT_ADDR
+
+  #   - name: Fail if required environment variables are missing
+  #     ansible.builtin.fail:
+  #       msg: "Missing required environment variables: {{ missing_vars | join(', ') }}"
+  #     when: missing_vars is defined and missing_vars | length > 0

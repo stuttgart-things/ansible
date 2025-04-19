@@ -65,6 +65,7 @@ playbooks:
           kind_cluster_name: "{{ kind_cluster_name }}"
           ansible_user: sthings
 
+
 vars:
   - name: cilium-kind
     file: |
