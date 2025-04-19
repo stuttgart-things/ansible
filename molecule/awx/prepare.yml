@@ -14,7 +14,7 @@
     control_plane_ip: "{{ control_plane_ip }}"
 
 - name: Wait for all AWX components to be ready
-  ansible.builtin.import_playbook: sthings.awx.deploy
+  ansible.builtin.import_playbook: sthings.awx.check_deployment
   vars:
     target_host: localhost
     cluster_name: dev
