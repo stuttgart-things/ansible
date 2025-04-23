@@ -34,28 +34,13 @@
 
     - name: Write AWX controller config to file
       copy:
-        dest: /tmp/awx_controller_config.yaml
+        dest: /tmp/awx-molecule.yaml
         content: |
           controller_host: https://{{ awx_host }}
           controller_username: sthings
+          controller_username: admin
+          vault_approle_id: "{{ lookup('env', 'VAULT_ROLE_ID') }}"
+          vault_approle_secret: "{{ lookup('env', 'VAULT_SECRET_ID') }}"
+          vault_url: "{{ lookup('env', 'VAULT_ADDR') }}"
+          tower_verify_ssl: false
         mode: '0600'
-
-
-  # post_tasks:
-  #   - name: Check if awx environment variables are set
-  #     ansible.builtin.set_fact:
-  #       missing_vars: "{{ missing_vars | default([]) + [item] }}"
-  #     when: lookup('env', item, default='') | length == 0
-  #     loop:
-  #       - CONTROLLER_HOST
-  #       - CONTROLLER_USERNAME
-  #       - CONTROLLER_PASSWORD
-  #       - CONTROLLER_VERIFY_SSL
-  #       - VAULT_ROLE_ID
-  #       - VAULT_SECRET_ID
-  #       - VAULT_ADDR
-
-  #   - name: Fail if required environment variables are missing
-  #     ansible.builtin.fail:
-  #       msg: "Missing required environment variables: {{ missing_vars | join(', ') }}"
-  #     when: missing_vars is defined and missing_vars | length > 0
