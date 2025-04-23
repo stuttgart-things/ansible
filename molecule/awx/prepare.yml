@@ -6,7 +6,7 @@
     cluster_name: dev
     kind_cluster_name: dev
 
-- name: Deploy awx
+- name: Deploy AWX
   ansible.builtin.import_playbook: sthings.awx.deploy
   vars:
     target_host: localhost
@@ -19,6 +19,26 @@
     target_host: localhost
     cluster_name: dev
     path_to_kubeconfig: /home/sthings/.kube/dev
+
+- name: Add AWX config to molecule host
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Add AWX dev host entry with comment
+      ansible.builtin.blockinfile:
+        path: /etc/hosts
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - AWX Host Entry"
+        block: |
+          # AWX dev hostname for local testing
+          127.0.1.1 {{ awx_host }}
+
+    - name: Write AWX controller config to file
+      copy:
+        dest: /tmp/awx_controller_config.yaml
+        content: |
+          controller_host: https://{{ awx_host }}
+          controller_username: sthings
+        mode: '0600'
 
 
   # post_tasks:
