@@ -53,7 +53,7 @@ collections:
     version: 6.2.0
   - name: ansible.netcommon
     version: 8.0.0
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-25.6.292.tar.gz/sthings-container-25.6.292.tar.gz
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-25.2.472.tar.gz/sthings-baseos-25.2.472.tar.gz
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-25.2.787.tar.gz/sthings-container-25.2.787.tar.gz
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-25.2.1338.tar.gz/sthings-baseos-25.2.1338.tar.gz
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-25.6.291.tar.gz/sthings-awx-25.6.291.tar.gz
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-rke-25.1.568.tar.gz/sthings-rke-25.1.568.tar.gz

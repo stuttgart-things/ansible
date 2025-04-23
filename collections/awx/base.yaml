@@ -309,7 +309,7 @@ playbooks:
       - hosts: "{{ target_host | default('localhost') }}"
 
         vars_files:
-          - "{{ path | default('.') }}/awx-local-env.yaml"
+          - "{{ config_path | default('.') }}/{{ config_name | default('awx-local-env.yaml') }}/"
           - "{{ path | default('.') }}/organization-sthings.yaml"
           - "{{ path | default('.') }}/scm-creds-sthings.yaml"
           - "{{ path | default('.') }}/projects-sthings.yaml"
@@ -332,7 +332,7 @@ playbooks:
       - hosts: "{{ target_host | default('localhost') }}"
 
         vars_files:
-          - "{{ path | default('.') }}/awx-local-env.yaml"
+          - "{{ config_path | default('.') }}/{{ config_name | default('awx-local-env.yaml') }}/"
           - "{{ path | default('.') }}/organization-sthings.yaml"
           - "{{ path | default('.') }}/scm-creds-sthings.yaml"
           - "{{ path | default('.') }}/projects-sthings.yaml"
@@ -355,7 +355,7 @@ playbooks:
       - hosts: "{{ target_host | default('localhost') }}"
 
         vars_files:
-          - "{{ path | default('.') }}/awx-local-env.yaml"
+          - "{{ config_path | default('.') }}/{{ config_name | default('awx-local-env.yaml') }}/"
           - "{{ path | default('.') }}/organization-sthings.yaml"
           - "{{ path | default('.') }}/scm-creds-sthings.yaml"
           - "{{ path | default('.') }}/projects-sthings.yaml"

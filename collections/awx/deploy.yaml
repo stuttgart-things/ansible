@@ -52,7 +52,7 @@ playbooks:
               namespace: "{{ namespace }}"
               label_selectors:
                 - "app.kubernetes.io/component=database"
-                - "app.kubernetes.io/instance=postgres-15-awx"
+                - "app.kubernetes.io/instance=postgres-15-awx-dev"
               kubeconfig: "{{ path_to_kubeconfig | expanduser }}"
               wait: yes
               wait_timeout: "{{ timeout_seconds }}"
@@ -64,6 +64,7 @@ playbooks:
             retries: "{{ max_retries }}"
             delay: "{{ retry_delay }}"
 
+
           - name: Wait for AWX Web pod
             kubernetes.core.k8s_info:
               api_version: v1
@@ -71,7 +72,7 @@ playbooks:
               namespace: "{{ namespace }}"
               label_selectors:
                 - "app.kubernetes.io/component=awx"
-                - "app.kubernetes.io/name=awx-web"
+                - "app.kubernetes.io/name=awx-dev-web"
               kubeconfig: "{{ path_to_kubeconfig | expanduser }}"
               wait: yes
               wait_timeout: "{{ timeout_seconds }}"
@@ -90,7 +91,7 @@ playbooks:
               namespace: "{{ namespace }}"
               label_selectors:
                 - "app.kubernetes.io/component=awx"
-                - "app.kubernetes.io/name=awx-task"
+                - "app.kubernetes.io/name=awx-dev-task"
               kubeconfig: "{{ path_to_kubeconfig | expanduser }}"
               wait: yes
               wait_timeout: "{{ timeout_seconds }}"
