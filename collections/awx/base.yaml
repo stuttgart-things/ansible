@@ -330,9 +330,20 @@ playbooks:
     play: |
       ---
       - hosts: "{{ target_host | default('localhost') }}"
+        environment:
+          CONTROLLER_HOST: "{{ controller_host }}"
+          CONTROLLER_PASSWORD: "{{ controller_password }}"
+          CONTROLLER_USERNAME: "{{ controller_username }}"
+          VAULT_APPROLE_ID: "{{ vault_approle_id }}"
+          VAULT_APPROLE_SECRET: "{{ vault_approle_secret }}"
+          TOWER_VERIFY_SSL: "{{ tower_verify_ssl }}"
+          VAULT_URL: "{{ vault_url }}"
+
+        vars:
+          config_path: "{{ path | default('.') }}/{{ config_name | default('awx-local-env.yaml') }}"
 
         vars_files:
-          - "{{ config_path | default('.') }}/{{ config_name | default('awx-local-env.yaml') }}/"
+          - "{{ config_path }}"
           - "{{ path | default('.') }}/organization-sthings.yaml"
           - "{{ path | default('.') }}/scm-creds-sthings.yaml"
           - "{{ path | default('.') }}/projects-sthings.yaml"
