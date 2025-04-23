@@ -64,7 +64,6 @@ playbooks:
             retries: "{{ max_retries }}"
             delay: "{{ retry_delay }}"
 
-
           - name: Wait for AWX Web pod
             kubernetes.core.k8s_info:
               api_version: v1
@@ -140,6 +139,27 @@ playbooks:
                       Status: {{ awx_task_pod.resources[0].status.phase }}
                       Ready Containers: {{ awx_task_pod.resources[0].status.containerStatuses|selectattr('ready')|list|length }}/{{ awx_task_pod.resources[0].status.containerStatuses|list|length }}
                 when: awx_task_pod.resources is defined and awx_task_pod.resources|length > 0
+
+              - name: Get AWX Ingress host(s)
+                kubernetes.core.k8s_info:
+                  api_version: networking.k8s.io/v1
+                  kind: Ingress
+                  namespace: awx
+                  name: awx-dev-ingress
+                  kubeconfig: "{{ path_to_kubeconfig | default('~/.kube/config') | expanduser }}"
+                register: awx_ingress_info
+
+              - name: Set ingress host list fact
+                ansible.builtin.set_fact:
+                  awx_hosts: "{{ awx_ingress_info.resources[0].spec.rules | map(attribute='host') | list }}"
+
+              - name: Set first ingress host as a fact
+                set_fact:
+                  awx_host: "{{ awx_hosts[0] }}"
+
+              - name: Debug AWX ingress host(s)
+                ansible.builtin.debug:
+                  var: awx_host
 
           - name: Fail if pods not ready
             ansible.builtin.fail:
