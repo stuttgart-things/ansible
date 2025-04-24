@@ -104,6 +104,8 @@ playbooks:
               version: 2.3.0
             - name: pyvmomi
               version: 8.0.3.0.1
+            - name: hvac
+              version: 2.3.0
           sthings_ansible_requirements: https://raw.githubusercontent.com/stuttgart-things/ansible/main/requirements.yaml
 
         tasks:
