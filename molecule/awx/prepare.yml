@@ -35,12 +35,12 @@
     - name: Write AWX controller config to file
       copy:
         dest: /tmp/awx-molecule.yaml
-        content: |
+        content: | # pragma: allowlist secret
           controller_host: https://{{ awx_host }}
           controller_username: sthings
-          controller_username: admin
+          controller_password: admin
           vault_approle_id: "{{ lookup('env', 'VAULT_ROLE_ID') }}"
           vault_approle_secret: "{{ lookup('env', 'VAULT_SECRET_ID') }}"
           vault_url: "{{ lookup('env', 'VAULT_ADDR') }}"
           tower_verify_ssl: false
-        mode: '0600'
+        mode: '0777'
