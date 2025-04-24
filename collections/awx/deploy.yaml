@@ -21,6 +21,7 @@ playbooks:
         vars:
           path_to_kubeconfig: "~/.kube/dev"
           namespace: "awx"
+          awx_instance_name: "awx-dev"
           timeout_seconds: 600
           retry_delay: 30
           max_retries: 20
@@ -52,7 +53,7 @@ playbooks:
               namespace: "{{ namespace }}"
               label_selectors:
                 - "app.kubernetes.io/component=database"
-                - "app.kubernetes.io/instance=postgres-15-awx-dev"
+                - "app.kubernetes.io/instance=postgres-15-{{ awx_instance_name }}"
               kubeconfig: "{{ path_to_kubeconfig | expanduser }}"
               wait: yes
               wait_timeout: "{{ timeout_seconds }}"
@@ -71,7 +72,7 @@ playbooks:
               namespace: "{{ namespace }}"
               label_selectors:
                 - "app.kubernetes.io/component=awx"
-                - "app.kubernetes.io/name=awx-dev-web"
+                - "app.kubernetes.io/name={{ awx_instance_name }}-web"
               kubeconfig: "{{ path_to_kubeconfig | expanduser }}"
               wait: yes
               wait_timeout: "{{ timeout_seconds }}"
@@ -90,7 +91,7 @@ playbooks:
               namespace: "{{ namespace }}"
               label_selectors:
                 - "app.kubernetes.io/component=awx"
-                - "app.kubernetes.io/name=awx-dev-task"
+                - "app.kubernetes.io/name={{ awx_instance_name }}-task"
               kubeconfig: "{{ path_to_kubeconfig | expanduser }}"
               wait: yes
               wait_timeout: "{{ timeout_seconds }}"
