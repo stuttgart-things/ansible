@@ -23,3 +23,6 @@ requirements: |
     - src: https://github.com/stuttgart-things/create-send-webhook.git
       scm: git
       version: 2024.09.06
+    - src: https://github.com/stuttgart-things/install-configure-docker.git
+      scm: git
+      version: 2025.04.24
