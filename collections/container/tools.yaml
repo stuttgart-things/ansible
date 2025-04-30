@@ -31,8 +31,19 @@ vars:
       glab_version: 1.56.0 # datasource=gitlab-tags depName=gitlab-org/cli
       cilium_version: 0.18.3 # datasource=github-tags depName=cilium/cilium-cli
       dagger_version: 0.18.5 # datasource=github-tags depName=dagger/dagger
+      tkn_version: 0.40.0 # datasource=github-tags depName=tektoncd/cli
 
       bin:
+        tkn:
+          bin_name: tkn
+          bin_version: "{{ tkn_version }}"
+          check_bin_version_before_installing: true
+          source_url: "https://github.com/tektoncd/cli/releases/download/v{{ tkn_version }}/tkn_{{ tkn_version }}_Linux_x86_64.tar.gz"
+          bin_to_copy: tkn
+          to_remove: ""
+          bin_dir: "/usr/bin/"
+          version_cmd: "version"
+          target_version: "{{ tkn_version }}"
         flux:
           bin_name: flux
           bin_version: "{{ flux_version }}"
