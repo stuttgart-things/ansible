@@ -26,8 +26,19 @@ vars:
       jq_version: 1.7.1 # datasource=github-tags depName=jqlang/jq
       machineshop_version: 2.11.0 # datasource=github-tags depName=stuttgart-things/machineshop
       mc_version: RELEASE.2025-04-08T15-39-49Z #
+      crossplane_version: 1.19.1 # datasource=github-tags depName=crossplane/crossplane
 
       bin:
+        crossplane:
+          bin_name: crossplane
+          bin_version: "{{ crossplane_version }}"
+          check_bin_version_before_installing: true
+          source_url: "https://releases.crossplane.io/stable/v{{ crossplane_version }}/bin/linux_amd64/crank"
+          bin_to_copy: crank
+          to_remove: ""
+          bin_dir: "/usr/bin"
+          version_cmd: "version"
+          target_version: "{{ crossplane_version }}"
         gum:
           bin_name: gum
           bin_version: "{{ gum_version }}"
