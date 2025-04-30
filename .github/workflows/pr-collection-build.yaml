@@ -14,7 +14,7 @@ jobs:
     environment: k8s
     outputs:
       collection_folders: ${{ steps.changed-files.outputs.collection_folders }}
-    runs-on: gha-runner-ansible
+    runs-on: ghr-ansible-in-cluster
     steps:
       - name: Get Modified Files by PullRequest
         id: changed-files
