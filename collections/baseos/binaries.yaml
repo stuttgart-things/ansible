@@ -37,7 +37,7 @@ vars:
           source_url: "https://github.com/getsops/sops/releases/download/v{{ sops_version }}/sops-v{{ sops_version }}.linux.amd64"
           bin_to_copy: "sops-v{{ sops_version }}.linux.amd64"
           to_remove: ""
-          bin_dir: "/usr/bin"
+          bin_dir: "/usr/bin/sops"
           version_cmd: "version"
           target_version: "{{ sops_version }}"
         crossplane:

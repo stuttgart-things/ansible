@@ -7,7 +7,7 @@ playbooks:
         become: true
         vars:
           ansible_user: sthings
-          kind_cluster_name: kind1
+          kind_cluster_name: dev
           path_to_kubeconfig: "/home/{{ ansible_user }}/.kube/{{ kind_cluster_name }}"
           kind_version: 0.27.0 # datasource=github-tags depName=kubernetes-sigs/kind
           kubectl_version: 1.32.3 # datasource=github-tags depName=kubernetes/kubectl
@@ -64,7 +64,6 @@ playbooks:
         vars:
           kind_cluster_name: "{{ kind_cluster_name }}"
           ansible_user: sthings
-
 
 vars:
   - name: cilium-kind
