@@ -89,6 +89,8 @@ playbooks:
         become: true
         vars:
           tmp_dir: "{{ '~' if ansible_user_id == 'nonroot' else '/tmp' }}"
+          local_user: "{{ ansible_user }}"
+          become_local_user: true
 
         vars_files:
           - "{{ path | default('.') }}/{{ profile }}.yaml"
@@ -124,6 +126,8 @@ playbooks:
           dest: "{{ tmp_dir }}/{{ item.key }}-values.yaml.j2"
         delegate_to: 127.0.0.1
         when: state == "present" and item.value.values is defined
+        become: "{{ become_local_user }}"
+        become_user: "{{ local_user }}"
 
       - name: Deploy helm charts
         kubernetes.core.helm:
@@ -135,7 +139,8 @@ playbooks:
           create_namespace: true
           state: "{{ state | default('present') }}"
           values: "{{ lookup('template', '{{ tmp_dir }}/{{ item.key }}-values.yaml.j2') | from_yaml | default(omit) }}"
-          wait: "{{ item.values.wait | default(omit) }}"
+          wait: "{{ item.values.wait |
+          default(omit) }}"
         when: helm_releases is defined
         ignore_errors: "{{ item.value.ignore | default(omit) }}"
 
@@ -172,7 +177,9 @@ playbooks:
         ansible.builtin.copy:
           content: "{{ item.value }}"
           dest: "/tmp/{{ item.key }}.yaml.j2"
-        delegate_to: localhost
+        delegate_to: 127.0.0.1
+        become: "{{ become_local_user }}"
+        become_user: "{{ local_user }}"
         when: state == "present"
 
       - name: Deploy additional manifests
