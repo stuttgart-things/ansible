@@ -27,8 +27,19 @@ vars:
       machineshop_version: 2.11.0 # datasource=github-tags depName=stuttgart-things/machineshop
       mc_version: RELEASE.2025-04-08T15-39-49Z #
       crossplane_version: 1.19.1 # datasource=github-tags depName=crossplane/crossplane
+      sops_version: 3.10.2 # datasource=github-tags depName=getsops/sops
 
       bin:
+        sops:
+          bin_name: sops
+          bin_version: "{{ sops_version }}"
+          check_bin_version_before_installing: true
+          source_url: "https://github.com/getsops/sops/releases/download/v{{ sops_version }}/sops-v{{ sops_version }}.linux.amd64"
+          bin_to_copy: "sops-v{{ sops_version }}.linux.amd64"
+          to_remove: ""
+          bin_dir: "/usr/bin"
+          version_cmd: "version"
+          target_version: "{{ sops_version }}"
         crossplane:
           bin_name: crossplane
           bin_version: "{{ crossplane_version }}"
