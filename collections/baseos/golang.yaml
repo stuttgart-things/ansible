@@ -14,7 +14,7 @@ playbooks:
           golang_install_dir: /usr/local
           golangci_version: latest
           goreleaser_version: 2.9.0 # datasource=github-tags depName=goreleaser/goreleaser
-          ko_version: 0.17.1 # datasource=github-tags depName=ko-build/ko
+          ko_version: 0.18.0 # datasource=github-tags depName=ko-build/ko
           cobracli_version: latest
 
           # USE WITH EXISTING USER
