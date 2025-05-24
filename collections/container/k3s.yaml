@@ -124,7 +124,7 @@ vars:
       cilium_version: 0.18.3 # datasource=github-tags depName=cilium/cilium-cli
       helm_version: 3.17.3 # datasource=github-tags depName=helm/helm
       kubectl_version: v1.30.2 # datasource=github-tags depName=kubernetes/kubectl
-      k9s_version: 0.33.0 # datasource=github-tags depName=kubernetes/kubectl
+      k9s_version: 0.33.1 # datasource=github-tags depName=kubernetes/kubectl
 
       kube_proxy_replacement: true
       operator_replicas: 1
