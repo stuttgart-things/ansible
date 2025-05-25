@@ -14,7 +14,7 @@ playbooks:
           ansible_user: sthings
           kind_cluster_name: dev
           path_to_kubeconfig: "/home/{{ ansible_user }}/.kube/{{ kind_cluster_name }}"
-          kind_version: 0.27.0 # datasource=github-tags depName=kubernetes-sigs/kind
+          kind_version: 0.29.0 # datasource=github-tags depName=kubernetes-sigs/kind
           kubectl_version: 1.32.3 # datasource=github-tags depName=kubernetes/kubectl
           count_worker_nodes: 3
           count_controlplane_nodes: 1
