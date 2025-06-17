@@ -97,7 +97,6 @@ ansible-playbook sthings.rke.k3s \
 -vv
 
 # ADD SOME USEFUL CLIS ON THE CLUSTER NODES
-# IF YOU ARE PLANING FOR DOING SOME DEPLOYMENT/DEBUGGING ON THE NODES DIRECTLY (SSH)
 ansible-playbook sthings.container.tools -i rke2 -vv
 ```
 
