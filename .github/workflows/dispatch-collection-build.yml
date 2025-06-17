@@ -15,6 +15,10 @@ on:
         description: DAGGER MODULE VERSION
         type: string
         default: v0.13.0
+      dagger-version:
+        description: DAGGER MODULE VERSION
+        type: string
+        default: v0.18.10
 
 jobs:
   collection-build:
@@ -30,7 +34,7 @@ jobs:
       - name: Build Collection
         uses: dagger/dagger-for-github@8.0.0
         with:
-          version: "v0.18.10"
+          version: ${{ inputs.dagger-version }}
           verb: call
           args: run-collection-build-pipeline --src collections/${{ inputs.collection }} --progress plain export --path=/tmp/build
           module: github.com/stuttgart-things/dagger/ansible@${{ inputs.dagger-module-version }}
