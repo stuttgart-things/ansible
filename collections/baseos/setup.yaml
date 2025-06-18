@@ -117,6 +117,7 @@ playbooks:
           lvm_home_sizing: "15%"
           lvm_root_sizing: "35%"
           lvm_var_sizing: "50%"
+          send_to_homerun: false
           python_modules:
             - name: kubernetes
 
