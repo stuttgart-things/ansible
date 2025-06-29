@@ -28,7 +28,7 @@ vars:
       helmfile_version: 1.1.2 # datasource=github-tags depName=helmfile/helmfile
       argocd_version: 3.0.6 # datasource=github-tags depName=argoproj/argo-cd
       flux_version: 2.6.3 # datasource=github-tags depName=fluxcd/flux2
-      glab_version: 1.60.2 # datasource=gitlab-tags depName=gitlab-org/cli
+      glab_version: 1.61.0 # datasource=gitlab-tags depName=gitlab-org/cli
       cilium_version: 0.18.4 # datasource=github-tags depName=cilium/cilium-cli
       dagger_version: 0.18.12 # datasource=github-tags depName=dagger/dagger
       tkn_version: 0.40.0 # datasource=github-tags depName=tektoncd/cli
