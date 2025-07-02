@@ -52,7 +52,7 @@ collections:
   - name: community.hashi_vault
     version: 6.2.0
   - name: ansible.netcommon
-    version: 8.0.0
+    version: 8.0.1
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-25.6.147.tar.gz/sthings-container-25.6.147.tar.gz
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-25.0.1392.tar.gz/sthings-baseos-25.0.1392.tar.gz
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-25.4.506.tar.gz/sthings-awx-25.4.506.tar.gz
