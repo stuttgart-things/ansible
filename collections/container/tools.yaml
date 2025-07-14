@@ -31,7 +31,7 @@ vars:
       glab_version: 1.62.0 # datasource=gitlab-tags depName=gitlab-org/cli
       cilium_version: 0.18.5 # datasource=github-tags depName=cilium/cilium-cli
       dagger_version: 0.18.12 # datasource=github-tags depName=dagger/dagger
-      tkn_version: 0.40.0 # datasource=github-tags depName=tektoncd/cli
+      tkn_version: 0.41.1 # datasource=github-tags depName=tektoncd/cli
 
       bin:
         tkn:
