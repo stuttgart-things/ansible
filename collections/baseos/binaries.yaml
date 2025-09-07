@@ -12,6 +12,34 @@ playbooks:
           - "{{ path | default('.') }}/{{ profile | default('binaries') }}.yaml"
         roles:
           - role: sthings.baseos.download_install_binary
+
+  - name: homebrew
+    play: |
+      ---
+      - hosts: "{{ target_host | default('all') }}"
+        become: true
+        tasks:
+          - name: Install required packages
+            ansible.builtin.apt:
+              name:
+                - build-essential
+                - procps
+                - curl
+                - file
+                - git
+              state: present
+              update_cache: yes
+
+          - name: Install Homebrew
+            ansible.builtin.shell: |
+              /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+              echo >> /home/sthings/.bashrc
+              echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/sthings/.bashrc
+              eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+            environment:
+              NONINTERACTIVE: 1  # Ensures non-interactive installation
+            become: false  # Run as current user, not root
+
 vars:
   - name: binaries
     file: |
@@ -20,7 +48,7 @@ vars:
       gh_version: 2.78.0 # datasource=github-tags depName=cli/cli
       task_version: 3.44.1 # datasource=github-tags depName=go-task/task
       hugo_version: 0.149.1 # datasource=github-tags depName=gohugoio/hugo
-      terraform_version: 1.13.1 # datasource=custom.hashicorp
+      terraform_version: 1.11.4 # datasource=custom.hashicorp
       packer_version: 1.14.1 # datasource=custom.hashicorp
       yq_version: 4.47.1 # datasource=github-tags depName=mikefarah/yq
       jq_version: 1.7.1 # datasource=github-tags depName=jqlang/jq
