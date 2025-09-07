@@ -15,9 +15,6 @@ requirements: |
     - src: https://github.com/stuttgart-things/download-install-binary.git
       scm: git
       version: 2025.03.27
-    - src: https://github.com/stuttgart-things/create-os-user.git
-      scm: git
-      version: 2024.04.25
     - src: https://github.com/stuttgart-things/install-configure-docker.git
       scm: git
       version: 2025.28.03
