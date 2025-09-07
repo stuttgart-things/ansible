@@ -32,8 +32,19 @@ vars:
       cilium_version: 0.18.7 # datasource=github-tags depName=cilium/cilium-cli
       dagger_version: 0.18.17 # datasource=github-tags depName=dagger/dagger
       tkn_version: 0.42.0 # datasource=github-tags depName=tektoncd/cli
+      vcluster_version: 0.27.0 # datasource=github-tags depName=loft-sh/vcluster
 
       bin:
+        vcluster:
+          bin_name: vcluster
+          bin_version: "{{ vcluster_version }}"
+          check_bin_version_before_installing: true
+          source_url: "https://github.com/loft-sh/vcluster/releases/download/v{{ vcluster_version }}/vcluster-linux-amd64"
+          bin_to_copy: vcluster-linux-amd64
+          to_remove: ""
+          bin_dir: "/usr/bin/vcluster"
+          version_cmd: "version"
+          target_version: "{{ vcluster_version }}"
         tkn:
           bin_name: tkn
           bin_version: "{{ tkn_version }}"
