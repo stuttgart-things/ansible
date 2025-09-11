@@ -100,7 +100,7 @@ playbooks:
             - rke2-ingress-nginx
             - rke-snapshot-controller
           cluster_setup: multinode
-          rke2_fetched_kubeconfig_path: {{ cluster_name | default('kubeconfig') }}.yaml
+          rke2_fetched_kubeconfig_path: "{{ cluster_name | default('kubeconfig') }}.yaml"
 
           rke2_cni: cilium
           rke2_registry_mirrors:
