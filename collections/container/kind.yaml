@@ -53,7 +53,6 @@ playbooks:
           path_to_kubeconfig: "{{ path_to_kubeconfig }}"
           target_host: all
           cluster_name: "{{ kind_cluster_name }}"
-          state: "{{ state }}"
 
       - name: Deploy ingress-nginx on dev kind cluster
         import_playbook: sthings.container.deploy_to_k8s

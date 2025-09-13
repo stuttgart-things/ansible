@@ -25,7 +25,7 @@ EOF
 
 cat <<EOF > ./dev-vars.yaml
 ---
-golang_version: 1.24.1
+golang_version: 1.25.1
 manage_filesystem: true
 update_packages: true
 install_requirements: true
