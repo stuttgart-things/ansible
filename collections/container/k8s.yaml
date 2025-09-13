@@ -92,8 +92,8 @@ playbooks:
           local_user: "{{ ansible_user }}"
           become_local_user: true
 
-        vars_files: "{{ [ (path | default('.')) ~ '/' ~ profile ~ '.yaml' ]
-                    + ([deployment_vars] if (deployment_vars is defined) else []) }}"
+        vars_files: {{ [ (path | default('.')) ~ '/' ~ profile ~ '.yaml' ]
+                    + ([deployment_vars] if (deployment_vars is defined) else []) }}
 
         tasks:
           - name: Create pre manifests
