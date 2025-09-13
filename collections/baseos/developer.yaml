@@ -239,7 +239,7 @@ vars:
   - name: dev-vars
     file: |
       ---
-      golang_version: 1.24.1
+      golang_version: 1.25.1
       manage_filesystem: true
       update_packages: true
       install_requirements: true

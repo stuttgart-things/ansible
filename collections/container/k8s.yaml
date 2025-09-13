@@ -94,7 +94,9 @@ playbooks:
 
         vars_files:
           - "{{ path | default('.') }}/{{ profile }}.yaml"
-          - "{{ deployment_vars | default(omit) }}"
+          {% if deployment_vars is defined %}
+          - "{{ deployment_vars }}"
+          {% endif %}
 
         tasks:
           - name: Create pre manifests
