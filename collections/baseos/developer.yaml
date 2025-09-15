@@ -74,11 +74,11 @@ playbooks:
         import_playbook: sthings.container.kind
         vars:
           kind_cluster_name: dev
+          deployment_vars: Nil
           ansible_user: sthings
           count_worker_nodes: 3
           count_controlplane_nodes: 1
           kubectl_version: 1.34.0
-          deployment_vars: Nil
 
   - name: ansible
     play: |
