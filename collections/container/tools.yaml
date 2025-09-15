@@ -25,7 +25,7 @@ vars:
       k9s_version: 0.50.9 # datasource=github-tags depName=derailed/k9s
       velero_version: 1.16.2 # datasource=github-tags depName=vmware-tanzu/velero
       kubectl_slice_version: 1.4.2 # datasource=github-tags depName=patrickdappollonio/kubectl-slice
-      helmfile_version: 1.1.6 # datasource=github-tags depName=helmfile/helmfile
+      helmfile_version: 1.1.7 # datasource=github-tags depName=helmfile/helmfile
       argocd_version: 3.1.4 # datasource=github-tags depName=argoproj/argo-cd
       flux_version: 2.6.4 # datasource=github-tags depName=fluxcd/flux2
       glab_version: 1.64.0 # datasource=gitlab-tags depName=gitlab-org/cli
