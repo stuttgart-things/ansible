@@ -78,7 +78,7 @@ playbooks:
           count_worker_nodes: 3
           count_controlplane_nodes: 1
           kubectl_version: 1.34.0
-          deployment_vars: nil
+          deployment_vars: Nil
 
   - name: ansible
     play: |
