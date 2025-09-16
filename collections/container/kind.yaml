@@ -20,7 +20,7 @@ playbooks:
           count_controlplane_nodes: 1
           enable_ingress_ports: true
           enable_host_paths: true
-
+          provision_cluster: true
           docker_install_compose: true
           install_kind: true
           create_kind_cluster: true
@@ -44,6 +44,7 @@ playbooks:
           kind_cluster_name: "{{ kind_cluster_name }}"
           state: "{{ state }}"
           path_to_kubeconfig: "{{ path_to_kubeconfig }}"
+        when: provision_cluster is defined and provision_cluster|bool
 
       - name: Deploy cert-manager on dev kind cluster
         import_playbook: sthings.container.deploy_to_k8s
@@ -53,6 +54,7 @@ playbooks:
           path_to_kubeconfig: "{{ path_to_kubeconfig }}"
           target_host: all
           cluster_name: "{{ kind_cluster_name }}"
+        when: provision_cluster is defined and provision_cluster|bool
 
       - name: Deploy ingress-nginx on dev kind cluster
         import_playbook: sthings.container.deploy_to_k8s
@@ -62,12 +64,14 @@ playbooks:
           target_host: all
           cluster_name: "{{ kind_cluster_name }}"
           state: "{{ state }}"
+        when: provision_cluster is defined and provision_cluster|bool
 
       - name: Set fact Controlplane IP
         import_playbook: sthings.container.get_controlplane_ip
         vars:
           kind_cluster_name: "{{ kind_cluster_name }}"
           ansible_user: sthings
+        when: provision_cluster is defined and provision_cluster|bool
 
 vars:
   - name: cilium-kind
