@@ -13,31 +13,35 @@ playbooks:
         roles:
           - role: sthings.baseos.download_install_binary
 
-  - name: homebrew
+  - name: brew
     play: |
       ---
       - hosts: "{{ target_host | default('all') }}"
         become: true
+        vars:
+          ansible_user: sthings
+          required_packages:
+            - build-essential
+            - procps
+            - curl
+            - file
+            - git
+
         tasks:
           - name: Install required packages
             ansible.builtin.apt:
-              name:
-                - build-essential
-                - procps
-                - curl
-                - file
-                - git
+              name: "{{ required_packages }}"
               state: present
               update_cache: yes
 
           - name: Install Homebrew
             ansible.builtin.shell: |
               /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-              echo >> /home/sthings/.bashrc
-              echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/sthings/.bashrc
+              echo >> /home/{{ ansible_user }}/.bashrc
+              echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/{{ ansible_user }}/.bashrc
               eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
             environment:
-              NONINTERACTIVE: 1  # Ensures non-interactive installation
+              NONINTERACTIVE: 1
             become: false  # Run as current user, not root
 
 vars:
