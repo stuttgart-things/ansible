@@ -33,8 +33,19 @@ vars:
       dagger_version: 0.18.17 # datasource=github-tags depName=dagger/dagger
       tkn_version: 0.42.0 # datasource=github-tags depName=tektoncd/cli
       vcluster_version: 0.27.0 # datasource=github-tags depName=loft-sh/vcluster
+      vals_version: 0.42.1 # datasource=github-tags depName=helmfile/vals
 
       bin:
+        vals:
+          bin_name: vals
+          bin_version: "{{ vals_version }}"
+          check_bin_version_before_installing: true
+          source_url: "https://github.com/helmfile/vals/releases/download/v{{ vals_version }}/vals_{{ vals_version }}_linux_amd64.tar.gz"
+          bin_to_copy: vals
+          to_remove: ""
+          bin_dir: "/usr/bin/vcluster"
+          version_cmd: "version"
+          target_version: "{{ vcluster_version }}"
         vcluster:
           bin_name: vcluster
           bin_version: "{{ vcluster_version }}"
