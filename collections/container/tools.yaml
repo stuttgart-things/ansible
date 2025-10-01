@@ -32,7 +32,7 @@ vars:
       cilium_version: 0.18.7 # datasource=github-tags depName=cilium/cilium-cli
       dagger_version: 0.18.19 # datasource=github-tags depName=dagger/dagger
       tkn_version: 0.42.0 # datasource=github-tags depName=tektoncd/cli
-      vcluster_version: 0.28.0 # datasource=github-tags depName=loft-sh/vcluster
+      vcluster_version: 0.29.0 # datasource=github-tags depName=loft-sh/vcluster
       vals_version: 0.42.2 # datasource=github-tags depName=helmfile/vals
 
       bin:
