@@ -91,8 +91,7 @@ mkdir -p /home/sthings/.kube/
 # CHECK FOR RKE2 RELEASES: https://github.com/k3s-io/k3s/releases
 
 ansible-playbook sthings.rke.k3s \
--e k3s_k8s_version=1.32.1 \
--e k3s_release_kind=k3s1  \
+-e k3s_k8s_version=1.34.1 \
 -i k3s \
 -vv
 
