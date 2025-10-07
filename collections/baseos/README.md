@@ -48,7 +48,16 @@ ansible-playbook -i ./inv-dev-vm sthings.baseos.dev -e path_to_vars_file=$(pwd)/
 <details><summary>CREATE PDNS-ENTRY</summary>
 
 ```bash
-ansible-playbook sthings.baseos.pdns-entry -vv
+export VAULT_ROLE_ID=""
+export VAULT_SECRET_ID=""
+export VAULT_ADDR=https://vault.example.com:8200
+
+ansible-playbook sthings.baseos.pdns-entry \
+-e pdns_url=https://pdns-vsphere.example.com::8443 \
+-e entry_zone=sthings-vsphere.example.com. \
+-e ip_address=10.31.103.10 \
+-e hostname=demo-infra \
+-vv
 ```
 
 </details>
