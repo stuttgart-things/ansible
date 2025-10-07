@@ -42,7 +42,7 @@ collections:
   - name: ansible.posix
     version: 2.1.0
   - name: kubernetes.core
-    version: 6.1.0
+    version: 6.2.0
   - name: community.docker
     version: 4.8.1
   - name: community.vmware
