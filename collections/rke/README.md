@@ -93,6 +93,8 @@ mkdir -p /home/sthings/.kube/
 ansible-playbook sthings.rke.k3s \
 -e k3s_k8s_version=1.34.1 \
 -i k3s \
+-e cilium_lbrange_start_ip=192.168.5.10 \
+-e cilium_lbrange_stop_ip=192.168.5.20 \
 -vv
 
 # ADD SOME USEFUL CLIS ON THE CLUSTER NODES
