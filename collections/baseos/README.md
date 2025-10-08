@@ -62,6 +62,33 @@ ansible-playbook sthings.baseos.pdns-entry \
 
 </details>
 
+<details><summary>CREATE OS-USERS</summary>
+
+```bash
+cat <<EOF > ./myusers.yaml
+users:
+  - username: gude
+    name: gude user
+    groups: ['sudo']
+    uid: 1006
+    home: /home/gude
+    profile: |
+      alias ll='ls -ahl'
+    generate_ssh_key: true
+    enable_ssh_tcp_forwarding: true
+EOF
+```
+
+```bash
+ansible-playbook sthings.baseos.users \
+-e path=$(pwd) \
+-e profile=myusers \
+-vv \
+-i inventory
+```
+
+</details>
+
 <details><summary>INSTALL BINARIES</summary>
 
 ```bash

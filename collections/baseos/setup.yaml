@@ -208,8 +208,7 @@ playbooks:
         gather_facts: true
         become: true
         vars_files:
-          - "{{ profile | default('users') }}.yaml"
-
+          - "{{ path | default('.') }}/{{ profile | default('users') }}.yaml"
         roles:
           - role: sthings.baseos.create_os_user
 
