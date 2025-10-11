@@ -212,7 +212,133 @@ playbooks:
         roles:
           - role: sthings.baseos.create_os_user
 
+  - name: tink
+    play: |
+      ---
+      - name: Wait for target machine to be reachable
+        hosts: "{{ target_wait_host | default('localhost') }}"
+        gather_facts: no
+        vars_files:
+          - "{{ path | default('.') }}/{{ profile | default('tink_u25') }}.yaml"
+
+        tasks:
+          - name: Wait for SSH port 22 to be open on target
+            ansible.builtin.wait_for:
+              host: "{{ target_ip }}"
+              port: "{{ target_port }}"
+              timeout: "{{ target_timeout }}"
+              state: started
+
+          - name: Wait until SSH is available
+            ansible.builtin.wait_for_connection:
+              timeout: "{{ ssh_wait_timeout }}"
+              sleep: "{{ ssh_wait_sleep }}"
+              delay: "{{ ssh_wait_delay }}"
+            delegate_to: "{{ target_ip }}"
+            vars:
+              ansible_user: "{{ bootstrap_user }}"
+              ansible_password: "{{ bootstrap_password }}"
+              ansible_ssh_common_args: "{{ bootstrap_ssh_args }}"
+
+      - name: Configure target machine
+        hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: no
+        vars_files:
+          - "{{ path | default('.') }}/{{ profile | default('tink_u25') }}.yaml"
+
+        roles:
+          - role: "{{ user_role }}"
+
+        tasks:
+          - name: Update all packages
+            apt:
+              update_cache: yes
+              upgrade: "{{ apt_upgrade_type }}"
+
+          - name: Ensure python3-venv is installed
+            apt:
+              name: "{{ python_venv_package }}"
+              state: present
+
+          - name: Create a virtual environment
+            command: "python3 -m venv {{ python_venv_path }}"
+            args:
+              creates: "{{ python_venv_path }}"
+
+          - name: Install required Python modules in venv
+            ansible.builtin.pip:
+              name: "{{ python_modules }}"
+              executable: "{{ python_venv_path }}/bin/pip"
+
+          - name: Set interpreter for later tasks
+            set_fact:
+              ansible_python_interpreter: "{{ python_venv_path }}/bin/python"
+
+        post_tasks:
+          - name: Reboot the machine
+            reboot:
+              msg: "{{ reboot_message }}"
+              pre_reboot_delay: "{{ reboot_pre_delay }}"
+              post_reboot_delay: "{{ reboot_post_delay }}"
+              reboot_timeout: "{{ reboot_timeout }}"
+
 vars:
+  - name: tink_u25
+    file: | # pragma: allowlist secret
+      ---
+      # Connection settings
+      target_ip: "{{ target_ip }}"
+      target_port: 22
+      target_timeout: 300
+
+      # SSH bootstrap settings
+      bootstrap_user: tink # pragma: allowlist secret
+      bootstrap_password: tink # pragma: allowlist secret
+      bootstrap_ssh_args: "-o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+
+      # OS settings
+      ansible_os_family: Debian
+      ansible_become_password: tink # pragma: allowlist secret
+
+      # User creation
+      users:
+        - username: sthings
+          name: sthings user
+          ssh_key:
+            - "{{ lookup('file', ssh_pubkey_file) }}"
+          groups: ['sudo']
+          uid: 1006
+          home: /home/sthings
+          profile: |
+            alias ll='ls -ahl'
+          generate_ssh_key: true
+          enable_ssh_tcp_forwarding: true
+
+      user_role: sthings.baseos.create_os_user
+
+      # Package updates
+      apt_upgrade_type: dist
+
+      # Python environment
+      python_venv_package: python3-venv
+      python_venv_path: /opt/k3s-venv
+      python_modules:
+        - packaging
+        - kubernetes
+        - openshift
+
+      # Reboot settings
+      reboot_message: "Reboot initiated by Ansible after setup"
+      reboot_pre_delay: 5
+      reboot_post_delay: 10
+      reboot_timeout: 300
+
+      # SSH wait settings
+      ssh_wait_timeout: 300
+      ssh_wait_sleep: 5
+      ssh_wait_delay: 10
+
   - name: users
     file: |
       ---
