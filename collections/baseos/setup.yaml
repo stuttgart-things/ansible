@@ -250,6 +250,11 @@ playbooks:
         roles:
           - role: "{{ user_role }}"
 
+        pre_tasks:
+          - name: Include vars
+            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
+            when: path_to_vars_file is defined
+
         tasks:
           - name: Update all packages
             apt:
