@@ -218,27 +218,26 @@ playbooks:
       - name: Wait for target machine to be reachable
         hosts: "{{ target_wait_host | default('localhost') }}"
         gather_facts: no
-        vars_files:
-          - "{{ path | default('.') }}/{{ profile | default('tink_u25') }}.yaml"
+        pre_tasks:
+          - name: Include vars
+            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
+            when: path_to_vars_file is defined
 
         tasks:
-          - name: Wait for SSH port 22 to be open on target
-            ansible.builtin.wait_for:
-              host: "{{ target_ip }}"
-              port: "{{ target_port }}"
-              timeout: "{{ target_timeout }}"
-              state: started
+          - name: "Pause for {{ pause_time | default(30) }} seconds for machines to be built"
+            ansible.builtin.pause:
+              minutes: "{{ pause_time | default(30) }}"
+            when: pause_time is defined
 
-          - name: Wait until SSH is available
-            ansible.builtin.wait_for_connection:
-              timeout: "{{ ssh_wait_timeout }}"
-              sleep: "{{ ssh_wait_sleep }}"
-              delay: "{{ ssh_wait_delay }}"
-            delegate_to: "{{ target_ip }}"
-            vars:
-              ansible_user: "{{ bootstrap_user }}"
-              ansible_password: "{{ bootstrap_password }}"
-              ansible_ssh_common_args: "{{ bootstrap_ssh_args }}"
+          - name: "Wait for SSH (delay: {{ delay_time | default(1) }})"
+            ansible.builtin.wait_for:
+              host: "{{ item }}"
+              port: 22
+              delay: "{{ delay_time | default(1) }}"
+              timeout: 1200
+              sleep: 10
+            with_items:
+              - "{{ groups['all'] }}"
 
       - name: Configure target machine
         hosts: "{{ target_host | default('all') }}"
@@ -248,7 +247,7 @@ playbooks:
           - "{{ path | default('.') }}/{{ profile | default('tink_u25') }}.yaml"
 
         roles:
-          - role: "{{ user_role }}"
+          - role: sthings.baseos.create_os_user
 
         pre_tasks:
           - name: Include vars
@@ -322,8 +321,6 @@ vars:
             alias ll='ls -ahl'
           generate_ssh_key: true
           enable_ssh_tcp_forwarding: true
-
-      user_role: sthings.baseos.create_os_user
 
       # Python environment
       python_venv_package: python3-venv
