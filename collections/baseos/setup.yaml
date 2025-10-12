@@ -317,7 +317,7 @@ vars:
         - username: sthings
           name: sthings user
           ssh_key:
-            - "{{ lookup('file', ssh_pubkey_file) }}"
+            - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCPTf13fX2gMjlAhXPyJzuf6SJNX4fKiYjplxlJy4MU1V9+hFBqHtVAOwIzA60Z9UP1SAcCD0tUWODS4VVDTVJV3cuX7j7BzKtKyLqD/1Mbs2kPfBPF4cUDqUGCBHO7QLwBD84ib0/muRfYwtTRe++JA246xXDJBHTlcP8MQ6rhs0ku4R94g8WihQxaBZJIJwSDWZIhAD8om3+ai9olBDxdXgFSGFmmSxijSAhW3CKRbOK0nY5IklY6sYH1Y5+Pe7kOEOuO5H5kxYXWxfaPsGNZfRRLZHGEJJli79fCUlR8cg6q71QJYz4jiGDZD+ebgpEYOt2dIkZUyBEv6HpjIb69z7sxDqUAJXdNIR+qW55gsH0ryaeF5MTuigssOOZdMX80CLNygCIVFX3uGZMxDVLImTgkSQmeHJF5nuwKC3tvt59T7H6QP1rQpR4vR/slZsVBS56+1YRdNFqEpRHw8lLhBBdkh/Mndv9Ppbw34/DO/i9o5Hb5B7HOBzxCaGyReOc= andre@TPAEBERT-1"
           groups: ['sudo']
           uid: 1006
           home: /home/sthings
