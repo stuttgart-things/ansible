@@ -229,6 +229,10 @@ playbooks:
               minutes: "{{ pause_time | default(30) }}"
             when: pause_time is defined
 
+          - name: Show target IPs
+            debug:
+              var: groups['all']
+
           - name: "Wait for SSH (delay: {{ delay_time | default(1) }})"
             ansible.builtin.wait_for:
               host: "{{ item }}"
