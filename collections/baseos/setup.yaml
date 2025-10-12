@@ -293,7 +293,7 @@ vars:
     file: | # pragma: allowlist secret
       ---
       # Connection settings
-      target_ip: "{{ target_ip }}"
+      target_ip: "{{ target_vm_ip }}"
       target_port: 22
       target_timeout: 300
 
