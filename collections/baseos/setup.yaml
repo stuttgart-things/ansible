@@ -292,6 +292,9 @@ vars:
   - name: tink_u25
     file: | # pragma: allowlist secret
       ---
+      # Package updates
+      apt_upgrade_type: dist
+
       # Connection settings
       target_ip: "{{ target_vm_ip }}"
       target_port: 22
@@ -321,9 +324,6 @@ vars:
           enable_ssh_tcp_forwarding: true
 
       user_role: sthings.baseos.create_os_user
-
-      # Package updates
-      apt_upgrade_type: dist
 
       # Python environment
       python_venv_package: python3-venv
