@@ -6,6 +6,11 @@ playbooks:
         gather_facts: true
         become: true
 
+        pre_tasks:
+          - name: Include vars
+            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
+            when: path_to_vars_file is defined
+
         vars:
           install_k3s: true
           k3s_state: present #absent
