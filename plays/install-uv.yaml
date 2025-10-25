@@ -1,0 +1,62 @@
+---
+- name: Install UV Python Package Manager
+  hosts: all
+  become: false
+  vars:
+    uv_version: "0.9.3"
+    uv_install_url: "https://github.com/astral-sh/uv/releases/download/{{ uv_version }}/uv-installer.sh"
+
+  tasks:
+    - name: Check if UV is already installed
+      command: uv --version
+      register: uv_check
+      changed_when: false
+      failed_when: false
+
+    - name: Download UV installer script
+      get_url:
+        url: "{{ uv_install_url }}"
+        dest: "/tmp/uv-installer.sh"
+        mode: '0755'
+      when: uv_check.rc != 0
+
+    - name: Install UV
+      shell: sh /tmp/uv-installer.sh
+      args:
+        executable: /bin/sh
+      environment:
+        SHELL: /bin/sh
+      when: uv_check.rc != 0
+      register: uv_install
+
+    - name: Remove installer script
+      file:
+        path: "/tmp/uv-installer.sh"
+        state: absent
+      when: uv_check.rc != 0
+
+    - name: Verify UV installation
+      command: "{{ ansible_env.HOME }}/.local/bin/uv --version"
+      register: uv_version_output
+      changed_when: false
+
+    - name: Display UV version
+      debug:
+        msg: "UV installed successfully: {{ uv_version_output.stdout }}"
+
+    - name: Add UV to PATH in .bashrc
+      lineinfile:
+        path: "{{ ansible_env.HOME }}/.bashrc"
+        line: 'export PATH="$HOME/.local/bin:$PATH"'
+        state: present
+        create: yes
+      when: uv_check.rc != 0
+
+    - name: Add UV to PATH in .zshrc (if exists)
+      lineinfile:
+        path: "{{ ansible_env.HOME }}/.zshrc"
+        line: 'export PATH="$HOME/.local/bin:$PATH"'
+        state: present
+      when:
+        - uv_check.rc != 0
+        - ansible_env.SHELL is search("zsh")
