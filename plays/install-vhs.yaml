@@ -1,0 +1,66 @@
+---
+- name: Deploy VHS with required dependencies
+  hosts: "{{ target_host | default('all') }}"
+  become: yes
+
+  vars:
+    vhs_version: 0.10.0 # datasource=github-tags depName=charmbracelet/vhs
+    bin:
+      vhs:
+        bin_name: vhs
+        bin_version: "{{ vhs_version }}"
+        check_bin_version_before_installing: true
+        source_url: "https://github.com/charmbracelet/vhs/releases/download/v{{ vhs_version }}/vhs_{{ vhs_version }}_Linux_x86_64.tar.gz"
+        bin_to_copy: "vhs_{{ vhs_version }}_Linux_x86_64"
+        to_remove: ""
+        bin_dir: "/usr/bin/vhs"
+        version_cmd: "version"
+        target_version: "{{ vhs_version }}"
+
+    chrome_download_url: "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"
+    chrome_deb_path: "/tmp/google-chrome-stable_current_amd64.deb"
+    system_dependencies:
+      - libatk1.0-0
+      - libatk-bridge2.0-0
+      - libcups2
+      - libdrm2
+      - libxkbcommon0
+      - libxcomposite1
+      - libxdamage1
+      - libxrandr2
+      - libgbm1
+      - libpango-1.0-0
+      - libgtk-3-0
+      - libasound2t64
+      - libnss3
+      - libxss1
+      - libatspi2.0-0
+      - fonts-liberation
+      - libpangocairo-1.0-0
+
+  roles:
+    - role: sthings.baseos.download_install_binary
+
+  pre_tasks:
+    - name: Update apt package cache
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: Install required system dependencies
+      ansible.builtin.apt:
+        name: "{{ system_dependencies }}"
+        state: present
+
+    - name: Download Google Chrome
+      ansible.builtin.get_url:
+        url: "{{ chrome_download_url }}"
+        dest: "{{ chrome_deb_path }}"
+
+    - name: Install Google Chrome
+      ansible.builtin.apt:
+        deb: "{{ chrome_deb_path }}"
+
+    - name: Clean up Chrome installer
+      ansible.builtin.file:
+        path: "{{ chrome_deb_path }}"
+        state: absent
