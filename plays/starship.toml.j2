@@ -1,0 +1,13 @@
+# Get editor completions based on the config schema
+"$schema" = '{{ starship_config.starship_schema_url }}'
+
+# Inserts a blank line between shell prompts
+add_newline = {{ starship_config.add_newline | lower }}
+
+# Replace the '❯' symbol in the prompt with '➜'
+[character] # The name of the module we are configuring is 'character'
+success_symbol = '{{ starship_config.character_success_symbol }}'
+
+# Disable the package module, hiding it from the prompt completely
+[package]
+disabled = {{ starship_config.package_disabled | lower }}
