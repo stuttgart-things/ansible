@@ -1,0 +1,52 @@
+- hosts: "{{ target_host | default('all') }}"
+  become: true
+  vars:
+    developer: sthings
+    developer_user_dir: "/home/{{ developer }}"
+    starship_config:
+      starship_schema_url: "https://starship.rs/config-schema.json"
+      add_newline: true
+      character_success_symbol: "[➜](bold green)"
+      package_disabled: true
+
+  tasks:
+    - name: Install dependencies
+      ansible.builtin.package:
+        name:
+          - curl
+          - fonts-powerline
+        state: present
+
+    - name: Install starship to user directory
+      ansible.builtin.shell:
+        cmd: curl -sS https://starship.rs/install.sh | sh -s -- --yes --bin-dir {{ developer_user_dir }}/.local/bin
+        creates: "{{ developer_user_dir }}/.local/bin/starship"
+      become_user: "{{ developer }}"
+
+    - name: Ensure ~/.local/bin is in PATH
+      ansible.builtin.lineinfile:
+        path: "{{ developer_user_dir }}/.bashrc"
+        line: 'export PATH="$HOME/.local/bin:$PATH"'
+        create: yes
+        state: present
+      become_user: "{{ developer }}"
+
+    - name: Ensure starship init is in bashrc
+      ansible.builtin.lineinfile:
+        path: "{{ developer_user_dir }}/.bashrc"
+        line: 'eval "$(starship init bash)"'
+        create: yes
+        state: present
+      become_user: "{{ developer }}"
+
+    - name: Create starship config directory
+      ansible.builtin.file:
+        path: "{{ developer_user_dir }}/.config"
+        state: directory
+      become_user: "{{ developer }}"
+
+    - name: Create starship configuration using template
+      ansible.builtin.template:
+        src: starship.toml.j2
+        dest: "{{ developer_user_dir }}/.config/starship.toml"
+      become_user: "{{ developer }}"
