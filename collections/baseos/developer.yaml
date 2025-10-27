@@ -32,6 +32,41 @@ playbooks:
             ansible.builtin.shell: |
               wget -q https://kcl-lang.io/script/install-cli.sh -O - | /bin/bash
 
+  - name: ai
+    play: |
+      - name: Install brew
+        ansible.builtin.import_playbook: sthings.baseos.brew
+
+      - name: Install AI tools
+        hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: true
+
+        vars:
+          developer: sthings
+          brew_taps:
+            - dagger/tap
+            - charmbracelet/tap
+          ai_tools:
+            - dagger/tap/dagger
+            - gemini-cli
+            - charmbracelet/tap/crush
+
+        tasks:
+          - name: Add Homebrew taps
+            community.general.homebrew_tap:
+              name: "{{ item }}"
+              state: present
+            loop: "{{ brew_taps }}"
+            become_user: "{{ developer }}"
+
+          - name: Install AI tools via Homebrew
+            community.general.homebrew:
+              name: "{{ item }}"
+              state: present
+            loop: "{{ ai_tools }}"
+            become_user: "{{ developer }}"
+
   - name: dev
     play: |
       - name: Base setup
