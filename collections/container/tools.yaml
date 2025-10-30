@@ -30,7 +30,7 @@ vars:
       flux_version: 2.7.2 # datasource=github-tags depName=fluxcd/flux2
       glab_version: 1.74.0 # datasource=gitlab-tags depName=gitlab-org/cli
       cilium_version: 0.18.8 # datasource=github-tags depName=cilium/cilium-cli
-      dagger_version: 0.19.3 # datasource=github-tags depName=dagger/dagger
+      dagger_version: 0.19.4 # datasource=github-tags depName=dagger/dagger
       tkn_version: 0.42.0 # datasource=github-tags depName=tektoncd/cli
       vcluster_version: 0.29.1 # datasource=github-tags depName=loft-sh/vcluster
       vals_version: 0.42.4 # datasource=github-tags depName=helmfile/vals
