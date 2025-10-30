@@ -36,7 +36,7 @@ playbooks:
                 controller:
                   hostNetwork: true
                   service:
-                    type: ClusterIP
+                    type: "{{ ingress_service_type | default('ClusterIP') }}"
 
             cert-manager:
               ref: cert-manager/cert-manager

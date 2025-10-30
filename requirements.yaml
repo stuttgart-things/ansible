@@ -7,6 +7,7 @@ roles:
   - src: https://github.com/stuttgart-things/configure-rke-node.git
     scm: git
   - src: https://github.com/stuttgart-things/install-requirements.git
+    version: 2025.10.30
     scm: git
   - src: https://github.com/stuttgart-things/create-send-webhook.git
     version: 2024.06.06

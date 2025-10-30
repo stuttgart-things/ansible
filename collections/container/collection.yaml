@@ -8,7 +8,7 @@ requirements: |
       version: 2025.04.24
     - src: https://github.com/stuttgart-things/install-requirements.git
       scm: git
-      version: 2024.05.11
+      version: 2025.10.30
     - src: https://github.com/stuttgart-things/install-configure-vault.git
       scm: git
       version: 2025.29.07
