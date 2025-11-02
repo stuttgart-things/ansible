@@ -72,3 +72,50 @@ vars:
               tls:
                 source: secret
                 secretName: {{ hostname }}-tls
+
+  - name: rancher
+    file: |
+      ---
+      deployment_namespace: kube-system
+      headlamp_version: 0.33.0
+      helm_repositories:
+        #headlamp-cert-configuration:
+        #  url: ghcr.io/stuttgart-things
+        #  oci: true
+        headlamp:
+          url: https://kubernetes-sigs.github.io/headlamp/
+
+      helm_releases:
+        headlamp-cert-configuration:
+          ref: oci://ghcr.io/stuttgart-things/sthings-cluster
+          version: 0.3.15
+          namespace: "{{ deployment_namespace }}"
+          ignore: false
+          wait: true
+          release_values: |
+            installCRDs: true
+            issuerKind: "{{ headlamp_issuerKind | default('ClusterIssuer') }}"
+            clusterIssuer: "{{ headlamp_clusterIssuer | default('selfsigned') }}"
+            hostname: {{ headlamp_hostname | default('headlamp.k8scluster)' }}"
+            domain: {{ headlamp_domain | default('example.com') }}"
+
+        headlamp:
+          ref: headlamp/headlamp
+          version: "{{ headlamp_version }}"
+          namespace: "{{ deployment_namespace }}"
+          ignore: false
+          wait: true
+          release_values: |
+            ingressEnabled: true
+            issuerKindAnnotation: "cluster-issuer"
+            hostname: {{ headlamp_hostname | default('headlamp.k8scluster)' }}"
+            domain: {{ headlamp_domain | default('example.com') }}"
+            createCertificateResource: false
+            storageEnabled: "{{ headlamp_storageEnabled | default('false') }}"
+            storageAccessModes: ReadWriteOnce
+            storageClassName: "{{ headlamp_storageClassName | default('local-storage') }}"
+            clusterIssuer: "{{ headlamp_clusterIssuer | default('selfsigned') }}"
+            storageSize: "{{ headlamp_storageSize | default('1Gi') }}"
+            version: "{{ headlamp_version }}"
+
+      post_manifests: {}
