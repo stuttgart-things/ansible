@@ -1,0 +1,74 @@
+---
+vars:
+  - name: cert-manager
+    file: |
+      ---
+      deployment_namespace: cert-manager
+      helm_repositories:
+        cert-manager:
+          url: https://charts.jetstack.io
+
+      helm_releases:
+        cert-manager:
+          ref: cert-manager/cert-manager
+          version: v1.17.1
+          namespace: "{{ deployment_namespace }}"
+          ignore: false
+          wait: true
+          release_values: |
+            installCRDs: true
+
+      post_manifests: {}
+
+  - name: ingress-nginx
+    file: |
+      ---
+      ingress_nginx_version: 4.10.1
+      deployment_namespace: ingress-nginx
+      helm_repositories:
+        ingress-nginx:
+          url: https://kubernetes.github.io/ingress-nginx
+
+      post_manifests: {}
+
+      helm_releases:
+        ingress-nginx:
+          ref: ingress-nginx/ingress-nginx
+          version: "{{ ingress_nginx_version }}"
+          namespace: "{{ deployment_namespace }}"
+          ignore: false
+          wait: true
+          release_values: {}
+
+  - name: rancher
+    file: |
+      ---
+      rancher_version: 2.8.5
+      deployment_namespace: cattle-system
+      helm_repositories:
+        rancher-stable:
+          url: https://releases.rancher.com/server-charts/latest
+
+      helm_releases:
+        rancher:
+          ref: rancher-stable/rancher
+          version: "{{ rancher_version }}"
+          namespace: "{{ deployment_namespace }}"
+          ignore: false
+          wait: true
+          release_values: |
+            ---
+            global:
+              cattle:
+                psp:
+                  enabled: false
+            bootstrapPassword: {{ password }}
+            hostname: {{ hostname }}.{{ domain }}
+            privateCA: true
+            ingress:
+              enabled: true
+              ingressClassName: nginx
+              servicePort: 80
+              tls:
+                source: secret
+                secretName: {{ hostname }}-tls
