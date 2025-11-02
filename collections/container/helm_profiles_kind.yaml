@@ -123,7 +123,7 @@ vars:
                 enabled: true
 
   - name: awx-operator-kind
-    file: |
+    file: | # pragma: allowlist secret
       ---
       awx_operator_version: 3.0.0
       deployment_namespace: awx
