@@ -100,6 +100,18 @@ playbooks:
             with_items:
               - "{{ groups['all'] }}"
 
+  - name: reboot_vm
+    play: |
+      ---
+      - name: Reboot the machine
+        hosts: all
+        become: yes
+        tasks:
+          - name: Reboot the machine
+            ansible.builtin.reboot:
+              reboot_timeout: 600
+            when: ansible_facts['os_family'] in ['Debian', 'RedHat', 'Suse']
+
   - name: setup
     play: |
       ---
@@ -501,15 +513,3 @@ vars:
             alias ll='ls -ahl'
           generate_ssh_key: true
           enable_ssh_tcp_forwarding: true
-
-  - name: reboot_vm
-    play: |
-      ---
-      - name: Reboot the machine
-        hosts: all
-        become: yes
-        tasks:
-          - name: Reboot the machine
-            ansible.builtin.reboot:
-              reboot_timeout: 600
-            when: ansible_facts['os_family'] in ['Debian', 'RedHat', 'Suse']
