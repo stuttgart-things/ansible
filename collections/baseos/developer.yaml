@@ -106,7 +106,7 @@ playbooks:
         ansible.builtin.import_playbook: sthings.baseos.vhs
 
       - name: Reboot
-        import_playbook: sthings.container.reboot_vm
+        import_playbook: sthings.baseos.reboot_vm
 
       - name: Execute dev config
         import_playbook: sthings.baseos.dev_config
