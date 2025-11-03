@@ -79,17 +79,23 @@ playbooks:
         when: helm_releases is defined
         ignore_errors: "{{ item.value.ignore | default(omit) }}"
 
-      - name: Waiting for pods beeing ready
-        ansible.builtin.command: >
-          kubectl wait --for=condition=Ready --all pods -n {{ deployment_namespace }} --timeout=300s
-        environment:
-          KUBECONFIG: "{{ path_to_kubeconfig }}"
-        register: wait_result
-        until: wait_result.rc == 0
-        retries: "{{ max_retries | default (25) }}"
-        delay: "{{ delay_seconds | default (5) }}"
-        ignore_errors: true
-        changed_when: false
+      - name: Wait until pods are running
+        kubernetes.core.k8s_info:
+          kubeconfig: "{{ path_to_kubeconfig }}"
+          api_version: v1
+          kind: Pod
+          namespace: "{{ item.value.namespace }}"
+          wait_sleep: 30
+          wait_timeout: 360
+        register: pod_list
+        retries: "{{ item.values.wait_retries | default(15) }}"
+        delay: "{{ item.values.wait_delay | default(30) }}"
+        until: pod_list|json_query('resources[*].status.phase')|unique == ["Running"]
+        when: state == "present" and item.value.values is defined
+
+      - name: Wait for webhooks beeing ready
+        ansible.builtin.wait_for:
+          timeout: "{{ webhook_wait | default(0) }}"
 
       - name: Check for CRDs
         ansible.builtin.command: >
