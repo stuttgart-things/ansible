@@ -99,8 +99,8 @@ playbooks:
       - name: Install podman
         import_playbook: sthings.container.podman
 
-      - name: Install uv
-        ansible.builtin.import_playbook: sthings.baseos.uv
+      # - name: Install uv
+      #   ansible.builtin.import_playbook: sthings.baseos.uv
 
       - name: Install vhs
         ansible.builtin.import_playbook: sthings.baseos.vhs

@@ -1,0 +1,32 @@
+---
+headlamp_version: 0.33.0
+deployment_namespace: kube-system
+helm_repositories:
+  headlamp:
+    url: https://kubernetes-sigs.github.io/headlamp/
+
+helm_releases:
+  headlamp:
+    ref: headlamp/headlamp
+    version: "{{ headlamp_version | default('0.33.0') }}"
+    namespace: "{{ deployment_namespace | default('kube-system') }}"
+    ignore: false
+    wait: true
+    release_values: |
+      ---
+      ingress:
+        enabled: {{ ingress_enabled }}
+        ingressClassName: nginx
+        annotations:
+          cert-manager.io/{{ issuer_annotation | default('cluster-issuer') }}: "{{ issuer_name }}"
+        hosts:
+          - host: {{ hostname }}.{{ domain }}
+            paths:
+              - path: /
+                type: ImplementationSpecific
+        tls:
+          - secretName: {{ hostname }}-ingress-tls
+            hosts:
+              - {{ hostname }}.{{ domain }}
+
+post_manifests: {}
