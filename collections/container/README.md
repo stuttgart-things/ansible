@@ -15,15 +15,17 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 ```bash
 ansible-playbook sthings.container.kind -vv \
--e kind_cluster_name=kind1 \
--e kubectl_version=1.32.3 \
+-e kind_cluster_name=dev1 \
+-e kubectl_version=1.34.0 \
+-e provision_cluster=true \
+-e ansible_user=sthings \
 -i /tmp/hosts \
 -vv
 ```
 
 </details>
 
-<details><summary>DEPLOY KIND CLUSTER</summary>
+<details><summary>DEPLOY KUBERNETES KIND CLUSTER</summary>
 
 ```bash
 ansible-playbook sthings.container.deploy_to_k8s \
