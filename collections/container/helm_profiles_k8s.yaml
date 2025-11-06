@@ -155,3 +155,245 @@ vars:
             {% endif %}
 
       post_manifests: {}
+
+  - name: loki
+    file: |
+      ---
+      loki_version: 6.31.0
+      deployment_namespace: observability
+      profile: fs
+
+      helm_repositories:
+        grafana:
+          url: https://grafana.github.io/helm-charts
+
+      helm_releases:
+        loki:
+          ref: grafana/loki
+          version: "{{ loki_version | default('6.31.0') }}"
+          namespace: "{{ deployment_namespace }}"
+          ignore: false
+          wait: true
+          release_values: |
+            loki:
+              auth_enabled: {{ auth_enabled | default('false') }}
+
+              commonConfig:
+                replication_factor:  {{ replication_factor | default('1') }}
+
+              storage:
+                type: "{{ storage_type | default('filesystem') }}"
+                bucketNames:
+                  chunks: "ignored"
+                  ruler: "ignored"
+                  admin: "ignored"
+
+              storage_config:
+                filesystem:
+                  directory: {{ filesystem_directory | default('/var/loki/chunks') }}
+
+              schemaConfig:
+                configs:
+                  - from: "{{ schemaConfig_configs_from | default('2024-04-01') }}"
+                    store: {{ schemaConfig_configs_store | default('tsdb') }}
+                    object_store: {{ schemaConfig_configs_object_store | default('filesystem') }}
+                    schema: {{ schemaConfig_configs_schema | default('v13') }}
+                    index:
+                      prefix: {{ schemaConfig_index_prefix | default('loki_index_') }}
+                      period: {{ schemaConfig_index_period | default('24h') }}
+
+              pattern_ingester:
+                  enabled: {{ pattern_ingester_enabled | default('true') }}
+              limits_config:
+                allow_structured_metadata: {{ limits_config_allow_structured_metadata | default('true') }}
+                volume_enabled: {{ limits_config_volume_enabled | default('true') }}
+              ruler:
+                enable_api: {{ ruler_enable_api | default('true') }}
+
+            minio:
+              enabled: {{ minio_enabled | default('false') }}
+
+            deploymentMode: {{ deployment_mode | default('SingleBinary') }}
+
+            singleBinary:
+              replicas: {{ singleBinary_replicas | default('1') }}
+
+            # Zero out replica counts of other deployment modes
+            backend:
+              replicas: {{ backend_replicas | default('0') }}
+            read:
+              replicas: {{ read_replicas | default('0') }}
+            write:
+              replicas: {{ write_replicas | default('0') }}
+
+            ingester:
+              replicas: {{ ingester_replicas | default('0') }}
+            querier:
+              replicas: {{ querier_replicas | default('0') }}
+            queryFrontend:
+              replicas:  {{ queryFrontend_replicas | default('0') }}
+            queryScheduler:
+              replicas: {{ queryScheduler_replicas | default('0') }}
+            distributor:
+              replicas: {{ distributor_replicas | default('0') }}
+            compactor:
+              replicas: {{ compactor_replicas | default('0') }}
+            indexGateway:
+              replicas: {{ indexGateway_replicas | default('0') }}
+            bloomCompactor:
+              replicas: {{ bloomCompactor_replicas | default('0') }}
+            bloomGateway:
+              replicas: {{ bloomGateway_replicas | default('0') }}
+
+            chunksCache:
+              enabled: {{ chunksCache_enabled | default('false') }}
+
+            gateway:
+              enabled: {{ gateway_enabled | default('false') }}
+
+            resultsCache:
+              enabled: {{ resultsCache_enabled | default('false') }}
+
+      post_manifests: {}
+
+  - name: promtail
+    file: |
+      ---
+      promtail_version: 6.17.0
+      deployment_namespace: observability
+      lokiServiceName: loki
+      lokiNamespace: observability
+
+      helm_repositories:
+        grafana:
+          url: https://grafana.github.io/helm-charts
+
+      helm_releases:
+        promtail:
+          ref: grafana/promtail
+          version: "{{ promtail_version | default('6.17.0') }}"
+          namespace: "{{ deployment_namespace }}"
+          ignore: false
+          wait: true
+          release_values: |
+            ---
+            config:
+              clients:
+                - url: http://{{ lokiServiceName }}.{{ lokiNamespace }}.svc.cluster.local:3100/loki/api/v1/push
+                  tenant_id: "{{ tenant_id | default('default') }}"
+              positions:
+                filename: "{{ positions_filename | default('/var/log/positions.yaml') }}"
+
+            podLabels:
+              app: "{{ podLabels_app | default('promtail') }}"
+
+            tolerations:
+              - key: "{{ tolerations_key | default('node-role.kubernetes.io/control-plane') }}"
+                operator: "{{ tolerations_operator | default('Exists') }}"
+                effect: "{{ tolerations_effect | default('NoSchedule') }}"
+
+            rbac:
+              create: "{{ rbac_create | default('true') }}"
+
+            serviceAccount:
+              create: {{ serviceAccount_create | default('true') }}
+              name: "{{ serviceAccount_name | default('promtail') }}"
+
+      post_manifests: {}
+
+  - name: grafana
+    file: |
+      ---
+      grafana_version: 7.3.9
+      deployment_namespace: observability
+      hostname: grafana
+      domain: 172.18.0.5.nip.io
+      issuer_name: selfsigned
+      create_cert_resource: false
+      ingress_enabled: true
+      size: 1
+      enable_persistence: true
+      nodePortHttp: 30084
+      
+      helm_repositories:
+        grafana:
+          url: https://grafana.github.io/helm-charts
+      
+      helm_releases:
+        grafana:
+          ref: grafana/grafana
+          version: "{{ grafana_version | default('7.3.9') }}"
+          namespace: "{{ deployment_namespace }}"
+          ignore: false
+          wait: true
+          release_values: |
+            ---
+            {% if ingress_enabled %}
+            ingress:
+              enabled: {{ ingress_enabled | default(true) }}
+              ingressClassName: "{{ ingress_class_name | default('nginx') }}"
+            {% if not create_cert_resource %}
+              annotations:
+                cert-manager.io/{{ issuer_annotation | default('cluster-issuer') }}: "{{ issuer_name }}"
+            {% endif %}
+              labels: {{ ingress_labels | default('{}') }}
+              path: {{ ingress_path | default('/') }}
+              pathType: "{{ ingress_pathtype | default('Prefix') }}"
+              hosts:
+                - {{ hostname }}.{{ domain }}
+              tls:
+                - secretName: {{ hostname }}.{{ domain }}-tls
+                  hosts:
+                    - {{ hostname }}.{{ domain }}
+            {% endif %}
+      
+            initChownData:
+              enabled: {{ initchowndata_enabled | default('false') }}
+      
+            {% if enable_persistence %}
+            persistence:
+              enabled: {{ persistence_enabled | default('true') }}
+              storageClassName: "{{ storage_class_name | default('standard') }}"
+              accessModes:
+                - ReadWriteOnce
+              size: {{ persistence_size | default('1') }}Gi
+              finalizers:
+                - kubernetes.io/pvc-protection
+              extraPvcLabels: {}
+              disableWarning: false
+            {% endif %}
+      
+            service:
+              type: "{{ service_type | default('ClusterIP') }}"
+            {% if nodePortHttp %}
+              nodePort: "{{ nodePortHttp | default('30084') }}"
+            {% endif %}
+      
+        grafana-app-configuration:
+          ref: oci://ghcr.io/stuttgart-things/sthings-cluster
+          version: "{{ sthings_cluster_chart_version | default('0.3.15') }}"
+          namespace: "{{ deployment_namespace }}"
+          ignore: false
+          wait: true
+          release_values: |
+            ---
+            {% if create_cert_resource %}
+            customresources:
+              ingress-certificate-grafana:
+                apiVersion: cert-manager.io/v1
+                kind: Certificate
+                metadata:
+                  name: grafana-ingress
+                  namespace: {{ deployment_namespace }}
+                spec:
+                  commonName: {{ hostname }}.{{ domain }}
+                  dnsNames:
+                    - {{ hostname }}.{{ domain }}
+                  issuerRef:
+                    name: {{ issuer_name }}
+                    kind: {{ issuer_annotation | default('cluster-issuer') }}
+                  secretName: {{ hostname }}-ingress-tls
+            {% endif %}
+      
+      post_manifests: {}
+
