@@ -307,7 +307,7 @@ vars:
       grafana_version: 7.3.9
       deployment_namespace: observability
       hostname: grafana
-      domain: 172.18.0.5.nip.io
+      domain: example.com
       issuer_name: selfsigned
       create_cert_resource: false
       ingress_enabled: true
