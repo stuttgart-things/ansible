@@ -129,7 +129,7 @@ playbooks:
           state: "{{ state | default('present') }}"
           definition: "{{ lookup('template', '/tmp/{{ item.key }}.yaml.j2') | from_yaml }}"
 
-  - name: send-events-homerun
+  - name: send_events_homerun
     play: |
       ---
       - hosts: "{{ target_host | default('all') }}"
