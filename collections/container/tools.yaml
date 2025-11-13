@@ -20,17 +20,17 @@ vars:
       ---
       kind_version: 0.30.0 # datasource=github-tags depName=kubernetes-sigs/kind
       skopeo_version: 1.20.0 # datasource=github-tags depName=lework/skopeo-binary
-      helm_version: 3.19.0 # datasource=github-tags depName=helm/helm
+      helm_version: 4.0.0 # datasource=github-tags depName=helm/helm
       kubectl_version: v1.30.2 # datasource=github-tags depName=kubernetes/kubectl
       k9s_version: 0.50.16 # datasource=github-tags depName=derailed/k9s
-      velero_version: 1.17.0 # datasource=github-tags depName=vmware-tanzu/velero
+      velero_version: 1.17.1 # datasource=github-tags depName=vmware-tanzu/velero
       kubectl_slice_version: 1.4.2 # datasource=github-tags depName=patrickdappollonio/kubectl-slice
       helmfile_version: 1.1.9 # datasource=github-tags depName=helmfile/helmfile
       argocd_version: 3.2.0 # datasource=github-tags depName=argoproj/argo-cd
       flux_version: 2.7.3 # datasource=github-tags depName=fluxcd/flux2
-      glab_version: 1.76.2 # datasource=gitlab-tags depName=gitlab-org/cli
+      glab_version: 1.77.0 # datasource=gitlab-tags depName=gitlab-org/cli
       cilium_version: 0.18.8 # datasource=github-tags depName=cilium/cilium-cli
-      dagger_version: 0.19.4 # datasource=github-tags depName=dagger/dagger
+      dagger_version: 0.19.6 # datasource=github-tags depName=dagger/dagger
       tkn_version: 0.42.0 # datasource=github-tags depName=tektoncd/cli
       vcluster_version: 0.30.0 # datasource=github-tags depName=loft-sh/vcluster
       vals_version: 0.42.4 # datasource=github-tags depName=helmfile/vals

@@ -396,4 +396,3 @@ vars:
             {% endif %}
       
       post_manifests: {}
-

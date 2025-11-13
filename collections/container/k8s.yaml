@@ -128,3 +128,56 @@ playbooks:
           kubeconfig: "{{ path_to_kubeconfig }}"
           state: "{{ state | default('present') }}"
           definition: "{{ lookup('template', '/tmp/{{ item.key }}.yaml.j2') | from_yaml }}"
+
+  - name: send_events_homerun
+    play: |
+      ---
+      - hosts: "{{ target_host | default('all') }}"
+        gather_facts: false
+        vars:
+          # Use plain defaults to avoid recursive templating
+          count_messages: 5
+          delay: 5
+          homerun_address: "{{ lookup('env', 'HOMERUN_ADDRESS') | default('https://homerun.demo-infra.whatever.de/generic') }}"
+          homerun_token: "{{ lookup('env', 'HOMERUN_TOKEN') | default('IhrGeheimerToken') }}"
+          systems: ["github", "gitlab"]
+          titles: ["System Alert", "System Incident", "Incident"]
+          messages: ["Memory usage is high", "CPU usage is high", "Memory and CPU usage is high"]
+          severities: ["INFO", "ERROR", "WARNING"]
+          authors: ["bibi", "gude", "andreu", "qolf", "pat"]
+          artifacts: ["image-1.23.tar.gz", "test.tar.gz", "report.json", "result.txt"]
+          tags: ["usage,alert", "cpu", "cpu,usage,alert", "memory,usage,alert", "monitoring,usage,alert,memory"]
+          domains: ["example.com", "test.com", "mail.com", "demo.com"]
+        tasks:
+          - name: Send random messages to Homerun app
+            uri:
+              url: "{{ homerun_address }}"
+              method: POST
+              headers:
+                Content-Type: "application/json"
+                X-Auth-Token: "{{ homerun_token }}"
+              body_format: json
+              validate_certs: no
+              body: >
+                {{
+                  {
+                    "title": (titles | random),
+                    "message": (messages | random),
+                    "severity": (severities | random),
+                    "author": (authors | random),
+                    "timestamp": "%04d-%02d-%02dT%02d:%02d:%02dZ" | format(2024 + (range(0,10)|random), (range(1,13)|random), (range(1,29)|random), (range(0,24)|random), (range(0,60)|random), (range(0,60)|random)),
+                    "system": (systems | random),
+                    "tags": (tags | random),
+                    "assigneeaddress": (lookup('password', '/dev/null chars=ascii_letters,digits length=8')) ~ '@' ~ (domains | random),
+                    "assigneename": (authors | random),
+                    "artifacts": (artifacts | random),
+                    "url": "http://" ~ (lookup('password', '/dev/null chars=ascii_letters,digits length=6')) ~ '.' ~ (domains | random) ~ '/' ~ (lookup('password', '/dev/null chars=ascii_letters,digits length=10'))
+                  }
+                }}
+            register: response
+            loop: "{{ range(1, count_messages + 1) | list }}"
+            loop_control:
+              index_var: idx
+            retries: 3
+            delay: "{{ delay }}"
+            until: response.status == 200
