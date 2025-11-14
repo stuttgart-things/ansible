@@ -74,8 +74,7 @@ playbooks:
           create_namespace: true
           state: "{{ state | default('present') }}"
           values: "{{ lookup('template', '{{ tmp_dir }}/{{ item.key }}-values.yaml.j2') | from_yaml | default(omit) }}"
-          wait: "{{ item.values.wait |
-          default(omit) }}"
+          wait: "{{ item.values.wait | default(omit) }}"
         when: helm_releases is defined
         ignore_errors: "{{ item.value.ignore | default(omit) }}"
 
@@ -85,13 +84,13 @@ playbooks:
           api_version: v1
           kind: Pod
           namespace: "{{ item.value.namespace }}"
-          wait_sleep: 30
-          wait_timeout: 360
         register: pod_list
-        retries: "{{ item.values.wait_retries | default(15) }}"
-        delay: "{{ item.values.wait_delay | default(30) }}"
-        until: pod_list|json_query('resources[*].status.phase')|unique == ["Running"]
-        when: state == "present" and item.value.values is defined
+        retries: "{{ item.value.wait_retries | default(10) }}"
+        delay: "{{ item.value.wait_delay | default(5) }}"
+        until: (pod_list is defined) and
+               (pod_list.resources | default([]) | length > 0) and
+               ("Running" in (pod_list | json_query('resources[*].status.phase')))
+        when: state == "present" and item.value.namespace is defined
 
       - name: Wait for webhooks beeing ready
         ansible.builtin.wait_for:
