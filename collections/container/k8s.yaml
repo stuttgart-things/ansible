@@ -180,3 +180,107 @@ playbooks:
             retries: 3
             delay: "{{ delay }}"
             until: response.status == 200
+
+  - name: provision_edge
+    play: | # pragma: allowlist secret
+      - name: Create kind-cluster
+        ansible.builtin.import_playbook: sthings.container.kind
+        vars:
+          kind_cluster_name: dev
+          deployment_vars: Nil
+          ansible_user: sthings
+          count_worker_nodes: 3
+          count_controlplane_nodes: 1
+          kubectl_version: 1.34.0
+          kind_version: 0.30.0
+          enable_ingress_ports: true
+          enable_host_paths: true
+          provision_cluster: true
+          docker_install_compose: true
+          install_kind: true
+          path_to_kubeconfig: ~/.kube/test
+        when: create_kind_cluster is defined and create_kind_cluster | bool
+
+      #- name: Create k3s-cluster
+      #  ansible.builtin.import_playbook: sthings.container.k3s
+      #  vars:
+      #    k3s_cluster_name: dev
+      #    deployment_vars: Nil
+      #    ansible_user: sthings
+      #    kubectl_version: 1.34.0
+      #    path_kubeconfig: "/home/{{ ansible_user }}/.kube/{{ k3s_cluster_name }}"
+      #  when: create_k3s_cluster is defined and create_k3s_cluster | bool
+
+      - name: GUI - Deploy Headlamp
+        ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          deployment_namespace: kube-system
+          headlamp_version: 0.33.0
+          path_to_kubeconfig: ~/.kube/test
+          domain: example.com
+          issuer_name: selfsigned
+          create_cert_resource: false
+          issuer_annotation: ClusterIssuer
+          profile: headlamp
+          ansible_user: sthings
+
+      - name: Monitoring - Deploy Loki
+        ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          deployment_namespace: observability
+          loki_version: 6.31.0
+          path_to_kubeconfig: ~/.kube/test
+          path: ~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars
+          profile: loki
+          state: present
+          ansible_user: sthings
+
+      - name: Monitoring - Deploy Promtail
+        ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          deployment_namespace: observability
+          promtail_version: 6.17.0
+          lokiServiceName: loki
+          lokiNamespace: observability
+          path_to_kubeconfig: ~/.kube/test
+          path: ~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars
+          profile: promtail
+          state: present
+          ansible_user: sthings
+
+      - name: Monitoring - Deploy Grafana
+        ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          deployment_namespace: observability
+          grafana_version: 7.3.9
+          hostname: grafana
+          domain: example.com
+          path_to_kubeconfig: ~/.kube/test
+          issuer_name: selfsigned
+          create_cert_resource: false
+          ingress_enabled: true
+          path: ~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars
+          profile: grafana
+          state: present
+          ansible_user: sthings
+
+      - name: Homerun - Deploy Base-Stack
+        ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          deployment_namespace: homerun
+          homerun_chart_version: 'v0.2.1'
+          genericPitcherEnabled: true
+          textCatcherEnabled: true
+          genericPitcherDomain: demo-infra.example.com
+          redisStackServiceName: redis-stack-headless
+          redisStackPassword: example-password
+          redisStackServiceType: ClusterIP
+          redisStackStorageClass: standard
+          redisStackVersion: '7.2.0-v18 #6.2.6-v9'
+          genericPitcherToken: example-token
+          issuer_annotation: ClusterIssuer
+          path_to_kubeconfig: ~/.kube/test
+          path: ~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars
+          profile: homerun-base-stack
+          state: present
+          ansible_user: sthings

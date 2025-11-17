@@ -314,11 +314,11 @@ vars:
       size: 1
       enable_persistence: true
       nodePortHttp: 30084
-      
+
       helm_repositories:
         grafana:
           url: https://grafana.github.io/helm-charts
-      
+
       helm_releases:
         grafana:
           ref: grafana/grafana
@@ -346,10 +346,10 @@ vars:
                   hosts:
                     - {{ hostname }}.{{ domain }}
             {% endif %}
-      
+
             initChownData:
               enabled: {{ initchowndata_enabled | default('false') }}
-      
+
             {% if enable_persistence %}
             persistence:
               enabled: {{ persistence_enabled | default('true') }}
@@ -362,13 +362,13 @@ vars:
               extraPvcLabels: {}
               disableWarning: false
             {% endif %}
-      
+
             service:
               type: "{{ service_type | default('ClusterIP') }}"
             {% if nodePortHttp %}
               nodePort: "{{ nodePortHttp | default('30084') }}"
             {% endif %}
-      
+
         grafana-app-configuration:
           ref: oci://ghcr.io/stuttgart-things/sthings-cluster
           version: "{{ sthings_cluster_chart_version | default('0.3.15') }}"
@@ -394,5 +394,5 @@ vars:
                     kind: {{ issuer_annotation | default('cluster-issuer') }}
                   secretName: {{ hostname }}-ingress-tls
             {% endif %}
-      
+
       post_manifests: {}
