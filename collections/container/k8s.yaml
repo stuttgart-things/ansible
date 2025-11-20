@@ -183,6 +183,61 @@ playbooks:
 
   - name: provision_edge
     play: | # pragma: allowlist secret
+      - hosts: localhost
+        gather_facts: false
+        vars:
+          ansible_user: sthings
+        tasks:
+          - name: Generate SSH keypair for controller user if missing    
+            community.crypto.openssh_keypair:
+              path: "{{ lookup('env','HOME') }}/.ssh/id_ed25519"
+              type: ed25519
+              comment: "{{ ansible_user }}@ansible-controller"
+              state: present
+              mode: '0600'
+      
+          - name: Add target host fingerprint to controller's known_hosts
+            ansible.builtin.known_hosts:
+              path: "{{ lookup('env','HOME') }}/.ssh/known_hosts"        
+              name: "{{ hostvars[item].ansible_host | default(item) }}"  
+              key: "{{ lookup('pipe', 'ssh-keyscan -H ' + (hostvars[item].ansible_host | default(item))) }}"
+              state: present
+            loop: "{{ groups['initial_master_node'] }}"
+      
+          - name: Ensure public key is authorized on target
+            ansible.posix.authorized_key:
+              user: "{{ hostvars[item].ansible_user }}"
+              state: present
+              key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/id_ed25519.pub') }}"
+            delegate_to: "{{ hostvars[item].ansible_host | default(item) }}"
+            loop: "{{ groups['initial_master_node'] }}"
+      
+      - hosts: "{{ target_host | default('all') }}"
+        become: true
+        vars:
+          ansible_user: sthings
+        tasks:
+          - name: Ensure .ssh directory exists for sthings
+            ansible.builtin.file:
+              path: "/home/{{ ansible_user }}/.ssh"
+              state: directory
+              owner: "{{ ansible_user }}"
+              group: "{{ ansible_user }}"
+              mode: '0700'
+      
+          - name: Add host fingerprint to remote user's known_hosts
+            ansible.builtin.known_hosts:
+              path: "/home/{{ ansible_user }}/.ssh/known_hosts"
+              name: "{{ inventory_hostname }}"
+              key: "{{ lookup('pipe', 'ssh-keyscan -H ' + inventory_hostname) }}"
+              state: present
+      
+          - name: Ensure SSH public key is present on target
+            ansible.builtin.authorized_key:
+              user: "{{ ansible_user }}"
+              state: present
+              key: "{{ lookup('file', '/home/' ~ ansible_user ~ '/.ssh/id_ed25519.pub') }}"
+      
       - name: Create kind-cluster
         ansible.builtin.import_playbook: sthings.container.kind
         vars:
@@ -197,8 +252,8 @@ playbooks:
           enable_host_paths: true
           provision_cluster: true
           docker_install_compose: true
-          install_kind: true 
-          path_to_kubeconfig: "{{ kind_kubeconfig_path | default('/home/sthings/.kube/test') }}"
+          install_kind: true
+          path_to_kubeconfig: "{{ k8s_kubeconfig_path | default('/home/sthings/.kube/test') }}"
         when: cluster_type | default('kind') == 'kind'
       
       - name: Create k3s-cluster
@@ -211,7 +266,7 @@ playbooks:
           install_k3s: true
           k3s_state: present #absent
           k3s_k8s_version: "{{ k3s_cluster_version | default('1.34.1') }}"
-          fetched_kubeconfig_path: "{{ k3s_fetch_kubeconfig_path | default('/home/sthings/.kube/test') }}"
+          fetched_kubeconfig_path: "{{ k8s_fetch_kubeconfig_path | default('/home/sthings/.kube/test') }}"
           k3s_release_kind: k3s1
           cluster_setup: singlenode
           install_cillium: true
@@ -219,17 +274,17 @@ playbooks:
           state: present
         when: cluster_type | default('kind') == 'k3s'
       
-      - name: k3s - cert-manager
-        ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
-        vars:
-          deployment_namespace: cert-manager
-          profile: cert-manager-kind
-          cert_manager_version: "{{ k3s_cert_manager_version | default('v1.16.0') }}"
-          path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
-          state: present
-          ansible_user: sthings
-          path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
-        when: cluster_type | default('kind') == 'k3s'
+      #- name: k3s - cert-manager
+      #  ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
+      #  vars:
+      #    deployment_namespace: cert-manager
+      #    profile: cert-manager-kind
+      #    cert_manager_version: "{{ k3s_cert_manager_version | default('v1.16.0') }}"
+      #    path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
+      #    state: present
+      #    ansible_user: sthings
+      #    path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
+      #  when: cluster_type | default('kind') == 'k3s'
       
       #- name: k3s - ingress-nginx
       #  ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
