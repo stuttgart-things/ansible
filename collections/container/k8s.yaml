@@ -186,101 +186,136 @@ playbooks:
       - name: Create kind-cluster
         ansible.builtin.import_playbook: sthings.container.kind
         vars:
-          kind_cluster_name: dev
-          deployment_vars: Nil
+          kind_cluster_name: "{{ k8s_cluster_name | default('dev') }}"
+          deployment_vars: "{{ kind_deployment_vars | default('Nil') }}"
           ansible_user: sthings
           count_worker_nodes: 3
           count_controlplane_nodes: 1
-          kubectl_version: 1.34.0
-          kind_version: 0.30.0
+          kubectl_version: "{{ kind_kubectl_version | default('1.34.0') }}"
+          kind_version: "{{ k8s_kind_version | default('0.30.0') }}"
           enable_ingress_ports: true
           enable_host_paths: true
           provision_cluster: true
           docker_install_compose: true
-          install_kind: true
-          path_to_kubeconfig: ~/.kube/test
-        when: create_kind_cluster is defined and create_kind_cluster | bool
-
-      #- name: Create k3s-cluster
-      #  ansible.builtin.import_playbook: sthings.container.k3s
+          install_kind: true 
+          path_to_kubeconfig: "{{ kind_kubeconfig_path | default('/home/sthings/.kube/test') }}"
+        when: cluster_type | default('kind') == 'kind'
+      
+      - name: Create k3s-cluster
+        ansible.builtin.import_playbook: sthings.rke.k3s
+        vars:
+          target_host: localhost
+          k3s_cluster_name: "{{ k8s_cluster_name | default('dev') }}"
+          deployment_vars: "{{ kind_deployment_vars | default('Nil') }}"
+          ansible_user: sthings
+          install_k3s: true
+          k3s_state: present #absent
+          k3s_k8s_version: "{{ k3s_cluster_version | default('1.34.1') }}"
+          fetched_kubeconfig_path: "{{ k3s_fetch_kubeconfig_path | default('/home/sthings/.kube/test') }}"
+          k3s_release_kind: k3s1
+          cluster_setup: singlenode
+          install_cillium: true
+          deploy_helm_charts: true
+          state: present
+        when: cluster_type | default('kind') == 'k3s'
+      
+      - name: k3s - cert-manager
+        ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          deployment_namespace: cert-manager
+          profile: cert-manager-kind
+          cert_manager_version: "{{ k3s_cert_manager_version | default('v1.16.0') }}"
+          path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
+          state: present
+          ansible_user: sthings
+          path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
+        when: cluster_type | default('kind') == 'k3s'
+      
+      #- name: k3s - ingress-nginx
+      #  ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
       #  vars:
-      #    k3s_cluster_name: dev
-      #    deployment_vars: Nil
+      #    deployment_namespace: ingress-nginx
+      #    profile: ingress-nginx-k3s
+      #    ingress_nginx_version: "{{ k3s_ingress_nginx_version | default('4.11.2') }}"
+      #    path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
+      #    state: present
       #    ansible_user: sthings
-      #    kubectl_version: 1.34.0
-      #    path_kubeconfig: "/home/{{ ansible_user }}/.kube/{{ k3s_cluster_name }}"
-      #  when: create_k3s_cluster is defined and create_k3s_cluster | bool
-
+      #    path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
+      #    ingress_nginx_version: "{{ k3s_ingress_nginx_version | default('4.11.2') }}"
+      #  when: cluster_type | default('kind') == 'k3s'
+      
       - name: GUI - Deploy Headlamp
         ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
         vars:
-          deployment_namespace: kube-system
-          headlamp_version: 0.33.0
-          path_to_kubeconfig: ~/.kube/test
-          domain: example.com
-          issuer_name: selfsigned
+          deployment_namespace: "{{ headlamp_deployment_namespace | default('kube-system') }}"
+          headlamp_version: "{{ headlamp_version | default('0.33.0') }}"
+          path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
+          domain: "{{ apps_domain | default('example.com') }}"
+          issuer_name: "{{ headlamp_issuer_name | default('selfsigned') }}"
           create_cert_resource: false
           issuer_annotation: ClusterIssuer
-          profile: headlamp
+          path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
+          profile: "{{ headlamp_profile | default('headlamp') }}"
           ansible_user: sthings
-
+      
       - name: Monitoring - Deploy Loki
         ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
         vars:
-          deployment_namespace: observability
-          loki_version: 6.31.0
-          path_to_kubeconfig: ~/.kube/test
-          path: ~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars
-          profile: loki
+          deployment_namespace: "{{ monitoring_deployment_namespace | default('observability') }}"
+          loki_version: "{{ monitoring_loki_version | default('6.31.0') }}"
+          path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
+          path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
+          profile: "{{ loki_profile | default('loki') }}"
           state: present
           ansible_user: sthings
-
+      
       - name: Monitoring - Deploy Promtail
         ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
         vars:
-          deployment_namespace: observability
-          promtail_version: 6.17.0
-          lokiServiceName: loki
-          lokiNamespace: observability
-          path_to_kubeconfig: ~/.kube/test
-          path: ~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars
-          profile: promtail
+          deployment_namespace: "{{ monitoring_deployment_namespace | default('observability') }}"
+          promtail_version: "{{ monitoring_promtail_version | default('6.17.0') }}"
+          lokiServiceName: "{{ promtail_lokiServiceName | default('loki') }}"
+          lokiNamespace: "{{ promtail_lokiNamespace | default('observability') }}"
+          path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
+          path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
+          profile: "{{ promtail_profile | default('promtail') }}"
           state: present
           ansible_user: sthings
-
+      
       - name: Monitoring - Deploy Grafana
         ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
         vars:
-          deployment_namespace: observability
-          grafana_version: 7.3.9
-          hostname: grafana
-          domain: example.com
-          path_to_kubeconfig: ~/.kube/test
-          issuer_name: selfsigned
+          deployment_namespace: "{{ monitoring_deployment_namespace | default('observability') }}"
+          grafana_version: "{{ monitoring_grafana_version | default('7.3.9') }}"
+          hostname: "{{ grafana_hostname | default('grafana') }}"
+          domain: "{{ apps_domain | default('example.com') }}"
+          path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
+          issuer_name: "{{ grafana_issuer_name | default('selfsigned') }}"
+          storage_class_name: "{{ grafana_storage_class_name | default('standard') }}"
           create_cert_resource: false
-          ingress_enabled: true
-          path: ~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars
-          profile: grafana
+          ingress_enabled: "{{ grafana_ingress_enabled | default('true') }}"
+          path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
+          profile: "{{ grafana_profile | default('grafana') }}"
           state: present
           ansible_user: sthings
-
+      
       - name: Homerun - Deploy Base-Stack
         ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
         vars:
-          deployment_namespace: homerun
-          homerun_chart_version: 'v0.2.1'
-          genericPitcherEnabled: true
-          textCatcherEnabled: true
-          genericPitcherDomain: demo-infra.example.com
-          redisStackServiceName: redis-stack-headless
-          redisStackPassword: example-password
-          redisStackServiceType: ClusterIP
-          redisStackStorageClass: standard
-          redisStackVersion: '7.2.0-v18 #6.2.6-v9'
-          genericPitcherToken: example-token
+          deployment_namespace: "{{ base_stack_deployment_namespace | default('homerun') }}"
+          homerun_chart_version: "{{ base_stack_chart_version | default('v0.2.1') }}"
+          genericPitcherEnabled: "{{ base_stack_genericPitcherEnabled | default(true) }}"
+          textCatcherEnabled: "{{ base_stack_textCatcherEnabled | default(true) }}"
+          genericPitcherDomain: "{{ base_stack_genericPitcherDomain | default('demo-infra.example.com') }}"
+          redisStackServiceName: "{{ base_stack_redisStackServiceName | default('redis-stack-headless') }}"
+          redisStackPassword: "{{ base_stack_redisStackPassword | default('example-password') }}"
+          redisStackServiceType: "{{ base_stack_redisStackServiceType | default('ClusterIP') }}"
+          redisStackStorageClass: "{{ base_stack_redisStackStorageClass | default('standard') }}"
+          redisStackVersion: "{{ base_stack_redisStackVersion | default('7.2.0-v18 #6.2.6-v9') }}"
+          genericPitcherToken: "{{ base_stack_genericPitcherToken | default('example-token') }}"
           issuer_annotation: ClusterIssuer
-          path_to_kubeconfig: ~/.kube/test
-          path: ~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars
-          profile: homerun-base-stack
+          path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
+          path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
+          profile: "{{ base_stack_profile | default('homerun-base-stack') }}"
           state: present
           ansible_user: sthings
