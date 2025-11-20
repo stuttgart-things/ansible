@@ -122,7 +122,7 @@ vars:
       task_version: 3.45.5 # datasource=github-tags depName=go-task/task
       hugo_version: 0.152.2 # datasource=github-tags depName=gohugoio/hugo
       terraform_version: 1.14.0 # datasource=custom.hashicorp
-      packer_version: 1.14.2 # datasource=custom.hashicorp
+      packer_version: 1.14.3 # datasource=custom.hashicorp
       yq_version: 4.48.2 # datasource=github-tags depName=mikefarah/yq
       jq_version: 1.7.1 # datasource=github-tags depName=jqlang/jq
       machineshop_version: 2.11.0 # datasource=github-tags depName=stuttgart-things/machineshop
