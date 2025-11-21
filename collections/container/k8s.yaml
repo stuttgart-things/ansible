@@ -188,7 +188,7 @@ playbooks:
         vars:
           ansible_user: sthings
         tasks:
-          - name: Generate SSH keypair for controller user if missing    
+          - name: Generate SSH keypair for controller user if missing
             community.crypto.openssh_keypair:
               path: "{{ lookup('env','HOME') }}/.ssh/id_ed25519"
               type: ed25519
@@ -198,8 +198,8 @@ playbooks:
       
           - name: Add target host fingerprint to controller's known_hosts
             ansible.builtin.known_hosts:
-              path: "{{ lookup('env','HOME') }}/.ssh/known_hosts"        
-              name: "{{ hostvars[item].ansible_host | default(item) }}"  
+              path: "{{ lookup('env','HOME') }}/.ssh/known_hosts"
+              name: "{{ hostvars[item].ansible_host | default(item) }}"
               key: "{{ lookup('pipe', 'ssh-keyscan -H ' + (hostvars[item].ansible_host | default(item))) }}"
               state: present
             loop: "{{ groups['initial_master_node'] }}"
@@ -264,7 +264,7 @@ playbooks:
           deployment_vars: "{{ kind_deployment_vars | default('Nil') }}"
           ansible_user: sthings
           install_k3s: true
-          k3s_state: present #absent
+          k3s_state: present
           k3s_k8s_version: "{{ k3s_cluster_version | default('1.34.1') }}"
           fetched_kubeconfig_path: "{{ k8s_fetch_kubeconfig_path | default('/home/sthings/.kube/test') }}"
           k3s_release_kind: k3s1
@@ -274,38 +274,13 @@ playbooks:
           state: present
         when: cluster_type | default('kind') == 'k3s'
       
-      #- name: k3s - cert-manager
-      #  ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
-      #  vars:
-      #    deployment_namespace: cert-manager
-      #    profile: cert-manager-kind
-      #    cert_manager_version: "{{ k3s_cert_manager_version | default('v1.16.0') }}"
-      #    path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
-      #    state: present
-      #    ansible_user: sthings
-      #    path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
-      #  when: cluster_type | default('kind') == 'k3s'
-      
-      #- name: k3s - ingress-nginx
-      #  ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
-      #  vars:
-      #    deployment_namespace: ingress-nginx
-      #    profile: ingress-nginx-k3s
-      #    ingress_nginx_version: "{{ k3s_ingress_nginx_version | default('4.11.2') }}"
-      #    path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
-      #    state: present
-      #    ansible_user: sthings
-      #    path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
-      #    ingress_nginx_version: "{{ k3s_ingress_nginx_version | default('4.11.2') }}"
-      #  when: cluster_type | default('kind') == 'k3s'
-      
       - name: GUI - Deploy Headlamp
         ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
         vars:
           deployment_namespace: "{{ headlamp_deployment_namespace | default('kube-system') }}"
           headlamp_version: "{{ headlamp_version | default('0.33.0') }}"
           path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
-          domain: "{{ apps_domain | default('example.com') }}"
+          domain: "{{ headlamp_domain | default('example.com') }}"
           issuer_name: "{{ headlamp_issuer_name | default('selfsigned') }}"
           create_cert_resource: false
           issuer_annotation: ClusterIssuer
@@ -343,7 +318,7 @@ playbooks:
           deployment_namespace: "{{ monitoring_deployment_namespace | default('observability') }}"
           grafana_version: "{{ monitoring_grafana_version | default('7.3.9') }}"
           hostname: "{{ grafana_hostname | default('grafana') }}"
-          domain: "{{ apps_domain | default('example.com') }}"
+          domain: "{{ grafana_domain | default('example.com') }}"
           path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
           issuer_name: "{{ grafana_issuer_name | default('selfsigned') }}"
           storage_class_name: "{{ grafana_storage_class_name | default('standard') }}"
@@ -369,6 +344,7 @@ playbooks:
           redisStackVersion: "{{ base_stack_redisStackVersion | default('7.2.0-v18 #6.2.6-v9') }}"
           genericPitcherToken: "{{ base_stack_genericPitcherToken | default('example-token') }}"
           issuer_annotation: ClusterIssuer
+          genericPitcherIssuerName: "{{ base_stack_genericPitcherIssuerName | default('selfsigned') }}"
           path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
           path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
           profile: "{{ base_stack_profile | default('homerun-base-stack') }}"

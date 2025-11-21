@@ -79,7 +79,6 @@ vars:
       headlamp_version: 0.33.0
       deployment_namespace: kube-system
       hostname: headlamp
-      domain: example.com
       issuer_name: selfsigned
       create_cert_resource: false
 
@@ -307,7 +306,6 @@ vars:
       grafana_version: 7.3.9
       deployment_namespace: observability
       hostname: grafana
-      domain: example.com
       issuer_name: selfsigned
       create_cert_resource: false
       ingress_enabled: true
