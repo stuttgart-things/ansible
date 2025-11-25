@@ -145,7 +145,7 @@ playbooks:
           severities: ["INFO", "ERROR", "WARNING"]
           authors: ["bibi", "gude", "andreu", "qolf", "pat"]
           artifacts: ["image-1.23.tar.gz", "test.tar.gz", "report.json", "result.txt"]
-          tags: ["usage,alert", "cpu", "cpu,usage,alert", "memory,usage,alert", "monitoring,usage,alert,memory"]
+          message_tags: ["usage,alert", "cpu", "cpu,usage,alert", "memory,usage,alert", "monitoring,usage,alert,memory"]
           domains: ["example.com", "test.com", "mail.com", "demo.com"]
         tasks:
           - name: Send random messages to Homerun app
@@ -166,7 +166,7 @@ playbooks:
                     "author": (authors | random),
                     "timestamp": "%04d-%02d-%02dT%02d:%02d:%02dZ" | format(2024 + (range(0,10)|random), (range(1,13)|random), (range(1,29)|random), (range(0,24)|random), (range(0,60)|random), (range(0,60)|random)),
                     "system": (systems | random),
-                    "tags": (tags | random),
+                    "tags": (message_tags | random),
                     "assigneeaddress": (lookup('password', '/dev/null chars=ascii_letters,digits length=8')) ~ '@' ~ (domains | random),
                     "assigneename": (authors | random),
                     "artifacts": (artifacts | random),
@@ -195,6 +195,7 @@ playbooks:
               comment: "{{ ansible_user }}@ansible-controller"
               state: present
               mode: '0600'
+            when: inventory_hostname != 'localhost'
       
           - name: Add target host fingerprint to controller's known_hosts
             ansible.builtin.known_hosts:
@@ -203,6 +204,7 @@ playbooks:
               key: "{{ lookup('pipe', 'ssh-keyscan -H ' + (hostvars[item].ansible_host | default(item))) }}"
               state: present
             loop: "{{ groups['initial_master_node'] }}"
+            when: item != 'localhost'
       
           - name: Ensure public key is authorized on target
             ansible.posix.authorized_key:
@@ -211,6 +213,7 @@ playbooks:
               key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/id_ed25519.pub') }}"
             delegate_to: "{{ hostvars[item].ansible_host | default(item) }}"
             loop: "{{ groups['initial_master_node'] }}"
+            when: item != 'localhost'
       
       - hosts: "{{ target_host | default('all') }}"
         become: true
@@ -224,6 +227,7 @@ playbooks:
               owner: "{{ ansible_user }}"
               group: "{{ ansible_user }}"
               mode: '0700'
+            when: inventory_hostname != 'localhost'
       
           - name: Add host fingerprint to remote user's known_hosts
             ansible.builtin.known_hosts:
@@ -231,13 +235,15 @@ playbooks:
               name: "{{ inventory_hostname }}"
               key: "{{ lookup('pipe', 'ssh-keyscan -H ' + inventory_hostname) }}"
               state: present
+            when: inventory_hostname != 'localhost'
       
           - name: Ensure SSH public key is present on target
             ansible.builtin.authorized_key:
               user: "{{ ansible_user }}"
               state: present
               key: "{{ lookup('file', '/home/' ~ ansible_user ~ '/.ssh/id_ed25519.pub') }}"
-      
+            when: inventory_hostname != 'localhost'
+
       - name: Create kind-cluster
         ansible.builtin.import_playbook: sthings.container.kind
         vars:
@@ -350,3 +356,124 @@ playbooks:
           profile: "{{ base_stack_profile | default('homerun-base-stack') }}"
           state: present
           ansible_user: sthings
+
+      - name: Patch Homerun Ingress to add second host
+        hosts: "{{ target_host | default('all') }}"
+        gather_facts: true
+        tasks:
+          - name: Pause for 1 minute
+            ansible.builtin.pause:
+              seconds: 60
+
+          - name: Patch Homerun Ingress to add second host
+            ansible.builtin.command:
+              cmd: >
+                kubectl patch ingress homerun-generic-pitcher
+                -n homerun
+                --type='merge'
+                -p '{
+                  "spec": {
+                    "rules": [
+                      {
+                        "host": "homerun.{{ base_stack_genericPitcherDomain | default('demo-infra.example.com') }}",
+                        "http": {
+                          "paths": [
+                            {
+                              "path": "/generic",
+                              "pathType": "Prefix",
+                              "backend": {
+                                "service": {
+                                  "name": "homerun-generic-pitcher-service",
+                                  "port": {
+                                    "number": 80
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "host": "homerun.demo-infra.{{ ansible_default_ipv4.address }}.nip.io",
+                        "http": {
+                          "paths": [
+                            {
+                              "path": "/generic",
+                              "pathType": "Prefix",
+                              "backend": {
+                                "service": {
+                                  "name": "homerun-generic-pitcher-service",
+                                  "port": {
+                                    "number": 80
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }'
+            environment:
+              KUBECONFIG: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
+            when: cluster_type | default('kind') == 'kind'
+
+      - hosts: "{{ target_host | default('all') }}"
+        gather_facts: true
+        vars:
+          redis_password: "{{ base_stack_redisStackPassword | default('example-password') }}"
+          redis_index_name: "homerun"
+        environment:
+          KUBECONFIG: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
+        tasks:
+          - name: Install redis-tools
+            ansible.builtin.apt:
+              name: redis-tools
+              state: present
+            become: true
+
+          - name: Port-forward Redis service
+            ansible.builtin.command:
+              cmd: kubectl port-forward -n homerun svc/redis-stack 6379:6379
+            async: 60
+            poll: 0
+            register: port_forward_job
+
+          - name: Wait for port-forward to be ready
+            ansible.builtin.wait_for:
+              host: localhost
+              port: 6379
+              timeout: 30
+
+          - name: Check existing RedisSearch indexes
+            ansible.builtin.shell: |
+              redis-cli -h localhost -p 6379 -a {{ redis_password }} "FT._LIST"
+            register: redis_list_result
+
+          - name: Create RedisSearch index if missing
+            ansible.builtin.shell: |
+              redis-cli -h localhost -p 6379 -a {{ redis_password }} \
+              FT.CREATE {{ redis_index_name }} ON HASH PREFIX 1 message: SCHEMA messageID TEXT SORTABLE timestamp NUMERIC SORTABLE
+            when: redis_index_name not in redis_list_result.stdout_lines
+            register: redis_index_result
+
+          - name: List RedisSearch indexes
+            ansible.builtin.shell: |
+              redis-cli -h localhost -p 6379 -a {{ redis_password }} "FT._LIST"
+            register: redis_list_result
+
+          - name: Show RedisSearch indexes
+            ansible.builtin.debug:
+              var: redis_list_result.stdout
+
+          - name: Terminate port-forward process
+            ansible.builtin.shell: |
+              kill $(ps aux | grep '[k]ubectl port-forward -n homerun svc/redis-stack 6379:6379' | awk '{print $2}')
+            ignore_errors: true
+
+      - name: Homerun - Send Events to Homerun
+        ansible.builtin.import_playbook: sthings.container.send_events_homerun 
+        vars:
+          homerun_address: "{{ HOMERUN_ADDRESS | default('https://homerun.{{ ansible_default_ipv4.address }}.nip.io/generic') }}"
+          homerun_token: "{{ base_stack_genericPitcherToken | default('example-token') }}"
