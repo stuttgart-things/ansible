@@ -131,14 +131,19 @@ playbooks:
   - name: send_events_homerun
     play: |
       ---
-      - hosts: "{{ target_host | default('all') }}"
+      - name: Send mock events and/or probe URLs
+        hosts: "{{ target_host | default('all') }}"
         gather_facts: false
+      
         vars:
-          # Use plain defaults to avoid recursive templating
-          count_messages: 5
           delay: 5
-          homerun_address: "{{ lookup('env', 'HOMERUN_ADDRESS') | default('https://homerun.demo-infra.whatever.de/generic') }}"
-          homerun_token: "{{ lookup('env', 'HOMERUN_TOKEN') | default('IhrGeheimerToken') }}"
+          validate_certs: false
+          method: "GET"
+      
+          # Mock mode variables
+          count_messages: 5
+          homerun_address: ""   # If defined, mock mode runs
+          homerun_token: ""
           systems: ["github", "gitlab"]
           titles: ["System Alert", "System Incident", "Incident"]
           messages: ["Memory usage is high", "CPU usage is high", "Memory and CPU usage is high"]
@@ -147,73 +152,137 @@ playbooks:
           artifacts: ["image-1.23.tar.gz", "test.tar.gz", "report.json", "result.txt"]
           message_tags: ["usage,alert", "cpu", "cpu,usage,alert", "memory,usage,alert", "monitoring,usage,alert,memory"]
           domains: ["example.com", "test.com", "mail.com", "demo.com"]
+      
+          # test url mode variables
+          raw_url: ""           # Single URL
+          raw_urls: ""          # Comma-separated URLs
+      
         tasks:
+      
+          # ---------------------- MOCK MODE ----------------------
           - name: Send random messages to Homerun app
-            uri:
-              url: "{{ homerun_address }}"
-              method: POST
-              headers:
-                Content-Type: "application/json"
-                X-Auth-Token: "{{ homerun_token }}"
-              body_format: json
-              validate_certs: no
-              body: >
+            when: homerun_address | length > 0
+            block:
+              - name: POST random mock event
+                uri:
+                  url: "{{ homerun_address }}"
+                  method: POST
+                  headers:
+                    Content-Type: "application/json"
+                    X-Auth-Token: "{{ homerun_token }}"
+                  body_format: json
+                  validate_certs: "{{ validate_certs }}"
+                  body: >-
+                    {{
+                      {
+                        "title": (titles | random),
+                        "message": (messages | random),
+                        "severity": (severities | random),
+                        "author": (authors | random),
+                        "timestamp": "%04d-%02d-%02dT%02d:%02d:%02dZ" | format(
+                          2024 + (range(0,10)|random),
+                          (range(1,13)|random),
+                          (range(1,29)|random),
+                          (range(0,24)|random),
+                          (range(0,60)|random),
+                          (range(0,60)|random)
+                        ),
+                        "system": (systems | random),
+                        "tags": (message_tags | random),
+                        "assigneeaddress": (lookup('password', '/dev/null chars=ascii_letters,digits length=8')) ~ '@' ~ (domains | random),
+                        "assigneename": (authors | random),
+                        "artifacts": (artifacts | random),
+                        "url": "http://" ~ (lookup('password', '/dev/null chars=ascii_letters,digits length=6')) ~ '.' ~ (domains | random) ~ '/' ~ (lookup('password', '/dev/null chars=ascii_letters,digits length=10'))
+                      }
+                    }}
+                register: response
+                loop: "{{ range(1, count_messages + 1) | list }}"
+                loop_control:
+                  index_var: idx
+                retries: 3
+                delay: "{{ delay }}"
+                until: response.status == 200
+      
+          # ---------------------- TEST URL MODE ----------------------
+          - name: Normalize test URLs
+            when: raw_url | length > 0 or raw_urls | length > 0
+            set_fact:
+              test_urls: >-
                 {{
-                  {
-                    "title": (titles | random),
-                    "message": (messages | random),
-                    "severity": (severities | random),
-                    "author": (authors | random),
-                    "timestamp": "%04d-%02d-%02dT%02d:%02d:%02dZ" | format(2024 + (range(0,10)|random), (range(1,13)|random), (range(1,29)|random), (range(0,24)|random), (range(0,60)|random), (range(0,60)|random)),
-                    "system": (systems | random),
-                    "tags": (message_tags | random),
-                    "assigneeaddress": (lookup('password', '/dev/null chars=ascii_letters,digits length=8')) ~ '@' ~ (domains | random),
-                    "assigneename": (authors | random),
-                    "artifacts": (artifacts | random),
-                    "url": "http://" ~ (lookup('password', '/dev/null chars=ascii_letters,digits length=6')) ~ '.' ~ (domains | random) ~ '/' ~ (lookup('password', '/dev/null chars=ascii_letters,digits length=10'))
-                  }
+                  (
+                    ([raw_url] if raw_url | length > 0 else [])
+                    + (raw_urls.split(',') if raw_urls | length > 0 else [])
+                  )
+                  | map('regex_replace', '^\s+|\s+$', '')
+                  | select('match', '^https?://')
+                  | list
                 }}
-            register: response
-            loop: "{{ range(1, count_messages + 1) | list }}"
+      
+          - name: Show test URLs
+            when: test_urls is defined and test_urls | length > 0
+            debug:
+              var: test_urls
+      
+          - name: Test each raw URL
+            when: test_urls is defined and test_urls | length > 0
+            uri:
+              url: "{{ item }}"
+              method: "{{ method }}"
+              validate_certs: "{{ validate_certs }}"
+            register: test_urls_results
+            loop: "{{ test_urls }}"
             loop_control:
-              index_var: idx
+              label: "{{ item }}"
             retries: 3
             delay: "{{ delay }}"
-            until: response.status == 200
+            until: test_urls_results.status == 200
+      
+          - name: Summary
+            debug:
+              msg: >-
+                {% if homerun_address | length > 0 %}
+                Sent {{ count_messages }} mock messages to {{ homerun_address }}.
+                {% endif %}
+                {% if test_urls is defined and test_urls | length > 0 %}
+                Probed {{ test_urls | length }} URL(s): {{ test_urls | join(', ') }}.
+                {% endif %}
 
   - name: provision_edge
     play: | # pragma: allowlist secret
       - hosts: localhost
         gather_facts: false
         vars:
-          ansible_user: sthings
+          controller_user: pat
         tasks:
-          - name: Generate SSH keypair for controller user if missing
+          - name: Generate SSH keypair for controller or remote user
             community.crypto.openssh_keypair:
-              path: "{{ lookup('env','HOME') }}/.ssh/id_ed25519"
+              path: "/home/{{ controller_user }}/.ssh/id_ed25519"
               type: ed25519
-              comment: "{{ ansible_user }}@ansible-controller"
+              comment: "{{ controller_user }}@ansible-controller"
               state: present
               mode: '0600'
-            when: inventory_hostname != 'localhost'
+            register: controller_keypair
       
+      - hosts: "{{ target_host | default('all') }}"
+        gather_facts: false
+        vars:
+          controller_user: pat
+        tasks:
           - name: Add target host fingerprint to controller's known_hosts
             ansible.builtin.known_hosts:
-              path: "{{ lookup('env','HOME') }}/.ssh/known_hosts"
+              path: "/home/{{ controller_user }}/.ssh/known_hosts"
               name: "{{ hostvars[item].ansible_host | default(item) }}"
               key: "{{ lookup('pipe', 'ssh-keyscan -H ' + (hostvars[item].ansible_host | default(item))) }}"
               state: present
             loop: "{{ groups['initial_master_node'] }}"
             when: item != 'localhost'
+            delegate_to: localhost
       
-          - name: Ensure public key is authorized on target
+          - name: Add controller public key to remote authorized_keys
             ansible.posix.authorized_key:
-              user: "{{ hostvars[item].ansible_user }}"
+              user: "{{ ansible_user | default('sthings') }}"
               state: present
-              key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/id_ed25519.pub') }}"
-            delegate_to: "{{ hostvars[item].ansible_host | default(item) }}"
-            loop: "{{ groups['initial_master_node'] }}"
-            when: item != 'localhost'
+              key: "{{ hostvars['localhost'].controller_keypair.public_key }}"
       
       - hosts: "{{ target_host | default('all') }}"
         become: true
@@ -241,9 +310,9 @@ playbooks:
             ansible.builtin.authorized_key:
               user: "{{ ansible_user }}"
               state: present
-              key: "{{ lookup('file', '/home/' ~ ansible_user ~ '/.ssh/id_ed25519.pub') }}"
+              key: "{{ hostvars['localhost'].controller_keypair.public_key }}"
             when: inventory_hostname != 'localhost'
-
+      
       - name: Create kind-cluster
         ansible.builtin.import_playbook: sthings.container.kind
         vars:
@@ -279,6 +348,7 @@ playbooks:
           deploy_helm_charts: true
           state: present
         when: cluster_type | default('kind') == 'k3s'
+      
       
       - name: GUI - Deploy Headlamp
         ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
@@ -356,69 +426,7 @@ playbooks:
           profile: "{{ base_stack_profile | default('homerun-base-stack') }}"
           state: present
           ansible_user: sthings
-
-      - name: Patch Homerun Ingress to add second host
-        hosts: "{{ target_host | default('all') }}"
-        gather_facts: true
-        tasks:
-          - name: Pause for 1 minute
-            ansible.builtin.pause:
-              seconds: 60
-
-          - name: Patch Homerun Ingress to add second host
-            ansible.builtin.command:
-              cmd: >
-                kubectl patch ingress homerun-generic-pitcher
-                -n homerun
-                --type='merge'
-                -p '{
-                  "spec": {
-                    "rules": [
-                      {
-                        "host": "homerun.{{ base_stack_genericPitcherDomain | default('demo-infra.example.com') }}",
-                        "http": {
-                          "paths": [
-                            {
-                              "path": "/generic",
-                              "pathType": "Prefix",
-                              "backend": {
-                                "service": {
-                                  "name": "homerun-generic-pitcher-service",
-                                  "port": {
-                                    "number": 80
-                                  }
-                                }
-                              }
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "host": "homerun.demo-infra.{{ ansible_default_ipv4.address }}.nip.io",
-                        "http": {
-                          "paths": [
-                            {
-                              "path": "/generic",
-                              "pathType": "Prefix",
-                              "backend": {
-                                "service": {
-                                  "name": "homerun-generic-pitcher-service",
-                                  "port": {
-                                    "number": 80
-                                  }
-                                }
-                              }
-                            }
-                          ]
-                        }
-                      }
-                    ]
-                  }
-                }'
-            environment:
-              KUBECONFIG: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
-            when: cluster_type | default('kind') == 'kind'
-
+      
       - hosts: "{{ target_host | default('all') }}"
         gather_facts: true
         vars:
@@ -432,48 +440,58 @@ playbooks:
               name: redis-tools
               state: present
             become: true
-
+      
           - name: Port-forward Redis service
             ansible.builtin.command:
               cmd: kubectl port-forward -n homerun svc/redis-stack 6379:6379
             async: 60
             poll: 0
             register: port_forward_job
-
+      
           - name: Wait for port-forward to be ready
             ansible.builtin.wait_for:
               host: localhost
               port: 6379
               timeout: 30
-
+      
           - name: Check existing RedisSearch indexes
             ansible.builtin.shell: |
               redis-cli -h localhost -p 6379 -a {{ redis_password }} "FT._LIST"
             register: redis_list_result
-
+      
           - name: Create RedisSearch index if missing
             ansible.builtin.shell: |
               redis-cli -h localhost -p 6379 -a {{ redis_password }} \
               FT.CREATE {{ redis_index_name }} ON HASH PREFIX 1 message: SCHEMA messageID TEXT SORTABLE timestamp NUMERIC SORTABLE
             when: redis_index_name not in redis_list_result.stdout_lines
             register: redis_index_result
-
+      
           - name: List RedisSearch indexes
             ansible.builtin.shell: |
               redis-cli -h localhost -p 6379 -a {{ redis_password }} "FT._LIST"
             register: redis_list_result
-
+      
           - name: Show RedisSearch indexes
             ansible.builtin.debug:
               var: redis_list_result.stdout
-
+      
           - name: Terminate port-forward process
             ansible.builtin.shell: |
               kill $(ps aux | grep '[k]ubectl port-forward -n homerun svc/redis-stack 6379:6379' | awk '{print $2}')
             ignore_errors: true
-
-      - name: Homerun - Send Events to Homerun
-        ansible.builtin.import_playbook: sthings.container.send_events_homerun 
+      
+      - name: Homerun - Mock + Test Urls 
+        ansible.builtin.import_playbook: sthings.container.send_events_homerun
         vars:
-          homerun_address: "{{ HOMERUN_ADDRESS | default('https://homerun.{{ ansible_default_ipv4.address }}.nip.io/generic') }}"
+          # Mock
+          homerun_address: "{{ HOMERUN_ADDRESS | default('https://homerun.{{ base_stack_genericPitcherDomain }}/generic') }}"
           homerun_token: "{{ base_stack_genericPitcherToken | default('example-token') }}"
+          count_messages: 5
+      
+          # Test URLs
+          raw_urls: >
+            https://headlamp.{{ headlamp_domain }},
+            https://grafana.{{ grafana_domain }}
+          validate_certs: false
+          method: "GET"
+          delay: 3
