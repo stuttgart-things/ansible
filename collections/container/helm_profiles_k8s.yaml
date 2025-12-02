@@ -611,7 +611,7 @@ vars:
                   annotations:
                     nginx.ingress.kubernetes.io/ssl-redirect: "true"
                   service:
-                    name: {{ genericPitcherName | default('homerun-generic-pitcher') }}
+                    name: {{ genericPitcherName | default('homerun-generic-pitcher') }}-service
                     port: {{ genericPitcherIngressPort | default('80') }}
                     path: /{{ genericPitcherApiPath | default('generic') }}
                     pathType: Prefix

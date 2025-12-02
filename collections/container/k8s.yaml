@@ -138,7 +138,7 @@ playbooks:
         vars:
           delay: 5
           validate_certs: false
-          method: "GET"
+          method: "POST"
       
           # Mock mode variables
           count_messages: 5
@@ -158,7 +158,21 @@ playbooks:
           raw_urls: ""          # Comma-separated URLs
       
         tasks:
-      
+          - name: Wait until Homerun endpoint accepts POST
+            ansible.builtin.uri:
+              url: "{{ homerun_address }}"
+              method: POST
+              headers:
+                Content-Type: "application/json"
+                X-Auth-Token: "{{ homerun_token }}"
+              body_format: json
+              body: '{"ping":"ready"}'
+              validate_certs: false
+            register: homerun_check
+            retries: 20
+            delay: 6
+            until: homerun_check.status == 200
+
           # ---------------------- MOCK MODE ----------------------
           - name: Send random messages to Homerun app
             when: homerun_address | length > 0
@@ -249,70 +263,12 @@ playbooks:
 
   - name: provision_edge
     play: | # pragma: allowlist secret
-      - hosts: localhost
-        gather_facts: false
+      ---
+      - name: Setup SSH
+        ansible.builtin.import_playbook: sthings.container.ssh_setup
         vars:
           controller_user: pat
-        tasks:
-          - name: Generate SSH keypair for controller or remote user
-            community.crypto.openssh_keypair:
-              path: "/home/{{ controller_user }}/.ssh/id_ed25519"
-              type: ed25519
-              comment: "{{ controller_user }}@ansible-controller"
-              state: present
-              mode: '0600'
-            register: controller_keypair
-      
-      - hosts: "{{ target_host | default('all') }}"
-        gather_facts: false
-        vars:
-          controller_user: pat
-        tasks:
-          - name: Add target host fingerprint to controller's known_hosts
-            ansible.builtin.known_hosts:
-              path: "/home/{{ controller_user }}/.ssh/known_hosts"
-              name: "{{ hostvars[item].ansible_host | default(item) }}"
-              key: "{{ lookup('pipe', 'ssh-keyscan -H ' + (hostvars[item].ansible_host | default(item))) }}"
-              state: present
-            loop: "{{ groups['initial_master_node'] }}"
-            when: item != 'localhost'
-            delegate_to: localhost
-      
-          - name: Add controller public key to remote authorized_keys
-            ansible.posix.authorized_key:
-              user: "{{ ansible_user | default('sthings') }}"
-              state: present
-              key: "{{ hostvars['localhost'].controller_keypair.public_key }}"
-      
-      - hosts: "{{ target_host | default('all') }}"
-        become: true
-        vars:
-          ansible_user: sthings
-        tasks:
-          - name: Ensure .ssh directory exists for sthings
-            ansible.builtin.file:
-              path: "/home/{{ ansible_user }}/.ssh"
-              state: directory
-              owner: "{{ ansible_user }}"
-              group: "{{ ansible_user }}"
-              mode: '0700'
-            when: inventory_hostname != 'localhost'
-      
-          - name: Add host fingerprint to remote user's known_hosts
-            ansible.builtin.known_hosts:
-              path: "/home/{{ ansible_user }}/.ssh/known_hosts"
-              name: "{{ inventory_hostname }}"
-              key: "{{ lookup('pipe', 'ssh-keyscan -H ' + inventory_hostname) }}"
-              state: present
-            when: inventory_hostname != 'localhost'
-      
-          - name: Ensure SSH public key is present on target
-            ansible.builtin.authorized_key:
-              user: "{{ ansible_user }}"
-              state: present
-              key: "{{ hostvars['localhost'].controller_keypair.public_key }}"
-            when: inventory_hostname != 'localhost'
-      
+
       - name: Create kind-cluster
         ansible.builtin.import_playbook: sthings.container.kind
         vars:
@@ -330,7 +286,7 @@ playbooks:
           install_kind: true
           path_to_kubeconfig: "{{ k8s_kubeconfig_path | default('/home/sthings/.kube/test') }}"
         when: cluster_type | default('kind') == 'kind'
-      
+
       - name: Create k3s-cluster
         ansible.builtin.import_playbook: sthings.rke.k3s
         vars:
@@ -348,8 +304,7 @@ playbooks:
           deploy_helm_charts: true
           state: present
         when: cluster_type | default('kind') == 'k3s'
-      
-      
+
       - name: GUI - Deploy Headlamp
         ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
         vars:
@@ -363,7 +318,7 @@ playbooks:
           path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
           profile: "{{ headlamp_profile | default('headlamp') }}"
           ansible_user: sthings
-      
+
       - name: Monitoring - Deploy Loki
         ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
         vars:
@@ -374,7 +329,7 @@ playbooks:
           profile: "{{ loki_profile | default('loki') }}"
           state: present
           ansible_user: sthings
-      
+
       - name: Monitoring - Deploy Promtail
         ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
         vars:
@@ -387,7 +342,7 @@ playbooks:
           profile: "{{ promtail_profile | default('promtail') }}"
           state: present
           ansible_user: sthings
-      
+
       - name: Monitoring - Deploy Grafana
         ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
         vars:
@@ -404,7 +359,7 @@ playbooks:
           profile: "{{ grafana_profile | default('grafana') }}"
           state: present
           ansible_user: sthings
-      
+
       - name: Homerun - Deploy Base-Stack
         ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
         vars:
@@ -426,68 +381,22 @@ playbooks:
           profile: "{{ base_stack_profile | default('homerun-base-stack') }}"
           state: present
           ansible_user: sthings
-      
-      - hosts: "{{ target_host | default('all') }}"
-        gather_facts: true
+
+      - name: Setup Redis and RedisSearch index
+        ansible.builtin.import_playbook: sthings.container.redis_setup
         vars:
           redis_password: "{{ base_stack_redisStackPassword | default('example-password') }}"
-          redis_index_name: "homerun"
-        environment:
-          KUBECONFIG: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
-        tasks:
-          - name: Install redis-tools
-            ansible.builtin.apt:
-              name: redis-tools
-              state: present
-            become: true
-      
-          - name: Port-forward Redis service
-            ansible.builtin.command:
-              cmd: kubectl port-forward -n homerun svc/redis-stack 6379:6379
-            async: 60
-            poll: 0
-            register: port_forward_job
-      
-          - name: Wait for port-forward to be ready
-            ansible.builtin.wait_for:
-              host: localhost
-              port: 6379
-              timeout: 30
-      
-          - name: Check existing RedisSearch indexes
-            ansible.builtin.shell: |
-              redis-cli -h localhost -p 6379 -a {{ redis_password }} "FT._LIST"
-            register: redis_list_result
-      
-          - name: Create RedisSearch index if missing
-            ansible.builtin.shell: |
-              redis-cli -h localhost -p 6379 -a {{ redis_password }} \
-              FT.CREATE {{ redis_index_name }} ON HASH PREFIX 1 message: SCHEMA messageID TEXT SORTABLE timestamp NUMERIC SORTABLE
-            when: redis_index_name not in redis_list_result.stdout_lines
-            register: redis_index_result
-      
-          - name: List RedisSearch indexes
-            ansible.builtin.shell: |
-              redis-cli -h localhost -p 6379 -a {{ redis_password }} "FT._LIST"
-            register: redis_list_result
-      
-          - name: Show RedisSearch indexes
-            ansible.builtin.debug:
-              var: redis_list_result.stdout
-      
-          - name: Terminate port-forward process
-            ansible.builtin.shell: |
-              kill $(ps aux | grep '[k]ubectl port-forward -n homerun svc/redis-stack 6379:6379' | awk '{print $2}')
-            ignore_errors: true
-      
-      - name: Homerun - Mock + Test Urls 
+          redis_index_name: "{{ base_stack_redis_index_name | default('homerun') }}"
+          kubeconfig_path: "{{ base_stack_redis_kubeconfig | default('/home/sthings/.kube/test') }}"
+
+      - name: Mock Events for Homerun + Testing Urls 
         ansible.builtin.import_playbook: sthings.container.send_events_homerun
         vars:
-          # Mock
+          # Mock Events
           homerun_address: "{{ HOMERUN_ADDRESS | default('https://homerun.{{ base_stack_genericPitcherDomain }}/generic') }}"
           homerun_token: "{{ base_stack_genericPitcherToken | default('example-token') }}"
           count_messages: 5
-      
+
           # Test URLs
           raw_urls: >
             https://headlamp.{{ headlamp_domain }},
@@ -495,3 +404,128 @@ playbooks:
           validate_certs: false
           method: "GET"
           delay: 3
+
+  - name: redis_setup
+    play: | # pragma: allowlist secret
+      ---
+      - hosts: "{{ target_host | default('all') }}"
+        gather_facts: true
+        vars:
+          redis_password: "{{ redis_password | default('example-password') }}"
+          redis_index_name: "{{ redis_index_name | default('homerun') }}"
+          kubeconfig_path: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
+        environment:
+          KUBECONFIG: "{{ kubeconfig_path }}"
+        tasks:
+          - name: Install redis-tools
+            ansible.builtin.apt:
+              name: redis-tools
+              state: present
+            become: true
+
+          - name: Port-forward Redis service
+            ansible.builtin.command:
+              cmd: kubectl port-forward -n homerun svc/redis-stack 6379:6379
+            async: 60
+            poll: 0
+            register: port_forward_job
+
+          - name: Wait for port-forward to be ready
+            ansible.builtin.wait_for:
+              host: localhost
+              port: 6379
+              timeout: 30
+
+          - name: Check existing RedisSearch indexes
+            ansible.builtin.shell: |
+              redis-cli -h localhost -p 6379 -a {{ redis_password }} "FT._LIST"
+            register: redis_list_result
+
+          - name: Create RedisSearch index if missing
+            ansible.builtin.shell: |
+              redis-cli -h localhost -p 6379 -a {{ redis_password }} \
+              FT.CREATE {{ redis_index_name }} ON HASH PREFIX 1 message: SCHEMA messageID TEXT SORTABLE timestamp NUMERIC SORTABLE
+            when: redis_index_name not in redis_list_result.stdout_lines
+            register: redis_index_result
+
+          - name: List RedisSearch indexes
+            ansible.builtin.shell: |
+              redis-cli -h localhost -p 6379 -a {{ redis_password }} "FT._LIST"
+            register: redis_list_result
+
+          - name: Show RedisSearch indexes
+            ansible.builtin.debug:
+              var: redis_list_result.stdout
+
+          - name: Terminate port-forward process
+            ansible.builtin.shell: |
+              kill $(ps aux | grep '[k]ubectl port-forward -n homerun svc/redis-stack 6379:6379' | awk '{print $2}')
+            ignore_errors: true
+
+  - name: redis_setup
+    play: | # pragma: allowlist secret
+      ---
+      - hosts: localhost
+        gather_facts: false
+        vars:
+          controller_local_user: "{{ controller_user | default('pat') }}"
+        tasks:
+          - name: Generate SSH keypair for controller or remote user
+            community.crypto.openssh_keypair:
+              path: "/home/{{ controller_local_user }}/.ssh/id_ed25519"
+              type: ed25519
+              comment: "{{ controller_local_user }}@ansible-controller"
+              state: present
+              mode: '0600'
+            register: controller_keypair
+      
+      - hosts: "{{ target_host | default('all') }}"
+        gather_facts: false
+        vars:
+          controller_local_user: "{{ controller_user | default('pat') }}"
+        tasks:
+          - name: Add target host fingerprint to controller's known_hosts
+            ansible.builtin.known_hosts:
+              path: "/home/{{ controller_local_user }}/.ssh/known_hosts"
+              name: "{{ hostvars[item].ansible_host | default(item) }}"
+              key: "{{ lookup('pipe', 'ssh-keyscan -H ' + (hostvars[item].ansible_host | default(item))) }}"
+              state: present
+            loop: "{{ groups['initial_master_node'] }}"
+            when: item != 'localhost'
+            delegate_to: localhost
+      
+          - name: Add controller public key to remote authorized_keys
+            ansible.posix.authorized_key:
+              user: "{{ ansible_user | default('sthings') }}"
+              state: present
+              key: "{{ hostvars['localhost'].controller_keypair.public_key }}"
+      
+      - hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: false
+        vars:
+          remote_user: "{{ ansible_user | default('sthings') }}"
+        tasks:
+          - name: Ensure .ssh directory exists for {{ ansible_user }}
+            ansible.builtin.file:
+              path: "/home/{{ remote_user }}/.ssh"
+              state: directory
+              owner: "{{ remote_user }}"
+              group: "{{ remote_user }}"
+              mode: '0700'
+            when: inventory_hostname != 'localhost'
+      
+          - name: Add host fingerprint to remote user's known_hosts
+            ansible.builtin.known_hosts:
+              path: "/home/{{ remote_user }}/.ssh/known_hosts"
+              name: "{{ inventory_hostname }}"
+              key: "{{ lookup('pipe', 'ssh-keyscan -H ' + inventory_hostname) }}"
+              state: present
+            when: inventory_hostname != 'localhost'
+      
+          - name: Ensure SSH public key is present on target (authorized_keys)
+            ansible.builtin.authorized_key:
+              user: "{{ remote_user }}"
+              state: present
+              key: "{{ hostvars['localhost'].controller_keypair.public_key }}"
+            when: inventory_hostname != 'localhost'
