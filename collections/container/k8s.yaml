@@ -131,52 +131,401 @@ playbooks:
   - name: send_events_homerun
     play: |
       ---
-      - hosts: "{{ target_host | default('all') }}"
+      - name: Send mock events and/or probe URLs
+        hosts: "{{ target_host | default('all') }}"
         gather_facts: false
+      
         vars:
-          # Use plain defaults to avoid recursive templating
-          count_messages: 5
           delay: 5
-          homerun_address: "{{ lookup('env', 'HOMERUN_ADDRESS') | default('https://homerun.demo-infra.whatever.de/generic') }}"
-          homerun_token: "{{ lookup('env', 'HOMERUN_TOKEN') | default('IhrGeheimerToken') }}"
+          validate_certs: false
+          method: "POST"
+      
+          # Mock mode variables
+          count_messages: 5
+          homerun_address: ""   # If defined, mock mode runs
+          homerun_token: ""
           systems: ["github", "gitlab"]
           titles: ["System Alert", "System Incident", "Incident"]
           messages: ["Memory usage is high", "CPU usage is high", "Memory and CPU usage is high"]
           severities: ["INFO", "ERROR", "WARNING"]
           authors: ["bibi", "gude", "andreu", "qolf", "pat"]
           artifacts: ["image-1.23.tar.gz", "test.tar.gz", "report.json", "result.txt"]
-          tags: ["usage,alert", "cpu", "cpu,usage,alert", "memory,usage,alert", "monitoring,usage,alert,memory"]
+          message_tags: ["usage,alert", "cpu", "cpu,usage,alert", "memory,usage,alert", "monitoring,usage,alert,memory"]
           domains: ["example.com", "test.com", "mail.com", "demo.com"]
+      
+          # test url mode variables
+          raw_url: ""           # Single URL
+          raw_urls: ""          # Comma-separated URLs
+      
         tasks:
-          - name: Send random messages to Homerun app
-            uri:
+          - name: Wait until Homerun endpoint accepts POST
+            ansible.builtin.uri:
               url: "{{ homerun_address }}"
               method: POST
               headers:
                 Content-Type: "application/json"
                 X-Auth-Token: "{{ homerun_token }}"
               body_format: json
-              validate_certs: no
-              body: >
+              body: '{"ping":"ready"}'
+              validate_certs: false
+            register: homerun_check
+            retries: 20
+            delay: 6
+            until: homerun_check.status == 200
+
+          # ---------------------- MOCK MODE ----------------------
+          - name: Send random messages to Homerun app
+            when: homerun_address | length > 0
+            block:
+              - name: POST random mock event
+                uri:
+                  url: "{{ homerun_address }}"
+                  method: POST
+                  headers:
+                    Content-Type: "application/json"
+                    X-Auth-Token: "{{ homerun_token }}"
+                  body_format: json
+                  validate_certs: "{{ validate_certs }}"
+                  body: >-
+                    {{
+                      {
+                        "title": (titles | random),
+                        "message": (messages | random),
+                        "severity": (severities | random),
+                        "author": (authors | random),
+                        "timestamp": "%04d-%02d-%02dT%02d:%02d:%02dZ" | format(
+                          2024 + (range(0,10)|random),
+                          (range(1,13)|random),
+                          (range(1,29)|random),
+                          (range(0,24)|random),
+                          (range(0,60)|random),
+                          (range(0,60)|random)
+                        ),
+                        "system": (systems | random),
+                        "tags": (message_tags | random),
+                        "assigneeaddress": (lookup('password', '/dev/null chars=ascii_letters,digits length=8')) ~ '@' ~ (domains | random),
+                        "assigneename": (authors | random),
+                        "artifacts": (artifacts | random),
+                        "url": "http://" ~ (lookup('password', '/dev/null chars=ascii_letters,digits length=6')) ~ '.' ~ (domains | random) ~ '/' ~ (lookup('password', '/dev/null chars=ascii_letters,digits length=10'))
+                      }
+                    }}
+                register: response
+                loop: "{{ range(1, count_messages + 1) | list }}"
+                loop_control:
+                  index_var: idx
+                retries: 3
+                delay: "{{ delay }}"
+                until: response.status == 200
+      
+          # ---------------------- TEST URL MODE ----------------------
+          - name: Normalize test URLs
+            when: raw_url | length > 0 or raw_urls | length > 0
+            set_fact:
+              test_urls: >-
                 {{
-                  {
-                    "title": (titles | random),
-                    "message": (messages | random),
-                    "severity": (severities | random),
-                    "author": (authors | random),
-                    "timestamp": "%04d-%02d-%02dT%02d:%02d:%02dZ" | format(2024 + (range(0,10)|random), (range(1,13)|random), (range(1,29)|random), (range(0,24)|random), (range(0,60)|random), (range(0,60)|random)),
-                    "system": (systems | random),
-                    "tags": (tags | random),
-                    "assigneeaddress": (lookup('password', '/dev/null chars=ascii_letters,digits length=8')) ~ '@' ~ (domains | random),
-                    "assigneename": (authors | random),
-                    "artifacts": (artifacts | random),
-                    "url": "http://" ~ (lookup('password', '/dev/null chars=ascii_letters,digits length=6')) ~ '.' ~ (domains | random) ~ '/' ~ (lookup('password', '/dev/null chars=ascii_letters,digits length=10'))
-                  }
+                  (
+                    ([raw_url] if raw_url | length > 0 else [])
+                    + (raw_urls.split(',') if raw_urls | length > 0 else [])
+                  )
+                  | map('regex_replace', '^\s+|\s+$', '')
+                  | select('match', '^https?://')
+                  | list
                 }}
-            register: response
-            loop: "{{ range(1, count_messages + 1) | list }}"
+      
+          - name: Show test URLs
+            when: test_urls is defined and test_urls | length > 0
+            debug:
+              var: test_urls
+      
+          - name: Test each raw URL
+            when: test_urls is defined and test_urls | length > 0
+            uri:
+              url: "{{ item }}"
+              method: "{{ method }}"
+              validate_certs: "{{ validate_certs }}"
+            register: test_urls_results
+            loop: "{{ test_urls }}"
             loop_control:
-              index_var: idx
+              label: "{{ item }}"
             retries: 3
             delay: "{{ delay }}"
-            until: response.status == 200
+            until: test_urls_results.status == 200
+      
+          - name: Summary
+            debug:
+              msg: >-
+                {% if homerun_address | length > 0 %}
+                Sent {{ count_messages }} mock messages to {{ homerun_address }}.
+                {% endif %}
+                {% if test_urls is defined and test_urls | length > 0 %}
+                Probed {{ test_urls | length }} URL(s): {{ test_urls | join(', ') }}.
+                {% endif %}
+
+  - name: provision_edge
+    play: | # pragma: allowlist secret
+      ---
+      - name: Setup SSH
+        ansible.builtin.import_playbook: sthings.container.ssh_setup
+        vars:
+          controller_user: pat
+
+      - name: Create kind-cluster
+        ansible.builtin.import_playbook: sthings.container.kind
+        vars:
+          kind_cluster_name: "{{ k8s_cluster_name | default('dev') }}"
+          deployment_vars: "{{ kind_deployment_vars | default('Nil') }}"
+          ansible_user: sthings
+          count_worker_nodes: 3
+          count_controlplane_nodes: 1
+          kubectl_version: "{{ kind_kubectl_version | default('1.34.0') }}"
+          kind_version: "{{ k8s_kind_version | default('0.30.0') }}"
+          enable_ingress_ports: true
+          enable_host_paths: true
+          provision_cluster: true
+          docker_install_compose: true
+          install_kind: true
+          path_to_kubeconfig: "{{ k8s_kubeconfig_path | default('/home/sthings/.kube/test') }}"
+        when: cluster_type | default('kind') == 'kind'
+
+      - name: Create k3s-cluster
+        ansible.builtin.import_playbook: sthings.rke.k3s
+        vars:
+          target_host: localhost
+          k3s_cluster_name: "{{ k8s_cluster_name | default('dev') }}"
+          deployment_vars: "{{ kind_deployment_vars | default('Nil') }}"
+          ansible_user: sthings
+          install_k3s: true
+          k3s_state: present
+          k3s_k8s_version: "{{ k3s_cluster_version | default('1.34.1') }}"
+          fetched_kubeconfig_path: "{{ k8s_fetch_kubeconfig_path | default('/home/sthings/.kube/test') }}"
+          k3s_release_kind: k3s1
+          cluster_setup: singlenode
+          install_cillium: true
+          deploy_helm_charts: true
+          state: present
+        when: cluster_type | default('kind') == 'k3s'
+
+      - name: GUI - Deploy Headlamp
+        ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          deployment_namespace: "{{ headlamp_deployment_namespace | default('kube-system') }}"
+          headlamp_version: "{{ headlamp_version | default('0.33.0') }}"
+          path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
+          domain: "{{ headlamp_domain | default('example.com') }}"
+          issuer_name: "{{ headlamp_issuer_name | default('selfsigned') }}"
+          create_cert_resource: false
+          issuer_annotation: ClusterIssuer
+          path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
+          profile: "{{ headlamp_profile | default('headlamp') }}"
+          ansible_user: sthings
+
+      - name: Monitoring - Deploy Loki
+        ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          deployment_namespace: "{{ monitoring_deployment_namespace | default('observability') }}"
+          loki_version: "{{ monitoring_loki_version | default('6.31.0') }}"
+          path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
+          path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
+          profile: "{{ loki_profile | default('loki') }}"
+          state: present
+          ansible_user: sthings
+
+      - name: Monitoring - Deploy Promtail
+        ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          deployment_namespace: "{{ monitoring_deployment_namespace | default('observability') }}"
+          promtail_version: "{{ monitoring_promtail_version | default('6.17.0') }}"
+          lokiServiceName: "{{ promtail_lokiServiceName | default('loki') }}"
+          lokiNamespace: "{{ promtail_lokiNamespace | default('observability') }}"
+          path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
+          path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
+          profile: "{{ promtail_profile | default('promtail') }}"
+          state: present
+          ansible_user: sthings
+
+      - name: Monitoring - Deploy Grafana
+        ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          deployment_namespace: "{{ monitoring_deployment_namespace | default('observability') }}"
+          grafana_version: "{{ monitoring_grafana_version | default('7.3.9') }}"
+          hostname: "{{ grafana_hostname | default('grafana') }}"
+          domain: "{{ grafana_domain | default('example.com') }}"
+          path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
+          issuer_name: "{{ grafana_issuer_name | default('selfsigned') }}"
+          storage_class_name: "{{ grafana_storage_class_name | default('standard') }}"
+          create_cert_resource: false
+          ingress_enabled: "{{ grafana_ingress_enabled | default('true') }}"
+          path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
+          profile: "{{ grafana_profile | default('grafana') }}"
+          state: present
+          ansible_user: sthings
+
+      - name: Homerun - Deploy Base-Stack
+        ansible.builtin.import_playbook: sthings.container.deploy_to_k8s
+        vars:
+          deployment_namespace: "{{ base_stack_deployment_namespace | default('homerun') }}"
+          homerun_chart_version: "{{ base_stack_chart_version | default('v0.2.1') }}"
+          genericPitcherEnabled: "{{ base_stack_genericPitcherEnabled | default(true) }}"
+          textCatcherEnabled: "{{ base_stack_textCatcherEnabled | default(true) }}"
+          genericPitcherDomain: "{{ base_stack_genericPitcherDomain | default('demo-infra.example.com') }}"
+          redisStackServiceName: "{{ base_stack_redisStackServiceName | default('redis-stack-headless') }}"
+          redisStackPassword: "{{ base_stack_redisStackPassword | default('example-password') }}"
+          redisStackServiceType: "{{ base_stack_redisStackServiceType | default('ClusterIP') }}"
+          redisStackStorageClass: "{{ base_stack_redisStackStorageClass | default('standard') }}"
+          redisStackVersion: "{{ base_stack_redisStackVersion | default('7.2.0-v18 #6.2.6-v9') }}"
+          genericPitcherToken: "{{ base_stack_genericPitcherToken | default('example-token') }}"
+          issuer_annotation: ClusterIssuer
+          genericPitcherIssuerName: "{{ base_stack_genericPitcherIssuerName | default('selfsigned') }}"
+          path_to_kubeconfig: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
+          path: "~/.ansible/collections/ansible_collections/sthings/container/playbooks/vars"
+          profile: "{{ base_stack_profile | default('homerun-base-stack') }}"
+          state: present
+          ansible_user: sthings
+
+      - name: Setup Redis and RedisSearch index
+        ansible.builtin.import_playbook: sthings.container.redis_setup
+        vars:
+          redis_password: "{{ base_stack_redisStackPassword | default('example-password') }}"
+          redis_index_name: "{{ base_stack_redis_index_name | default('homerun') }}"
+          kubeconfig_path: "{{ base_stack_redis_kubeconfig | default('/home/sthings/.kube/test') }}"
+
+      - name: Mock Events for Homerun + Testing Urls 
+        ansible.builtin.import_playbook: sthings.container.send_events_homerun
+        vars:
+          # Mock Events
+          homerun_address: "{{ HOMERUN_ADDRESS | default('https://homerun.{{ base_stack_genericPitcherDomain }}/generic') }}"
+          homerun_token: "{{ base_stack_genericPitcherToken | default('example-token') }}"
+          count_messages: 5
+
+          # Test URLs
+          raw_urls: >
+            https://headlamp.{{ headlamp_domain }},
+            https://grafana.{{ grafana_domain }}
+          validate_certs: false
+          method: "GET"
+          delay: 3
+
+  - name: redis_setup
+    play: | # pragma: allowlist secret
+      ---
+      - hosts: "{{ target_host | default('all') }}"
+        gather_facts: true
+        vars:
+          redis_password: "{{ redis_password | default('example-password') }}"
+          redis_index_name: "{{ redis_index_name | default('homerun') }}"
+          kubeconfig_path: "{{ kubeconfig_path | default('/home/sthings/.kube/test') }}"
+        environment:
+          KUBECONFIG: "{{ kubeconfig_path }}"
+        tasks:
+          - name: Install redis-tools
+            ansible.builtin.apt:
+              name: redis-tools
+              state: present
+            become: true
+
+          - name: Port-forward Redis service
+            ansible.builtin.command:
+              cmd: kubectl port-forward -n homerun svc/redis-stack 6379:6379
+            async: 60
+            poll: 0
+            register: port_forward_job
+
+          - name: Wait for port-forward to be ready
+            ansible.builtin.wait_for:
+              host: localhost
+              port: 6379
+              timeout: 30
+
+          - name: Check existing RedisSearch indexes
+            ansible.builtin.shell: |
+              redis-cli -h localhost -p 6379 -a {{ redis_password }} "FT._LIST"
+            register: redis_list_result
+
+          - name: Create RedisSearch index if missing
+            ansible.builtin.shell: |
+              redis-cli -h localhost -p 6379 -a {{ redis_password }} \
+              FT.CREATE {{ redis_index_name }} ON HASH PREFIX 1 message: SCHEMA messageID TEXT SORTABLE timestamp NUMERIC SORTABLE
+            when: redis_index_name not in redis_list_result.stdout_lines
+            register: redis_index_result
+
+          - name: List RedisSearch indexes
+            ansible.builtin.shell: |
+              redis-cli -h localhost -p 6379 -a {{ redis_password }} "FT._LIST"
+            register: redis_list_result
+
+          - name: Show RedisSearch indexes
+            ansible.builtin.debug:
+              var: redis_list_result.stdout
+
+          - name: Terminate port-forward process
+            ansible.builtin.shell: |
+              kill $(ps aux | grep '[k]ubectl port-forward -n homerun svc/redis-stack 6379:6379' | awk '{print $2}')
+            ignore_errors: true
+
+  - name: redis_setup
+    play: | # pragma: allowlist secret
+      ---
+      - hosts: localhost
+        gather_facts: false
+        vars:
+          controller_local_user: "{{ controller_user | default('pat') }}"
+        tasks:
+          - name: Generate SSH keypair for controller or remote user
+            community.crypto.openssh_keypair:
+              path: "/home/{{ controller_local_user }}/.ssh/id_ed25519"
+              type: ed25519
+              comment: "{{ controller_local_user }}@ansible-controller"
+              state: present
+              mode: '0600'
+            register: controller_keypair
+      
+      - hosts: "{{ target_host | default('all') }}"
+        gather_facts: false
+        vars:
+          controller_local_user: "{{ controller_user | default('pat') }}"
+        tasks:
+          - name: Add target host fingerprint to controller's known_hosts
+            ansible.builtin.known_hosts:
+              path: "/home/{{ controller_local_user }}/.ssh/known_hosts"
+              name: "{{ hostvars[item].ansible_host | default(item) }}"
+              key: "{{ lookup('pipe', 'ssh-keyscan -H ' + (hostvars[item].ansible_host | default(item))) }}"
+              state: present
+            loop: "{{ groups['initial_master_node'] }}"
+            when: item != 'localhost'
+            delegate_to: localhost
+      
+          - name: Add controller public key to remote authorized_keys
+            ansible.posix.authorized_key:
+              user: "{{ ansible_user | default('sthings') }}"
+              state: present
+              key: "{{ hostvars['localhost'].controller_keypair.public_key }}"
+      
+      - hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: false
+        vars:
+          remote_user: "{{ ansible_user | default('sthings') }}"
+        tasks:
+          - name: Ensure .ssh directory exists for {{ ansible_user }}
+            ansible.builtin.file:
+              path: "/home/{{ remote_user }}/.ssh"
+              state: directory
+              owner: "{{ remote_user }}"
+              group: "{{ remote_user }}"
+              mode: '0700'
+            when: inventory_hostname != 'localhost'
+      
+          - name: Add host fingerprint to remote user's known_hosts
+            ansible.builtin.known_hosts:
+              path: "/home/{{ remote_user }}/.ssh/known_hosts"
+              name: "{{ inventory_hostname }}"
+              key: "{{ lookup('pipe', 'ssh-keyscan -H ' + inventory_hostname) }}"
+              state: present
+            when: inventory_hostname != 'localhost'
+      
+          - name: Ensure SSH public key is present on target (authorized_keys)
+            ansible.builtin.authorized_key:
+              user: "{{ remote_user }}"
+              state: present
+              key: "{{ hostvars['localhost'].controller_keypair.public_key }}"
+            when: inventory_hostname != 'localhost'
