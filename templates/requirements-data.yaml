@@ -11,7 +11,7 @@ gitCollections:
   ansible.netcommon: 8.0.1
 
 artifactCollections:
-  - https://github.com/stuttgart-things/ansible/releases/download/sthings-container-25.2.462.tar.gz/sthings-container-25.2.462.tar.gz
-  - https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-25.1.524.tar.gz/sthings-baseos-25.1.524.tar.gz
+  - https://github.com/stuttgart-things/ansible/releases/download/sthings-container-25.2.462.tar.gz/sthings-container-25.5.816.tar.gz
+  - https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-25.1.524.tar.gz/sthings-baseos-25.3.760.tar.gz
   - https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-25.4.506.tar.gz/sthings-awx-25.4.506.tar.gz
-  - https://github.com/stuttgart-things/ansible/releases/download/sthings-rke-25.4.788.tar.gz/sthings-rke-25.4.788.tar.gz
+  - https://github.com/stuttgart-things/ansible/releases/download/sthings-rke-25.4.788.tar.gz/sthings-rke-25.1.788.tar.gz
