@@ -13,6 +13,9 @@ playbooks:
 
         vars:
           install_k3s: true
+          copy_kubeconfig: true
+          fetch_kubeconfig: true
+          fetched_kubeconfig_path: ./kubeconfig
           k3s_state: present #absent
           k3s_k8s_version: 1.34.2
           k3s_release_kind: k3s1
