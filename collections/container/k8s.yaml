@@ -134,12 +134,12 @@ playbooks:
       - name: Send mock events and/or probe URLs
         hosts: "{{ target_host | default('all') }}"
         gather_facts: false
-      
+
         vars:
           delay: 5
           validate_certs: false
           method: "POST"
-      
+
           # Mock mode variables
           count_messages: 5
           homerun_address: ""   # If defined, mock mode runs
@@ -152,11 +152,11 @@ playbooks:
           artifacts: ["image-1.23.tar.gz", "test.tar.gz", "report.json", "result.txt"]
           message_tags: ["usage,alert", "cpu", "cpu,usage,alert", "memory,usage,alert", "monitoring,usage,alert,memory"]
           domains: ["example.com", "test.com", "mail.com", "demo.com"]
-      
+
           # test url mode variables
           raw_url: ""           # Single URL
           raw_urls: ""          # Comma-separated URLs
-      
+
         tasks:
           - name: Wait until Homerun endpoint accepts POST
             ansible.builtin.uri:
@@ -216,7 +216,7 @@ playbooks:
                 retries: 3
                 delay: "{{ delay }}"
                 until: response.status == 200
-      
+
           # ---------------------- TEST URL MODE ----------------------
           - name: Normalize test URLs
             when: raw_url | length > 0 or raw_urls | length > 0
@@ -231,12 +231,12 @@ playbooks:
                   | select('match', '^https?://')
                   | list
                 }}
-      
+
           - name: Show test URLs
             when: test_urls is defined and test_urls | length > 0
             debug:
               var: test_urls
-      
+
           - name: Test each raw URL
             when: test_urls is defined and test_urls | length > 0
             uri:
@@ -250,7 +250,7 @@ playbooks:
             retries: 3
             delay: "{{ delay }}"
             until: test_urls_results.status == 200
-      
+
           - name: Summary
             debug:
               msg: >-
@@ -389,7 +389,7 @@ playbooks:
           redis_index_name: "{{ base_stack_redis_index_name | default('homerun') }}"
           kubeconfig_path: "{{ base_stack_redis_kubeconfig | default('/home/sthings/.kube/test') }}"
 
-      - name: Mock Events for Homerun + Testing Urls 
+      - name: Mock Events for Homerun + Testing Urls
         ansible.builtin.import_playbook: sthings.container.send_events_homerun
         vars:
           # Mock Events
@@ -478,7 +478,7 @@ playbooks:
               state: present
               mode: '0600'
             register: controller_keypair
-      
+
       - hosts: "{{ target_host | default('all') }}"
         gather_facts: false
         vars:
@@ -493,13 +493,13 @@ playbooks:
             loop: "{{ groups['initial_master_node'] }}"
             when: item != 'localhost'
             delegate_to: localhost
-      
+
           - name: Add controller public key to remote authorized_keys
             ansible.posix.authorized_key:
               user: "{{ ansible_user | default('sthings') }}"
               state: present
               key: "{{ hostvars['localhost'].controller_keypair.public_key }}"
-      
+
       - hosts: "{{ target_host | default('all') }}"
         become: true
         gather_facts: false
@@ -514,7 +514,7 @@ playbooks:
               group: "{{ remote_user }}"
               mode: '0700'
             when: inventory_hostname != 'localhost'
-      
+
           - name: Add host fingerprint to remote user's known_hosts
             ansible.builtin.known_hosts:
               path: "/home/{{ remote_user }}/.ssh/known_hosts"
@@ -522,7 +522,7 @@ playbooks:
               key: "{{ lookup('pipe', 'ssh-keyscan -H ' + inventory_hostname) }}"
               state: present
             when: inventory_hostname != 'localhost'
-      
+
           - name: Ensure SSH public key is present on target (authorized_keys)
             ansible.builtin.authorized_key:
               user: "{{ remote_user }}"

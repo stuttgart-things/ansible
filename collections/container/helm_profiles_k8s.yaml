@@ -396,11 +396,11 @@ vars:
       post_manifests: {}
 
   - name: homerun-base-stack
-    file: |
+    file: | # pragma: allowlist secret
       ---
       deployment_namespace: homerun
-      genericPitcherEnabled: true  
-      textCatcherEnabled: true     
+      genericPitcherEnabled: true
+      textCatcherEnabled: true
 
       helm_releases:
         redis:
