@@ -26,7 +26,7 @@ jobs:
     runs-on: dagger
     steps:
       - name: Checkout Project
-        uses: actions/checkout@v6.0.0
+        uses: actions/checkout@v6.0.1
         with:
           fetch-depth: '0'
           ref: ${{ inputs.branch-name }}
