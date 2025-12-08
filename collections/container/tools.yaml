@@ -29,7 +29,7 @@ vars:
       argocd_version: 3.2.0 # datasource=github-tags depName=argoproj/argo-cd
       flux_version: 2.7.5 # datasource=github-tags depName=fluxcd/flux2
       glab_version: 1.79.0 # datasource=gitlab-tags depName=gitlab-org/cli
-      cilium_version: 0.18.8 # datasource=github-tags depName=cilium/cilium-cli
+      cilium_version: 0.18.9 # datasource=github-tags depName=cilium/cilium-cli
       dagger_version: 0.19.8 # datasource=github-tags depName=dagger/dagger
       tkn_version: 0.43.0 # datasource=github-tags depName=tektoncd/cli
       vcluster_version: 0.30.2 # datasource=github-tags depName=loft-sh/vcluster
