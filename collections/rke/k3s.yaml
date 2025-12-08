@@ -68,8 +68,8 @@ playbooks:
                   name: first-pool
                 spec:
                   blocks:
-                    - start: {{ cilium_lbrange_start_ip | default('192.168.5.10') }}
-                      stop: {{ cilium_lbrange_stop_ip | default('192.168.5.20') }}
+                    - start: {{ cilium_lbrange_start_ip | default('192.168.1.10') }}
+                      stop: {{ cilium_lbrange_stop_ip | default('192.168.1.20') }}
 
             announcement_policy:
               manifest: |
