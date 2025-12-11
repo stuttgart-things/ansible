@@ -11,7 +11,7 @@ requirements: |
       version: 2025.10.30
     - src: https://github.com/stuttgart-things/install-configure-vault.git
       scm: git
-      version: 2025.29.07
+      version: 2025.12.11
     - src: https://github.com/stuttgart-things/create-send-webhook.git
       scm: git
       version: 2022.01.01
