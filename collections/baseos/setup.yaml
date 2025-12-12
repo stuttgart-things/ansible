@@ -213,6 +213,35 @@ playbooks:
                   var: homerun_result_message
             when: send_to_homerun | bool
 
+        post_tasks:
+          - name: Set FQDN on Fedora systems
+            block:
+              - name: Get current short hostname
+                ansible.builtin.command: hostname -s
+                register: current_hostname
+                changed_when: false
+
+              - name: Get DNS domain from resolvectl
+                ansible.builtin.shell: resolvectl status | grep "DNS Domain" | awk '{print $3}'
+                register: dns_domain_result
+                changed_when: false
+
+              - name: Set domain fact
+                ansible.builtin.set_fact:
+                  domain: "{{ dns_domain_result.stdout | trim }}"
+                  short_hostname: "{{ current_hostname.stdout | trim }}"
+
+              - name: Display discovered information
+                ansible.builtin.debug:
+                  msg: "Setting FQDN: {{ short_hostname }}.{{ domain }}"
+
+              - name: Set the FQDN using hostnamectl
+                ansible.builtin.hostname:
+                  name: "{{ short_hostname }}.{{ domain }}"
+                  use: systemd
+                when: domain | length > 0
+            when: ansible_distribution == "Fedora"
+
   - name: users
     play: |
       ---
