@@ -49,7 +49,7 @@ collections:
   - name: community.general
     version: 12.1.0
   - name: community.hashi_vault
-    version: 7.0.0
+    version: 7.1.0
   - name: community.vmware
     version: 6.1.0
   - name: kubernetes.core
