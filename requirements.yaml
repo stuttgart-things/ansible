@@ -53,7 +53,7 @@ collections:
   - name: community.vmware
     version: 5.7.2
   - name: kubernetes.core
-    version: 6.0.0
+    version: 6.2.0
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-25.4.506.tar.gz/sthings-awx-25.4.506.tar.gz
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-25.5.624.tar.gz/sthings-container-25.5.624.tar.gz
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-rke-25.5.622.tar.gz/sthings-rke-25.5.622.tar.gz
