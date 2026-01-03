@@ -1,5 +1,9 @@
 ---
 version: 3
+includes:
+  git:
+    taskfile: https://raw.githubusercontent.com/stuttgart-things/platform-engineering-showcase/refs/heads/main/taskfiles/git.yaml
+
 vars:
   PROJECT:
     sh: echo ${PROJECT}
@@ -19,22 +23,11 @@ tasks:
     desc: Select a task to run
     cmds:
       - |
-        task=$(yq e '.tasks | keys' Taskfile.yaml | sed 's/^- //' | gum choose)
-        task ${task}
+        # Extract task names (keep internal colons, remove only trailing colon)
+        task_name=$(task -l | awk '/^\*/ {print $2}' | sed 's/:$//' | gum choose)
 
-  branch:
-    desc: Create branch from main
-    cmds:
-      - git checkout main
-      - git branch
-      - git pull
-      - |
-        echo "Enter to be created (remote) branch:"
-        read BRANCH_NAME;
-        git checkout -b ${BRANCH_NAME}
-        git push origin ${BRANCH_NAME}
-      - git branch
-      - git branch --set-upstream-to=origin/main ${BRANCH_NAME}
+        # Run the selected task
+        [ -n "$task_name" ] && task "$task_name"
 
   run-molecule:
     preconditions: *venv
@@ -117,12 +110,6 @@ tasks:
         sh: ls {{ .SOURCE_COLLECTION_PATH }} | xargs -n1 printf '"%s" '
       GH_REPO: stuttgart-things/ansible
 
-  check:
-    desc: "Run pre-commit hooks"
-    cmds:
-      - pre-commit autoupdate
-      - pre-commit run -a
-
   setup-molecule:
     preconditions: *venv
     cmds:
@@ -138,35 +125,6 @@ tasks:
       - rm -rf ./.venv
       - python3 -m venv ./.venv
       - echo "DON'T FORGET TO RUN - source .venv/bin/activate"
-
-  commit:
-    desc: Commit + push code into branch
-    deps:
-      - check
-    cmds:
-      - git branch --set-upstream-to=origin/{{ .BRANCH }}
-      - git pull
-      - git status
-      - |
-        git add *
-        git status
-        if [[ -n $(git status --porcelain) ]]; then
-          echo "Review the changes above."
-          gum confirm "Do you want to commit these changes?" || exit 0
-
-          echo "ENTER COMMIT MESSAGE"
-          COMMIT_MESSAGE=$(gum choose "CUSTOM MESSAGE" "feat: {{ .BRANCH }}" "fix: {{ .BRANCH }}" "BREAKING CHANGE: {{ .BRANCH }}")
-
-          if [ "$COMMIT_MESSAGE" == "CUSTOM MESSAGE" ]; then
-            CHANGED_FILES=$(git status --short | awk '{print $2}' | tr '\n' ' ')
-            COMMIT_MESSAGE=$(gum input --placeholder "Commit message" --value "Changed: $CHANGED_FILES")
-          fi
-
-          git commit --allow-empty -a -m "$COMMIT_MESSAGE"
-        else
-          echo "No changes to commit."
-        fi
-      - git push origin -u {{ .BRANCH }}
 
   pr:
     desc: Create pull request into main
