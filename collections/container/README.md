@@ -25,6 +25,23 @@ ansible-playbook sthings.container.kind -vv \
 
 </details>
 
+<details><summary>CREATE KIND CLUSTER</summary>
+
+```bash
+ansible-playbook -i /tmp/inv \
+sthings.container.deploy_helmfile \
+-e install_bins=false \
+-e path_to_vars_file=xplane_helmfile \
+-e kubeconfig_path=~/.kube/xplane \
+-e target_host=all \
+-e profile=xplane_helmfile \
+-e kind_cluster_name=xplane \
+-vv
+```
+
+</details>
+
+
 <details><summary>CREATE KIND CROSSPLANE CLUSTER</summary>
 
 </details>
