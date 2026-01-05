@@ -25,6 +25,10 @@ ansible-playbook sthings.container.kind -vv \
 
 </details>
 
+<details><summary>CREATE KIND CROSSPLANE CLUSTER</summary>
+
+</details>
+
 <details><summary>DEPLOY KUBERNETES KIND CLUSTER</summary>
 
 ```bash
