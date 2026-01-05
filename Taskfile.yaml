@@ -126,10 +126,10 @@ tasks:
       - python3 -m venv ./.venv
       - echo "DON'T FORGET TO RUN - source .venv/bin/activate"
 
-  pr:
-    desc: Create pull request into main
+  release:
+    desc: Release collection(s)
     cmds:
-      - task: commit
+      - task: git:commit
       - |
         if gh pr list | grep -q "{{.BRANCH}}"; then
           echo "⚠️ PR already exists for branch {{.BRANCH}}, closing it..."
