@@ -58,11 +58,6 @@ playbooks:
               version_cmd: "version"
               target_version: "{{ k9s_version }}"
 
-        pre_tasks:
-          - name: Include vars
-            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
-            when: path_to_vars_file is defined
-
         tasks:
           - name: Download and install helmfile
             ansible.builtin.include_role:
@@ -88,7 +83,6 @@ playbooks:
             loop: "{{ helmfile_deployments }}"
             loop_control:
               label: "{{ item.location }}"
-            when: helmfile_deployments is defined and helmfile_deployments | length > 0
 
           - name: Apply, Sync, or Destroy Helmfile configurations
             ansible.builtin.shell:
@@ -113,7 +107,6 @@ playbooks:
             loop: "{{ helmfile_deployments }}"
             loop_control:
               label: "{{ item.location }} (state: {{ item.state }})"
-            when: helmfile_deployments is defined and helmfile_deployments | length > 0
 
           - name: Display helmfile apply results
             ansible.builtin.debug:
@@ -121,7 +114,6 @@ playbooks:
             loop: "{{ helmfile_apply_result.results }}"
             loop_control:
               label: "{{ item.item.location }}"
-            when: helmfile_apply_result is defined
 
 vars:
   - name: app_catalog
