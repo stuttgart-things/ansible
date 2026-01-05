@@ -21,7 +21,7 @@ vars:
       kind_version: 0.31.0 # datasource=github-tags depName=kubernetes-sigs/kind
       skopeo_version: 1.21.0 # datasource=github-tags depName=lework/skopeo-binary
       helm_version: 4.0.4 # datasource=github-tags depName=helm/helm
-      kubectl_version: v1.30.2 # datasource=github-tags depName=kubernetes/kubectl
+      kubectl_version: v1.35.0 # datasource=github-tags depName=kubernetes/kubectl
       k9s_version: 0.50.16 # datasource=github-tags depName=derailed/k9s
       velero_version: 1.17.1 # datasource=github-tags depName=vmware-tanzu/velero
       kubectl_slice_version: 1.4.2 # datasource=github-tags depName=patrickdappollonio/kubectl-slice
