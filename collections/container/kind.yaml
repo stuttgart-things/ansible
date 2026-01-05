@@ -102,3 +102,81 @@ playbooks:
           - name: Set control plane IP fact
             set_fact:
               control_plane_ip: "{{ control_plane_ip.stdout }}"
+
+  - name: kind_xplane
+    play: |
+      ---
+      - hosts: "{{ target_host | default('all') }}"
+        become: true
+
+        vars:
+          docker_install_compose: true
+          install_kind: true
+          create_kind_cluster: true
+          ansible_user: sthings
+
+          kind_cluster_name: xplane
+          kind_api_port: 6443
+
+          count_worker_nodes: 2
+          count_controlplane_nodes: 1
+
+          api_server_port: 33843
+
+          custom_control_plane_ports:
+            - containerPort: 6443
+              hostPort: "{{ api_server_port }}"
+              protocol: TCP
+            - containerPort: 34100
+              hostPort: 34100
+              protocol: TCP
+            - containerPort: 34101
+              hostPort: 34101
+              protocol: TCP
+
+          api_server_address: "{{ ansible_default_ipv4.address }}"
+
+          # Worker Node Specific Mounts
+          worker_node_mounts:
+            0:  # First worker (index 0)
+              - hostPath: /mnt/xplane-1
+                containerPath: /data
+            1:  # Second worker (index 1)
+              - hostPath: /mnt/xplane-2
+                containerPath: /data
+
+          rebuild_kind_cluster: false
+
+          disableDefaultCNI: true
+          kubeProxyMode: "none"
+
+          # Feature Flags
+          enable_ingress_ports: false
+          enable_host_paths: true
+
+          kustomize_urls:
+            - https://github.com/stuttgart-things/helm/infra/crds/cilium
+            - https://github.com/stuttgart-things/helm/infra/crds/cert-manager
+            - https://github.com/stuttgart-things/helm/cicd/crds/crossplane
+
+          helmfile_deployments:
+            - location: "git::https://github.com/stuttgart-things/helm.git@infra/cilium.yaml.gotmpl"
+              state: present  # or absent
+              state_values:
+                config: kind
+                clusterName: "{{ kind_cluster_name}}"
+                configureLB: false
+
+            - location: "git::https://github.com/stuttgart-things/helm.git@infra/cert-manager.yaml.gotmpl"
+              state: present  # or absent
+              state_values:
+                installCrds: false
+
+            - location: "git::https://github.com/stuttgart-things/helm.git@cicd/crossplane.yaml.gotmpl"
+              state: absent
+              state_values:
+                version: 2.1.3
+                deployTeraformProvider: false
+
+        roles:
+          - role: sthings.container.install_configure_docker
