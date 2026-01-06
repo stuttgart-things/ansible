@@ -10,10 +10,10 @@ playbooks:
         vars:
           kubeconfig_path: ~/.kube/config
           install_bins: true
-          kubectl_version: v1.35.0 # datasource=github-tags depName=kubernetes/kubectl
-          k9s_version: 0.50.16 # datasource=github-tags depName=derailed/k9s
-          helmfile_version: 1.2.3 # datasource=github-tags depName=helmfile/helmfile
-          helm_version: 4.0.4 # datasource=github-tags depName=helm/helm
+          kubectl_version: v1.35.0
+          k9s_version: 0.50.16
+          helmfile_version: 1.2.3
+          helm_version: 4.0.4
           ansible_user: sthings
 
           bin:
@@ -64,7 +64,31 @@ playbooks:
               name: sthings.container.download_install_binary
             when: install_bins|bool
 
-          - name: Apply Kustomize configurations (server-side apply)
+          - name: Override app enabled states from command-line variables
+            ansible.builtin.set_fact:
+              processed_catalog: >-
+                {{ processed_catalog | default([]) +
+                   [item | combine({'enabled': lookup('vars', 'enable_' + item.name.replace('-', '_'), default=item.enabled) | bool})] }}
+            loop: "{{ app_catalog }}"
+            loop_control:
+              label: "{{ item.name }}"
+
+          - name: Display processed app states
+            ansible.builtin.debug:
+              msg: "{{ item.name }}: {{ 'enabled' if item.enabled else 'disabled' }}"
+            loop: "{{ processed_catalog }}"
+            loop_control:
+              label: "{{ item.name }}"
+
+          - name: Build CRD list from enabled apps
+            ansible.builtin.set_fact:
+              crd_list: "{{ processed_catalog | selectattr('enabled', 'equalto', true) | selectattr('crds', 'defined') | map(attribute='crds') | flatten | unique | list }}"
+
+          - name: Display CRDs to be applied
+            ansible.builtin.debug:
+              msg: "CRDs to apply: {{ crd_list }}"
+
+          - name: Apply CRDs (server-side apply)
             ansible.builtin.shell: |
               kubectl apply -k {{ item }} \
                 --server-side \
@@ -72,17 +96,21 @@ playbooks:
                 --kubeconfig {{ kubeconfig_path }}
             become: yes
             become_user: "{{ ansible_user }}"
-            loop: "{{ kustomize_urls }}"
-            when: kustomize_urls is defined and kustomize_urls | length > 0
+            loop: "{{ crd_list }}"
+            when: crd_list | length > 0
 
-          - name: Validate and process Helmfile deployments
+          - name: Build helmfile deployment list from enabled apps
+            ansible.builtin.set_fact:
+              helmfile_list: "{{ processed_catalog | selectattr('enabled', 'equalto', true) | list }}"
+
+          - name: Validate helmfile deployments
             ansible.builtin.assert:
               that:
                 - item.state in ['present', 'absent', 'sync']
               msg: "State must be 'present', 'absent', or 'sync'"
-            loop: "{{ helmfile_deployments }}"
+            loop: "{{ helmfile_list }}"
             loop_control:
-              label: "{{ item.location }}"
+              label: "{{ item.name }}"
 
           - name: Apply, Sync, or Destroy Helmfile configurations
             ansible.builtin.shell:
@@ -104,46 +132,92 @@ playbooks:
                 {% endif %}
             become: yes
             become_user: "{{ ansible_user }}"
-            loop: "{{ helmfile_deployments }}"
+            loop: "{{ helmfile_list }}"
             loop_control:
-              label: "{{ item.location }} (state: {{ item.state }})"
+              label: "{{ item.name }} (state: {{ item.state }})"
+            register: helmfile_results
 
-          - name: Display helmfile apply results
+          - name: Display helmfile results
             ansible.builtin.debug:
               msg: "{{ item.stdout_lines }}"
-            loop: "{{ helmfile_apply_result.results }}"
+            loop: "{{ helmfile_results.results }}"
             loop_control:
-              label: "{{ item.item.location }}"
+              label: "{{ item.item.name }}"
+            when: helmfile_results.results is defined
 
 vars:
-  - name: app_catalog
+  - name: catalog
     file: |
       ---
-      # add catalog with all available apps and booleans to enable and overwriteable vars
+      # APP CATALOG
+      # Each app can be overridden at runtime using: -e enable_<app_name>=true/false
+      # Note: Hyphens in app names are converted to underscores (e.g., cert-manager → enable_cert_manager)
 
-  - name: xplane_helmfile
-    file: |
-      ---
-      kustomize_urls:
-        - https://github.com/stuttgart-things/helm/infra/crds/cilium
-        - https://github.com/stuttgart-things/helm/infra/crds/cert-manager
-        - https://github.com/stuttgart-things/helm/cicd/crds/crossplane
-
-      helmfile_deployments:
-        - location: "git::https://github.com/stuttgart-things/helm.git@infra/cilium.yaml.gotmpl"
-          state: present  # or absent
+      app_catalog:
+        - name: cilium
+          enabled: true
+          description: "CNI plugin for Kubernetes"
+          crds:
+            - https://github.com/stuttgart-things/helm/infra/crds/cilium
+          location: "git::https://github.com/stuttgart-things/helm.git@infra/cilium.yaml.gotmpl"
+          state: present
           state_values:
             config: kind
-            clusterName: "{{ kind_cluster_name}}"
+            clusterName: "{{ kind_cluster_name }}"
             configureLB: false
 
-        - location: "git::https://github.com/stuttgart-things/helm.git@infra/cert-manager.yaml.gotmpl"
-          state: present  # or absent
+        - name: cert-manager
+          enabled: true
+          description: "X.509 certificate management for Kubernetes"
+          crds:
+            - https://github.com/stuttgart-things/helm/infra/crds/cert-manager
+          location: "git::https://github.com/stuttgart-things/helm.git@infra/cert-manager.yaml.gotmpl"
+          state: present
           state_values:
             installCrds: false
 
-        - location: "git::https://github.com/stuttgart-things/helm.git@cicd/crossplane.yaml.gotmpl"
-          state: present  # or absent
+        - name: crossplane
+          enabled: true
+          description: "Infrastructure orchestration platform"
+          crds:
+            - https://github.com/stuttgart-things/helm/cicd/crds/crossplane
+          location: "git::https://github.com/stuttgart-things/helm.git@cicd/crossplane.yaml.gotmpl"
+          state: present
           state_values:
             version: 2.1.3
             deployTeraformProvider: false
+
+  - name: usage_examples
+    file: |
+      ---
+      # USAGE EXAMPLES:
+
+      # 1. Use catalog defaults (respects enabled: true/false in catalog)
+      ansible-playbook deploy_helmfile.yaml -i inventory.ini
+
+      # 2. Override specific apps from command line
+      ansible-playbook deploy_helmfile.yaml -i inventory.ini \
+        -e enable_cilium=true \
+        -e enable_cert_manager=true \
+        -e enable_crossplane=false
+
+      # 3. Enable apps that are disabled by default
+      ansible-playbook deploy_helmfile.yaml -i inventory.ini \
+        -e enable_argocd=true \
+        -e enable_prometheus=true
+
+      # 4. Override with extra vars file
+      ansible-playbook deploy_helmfile.yaml -i inventory.ini \
+        -e @overrides.yaml
+
+      # overrides.yaml content:
+      # enable_cilium: true
+      # enable_cert_manager: true
+      # enable_crossplane: true
+      # enable_argocd: false
+
+      # 5. Combine with other variables
+      ansible-playbook deploy_helmfile.yaml -i inventory.ini \
+        -e enable_cilium=true \
+        -e kind_cluster_name=my-cluster \
+        -e profile=dev
