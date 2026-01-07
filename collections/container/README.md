@@ -25,7 +25,7 @@ ansible-playbook sthings.container.kind -vv \
 
 </details>
 
-<details><summary>CREATE KIND CLUSTER</summary>
+<details><summary>CREATE XPLANE KIND CLUSTER</summary>
 
 ```bash
 ansible-playbook -i /tmp/inv \
