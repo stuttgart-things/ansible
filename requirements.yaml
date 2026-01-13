@@ -37,7 +37,7 @@ roles:
 
 collections:
   - name: ansible.netcommon
-    version: 8.2.0
+    version: 8.2.1
   - name: ansible.posix
     version: 2.1.0
   - name: awx.awx
