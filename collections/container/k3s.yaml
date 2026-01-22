@@ -68,7 +68,7 @@ vars:
   - name: k3s
     file: |
       ---
-      cilium_version: 0.18.9 # datasource=github-tags depName=cilium/cilium-cli
+      cilium_version: 0.19.0 # datasource=github-tags depName=cilium/cilium-cli
       helm_version: 4.1.0 # datasource=github-tags depName=helm/helm
       kubectl_version: v1.30.2 # datasource=github-tags depName=kubernetes/kubectl
       k9s_version: 0.35.0 # datasource=github-tags depName=kubernetes/kubectl
