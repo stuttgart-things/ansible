@@ -33,7 +33,7 @@ vars:
       dagger_version: 0.19.11 # datasource=github-tags depName=dagger/dagger
       tkn_version: 0.43.0 # datasource=github-tags depName=tektoncd/cli
       vcluster_version: 0.32.0 # datasource=github-tags depName=loft-sh/vcluster
-      vals_version: 0.43.4 # datasource=github-tags depName=helmfile/vals
+      vals_version: 0.43.5 # datasource=github-tags depName=helmfile/vals
 
       bin:
         vals:
