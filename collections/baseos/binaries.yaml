@@ -128,7 +128,7 @@ vars:
       machineshop_version: 2.11.0 # datasource=github-tags depName=stuttgart-things/machineshop
       mc_version: RELEASE.2025-04-08T15-39-49Z #
       crossplane_version: 1.20.5 # datasource=github-tags depName=crossplane/crossplane
-      sops_version: 3.12.0 # datasource=github-tags depName=getsops/sops
+      sops_version: 3.12.1 # datasource=github-tags depName=getsops/sops
 
       bin:
         sops:
