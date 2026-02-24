@@ -27,7 +27,7 @@ vars:
       kubectl_slice_version: 1.4.2 # datasource=github-tags depName=patrickdappollonio/kubectl-slice
       helmfile_version: 1.3.1 # datasource=github-tags depName=helmfile/helmfile
       argocd_version: 3.3.2 # datasource=github-tags depName=argoproj/argo-cd
-      flux_version: 2.7.5 # datasource=github-tags depName=fluxcd/flux2
+      flux_version: 2.8.0 # datasource=github-tags depName=fluxcd/flux2
       glab_version: 1.86.0 # datasource=gitlab-tags depName=gitlab-org/cli
       cilium_version: 0.19.1 # datasource=github-tags depName=cilium/cilium-cli
       dagger_version: 0.19.11 # datasource=github-tags depName=dagger/dagger
