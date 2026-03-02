@@ -131,6 +131,7 @@ playbooks:
           lvm_var_sizing: "50%"
           send_to_homerun: false
           python_modules:
+            - name: packaging
             - name: kubernetes
 
           # HOMERUN
