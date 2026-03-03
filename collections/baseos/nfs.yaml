@@ -1,0 +1,65 @@
+---
+playbooks:
+  - name: nfs_server
+    play: |
+      ---
+      # Ansible playbook to set up an NFS server on
+      # for use with nfs-csi StorageClass in Kubernetes
+      #
+      # Usage:
+      #   ansible-playbook setup-nfs-server.yaml -i inventory
+      #   ansible-playbook setup-nfs-server.yaml -i "10.31.103.23," -u sthings --become
+      #
+      # After running, add an nfs-csi Kustomization to infra.yaml with e.g.:
+      #   NFS_SERVER_FQDN: 10.31.103.23
+      #   NFS_SHARE_PATH: /data/nfs/sthings
+
+      - name: Setup NFS server
+        hosts: all
+        become: true
+
+        vars:
+          nfs_export_path: /data/nfs/sthings
+          nfs_export_network: "{{ nfs_network }}"  #e.g. 10.31.103.0/24
+          nfs_export_options: "rw,sync,no_subtree_check,no_root_squash"
+
+        tasks:
+          - name: Install NFS server packages
+            ansible.builtin.apt:
+              name:
+                - nfs-kernel-server
+                - nfs-common
+              state: present
+              update_cache: true
+
+          - name: Create NFS export directory
+            ansible.builtin.file:
+              path: "{{ nfs_export_path }}"
+              state: directory
+              mode: "0777"
+              owner: nobody
+              group: nogroup
+
+          - name: Configure NFS export
+            ansible.builtin.lineinfile:
+              path: /etc/exports
+              line: "{{ nfs_export_path }} {{ nfs_export_network }}({{ nfs_export_options }})"
+              regexp: "^{{ nfs_export_path | regex_escape }}\\s"
+              state: present
+            notify: Reload NFS exports
+
+          - name: Enable and start NFS server
+            ansible.builtin.systemd:
+              name: nfs-kernel-server
+              state: started
+              enabled: true
+
+          - name: Enable NFSv3 support (rpc-statd)
+            ansible.builtin.systemd:
+              name: rpc-statd
+              state: started
+              enabled: true
+
+        handlers:
+          - name: Reload NFS exports
+            ansible.builtin.command: exportfs -ra

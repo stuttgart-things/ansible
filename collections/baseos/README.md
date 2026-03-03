@@ -136,3 +136,18 @@ ansible-playbook sthings.baseos.render_upload_vm -vv \
 ```
 
 </details>
+
+<details><summary>SETUP NFS SERVER</summary>
+
+```bash
+# Basic usage with inventory file
+ansible-playbook sthings.baseos.nfs -i inventory \
+-e nfs_network=10.31.103.0/24 -vv
+
+# Usage with inline host and become
+ansible-playbook sthings.baseos.nfs -i "10.31.103.23," \
+-u sthings --become \
+-e nfs_network=10.31.103.0/24 -vv
+```
+
+</details>
