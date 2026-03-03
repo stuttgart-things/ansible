@@ -129,6 +129,18 @@ playbooks:
           lvm_home_sizing: "15%"
           lvm_root_sizing: "35%"
           lvm_var_sizing: "50%"
+          lab_dns_map:
+            labda:
+              ip_prefixes:
+                - "10.100.136."
+              search_domain: "tiab.labda.sva.de"
+            labul:
+              ip_prefixes:
+                - "10.31.101."
+                - "10.31.102."
+                - "10.31.103."
+                - "10.31.104."
+              search_domain: "labul.sva.de"
           send_to_homerun: false
           python_modules:
             - name: packaging
@@ -242,6 +254,71 @@ playbooks:
                   use: systemd
                 when: domain | length > 0
             when: ansible_distribution == "Fedora"
+
+          - name: Fix DNS resolution on Ubuntu 25.04
+            block:
+              - name: Detect lab environment from IP address
+                ansible.builtin.set_fact:
+                  detected_lab: >-
+                    {% for lab, config in lab_dns_map.items() %}
+                    {% for prefix in config.ip_prefixes %}
+                    {% if ansible_default_ipv4.address | default('') is match(prefix | regex_escape ~ '.*') %}
+                    {{ lab }}
+                    {% endif %}
+                    {% endfor %}
+                    {% endfor %}
+
+              - name: Set search domain fact from detected lab
+                ansible.builtin.set_fact:
+                  dns_search_domain: "{{ lab_dns_map[detected_lab | trim].search_domain }}"
+                when: detected_lab | trim | length > 0
+
+              - name: Display detected lab environment
+                ansible.builtin.debug:
+                  msg: "Detected lab: {{ detected_lab | trim }} (IP: {{ ansible_default_ipv4.address }}) -> search domain: {{ dns_search_domain }}"
+                when: detected_lab | trim | length > 0
+
+              - name: Configure systemd-resolved with correct search domain
+                ansible.builtin.lineinfile:
+                  path: /etc/systemd/resolved.conf
+                  regexp: '^#?Domains='
+                  line: 'Domains={{ dns_search_domain }}'
+                  state: present
+                when: detected_lab | trim | length > 0
+
+              - name: Get current short hostname
+                ansible.builtin.command: hostname -s
+                register: current_hostname_u25
+                changed_when: false
+                when: detected_lab | trim | length > 0
+
+              - name: Ensure FQDN is set in /etc/hosts
+                ansible.builtin.lineinfile:
+                  path: /etc/hosts
+                  regexp: '^127\.0\.1\.1'
+                  line: "127.0.1.1 {{ current_hostname_u25.stdout | trim }}.{{ dns_search_domain }} {{ current_hostname_u25.stdout | trim }}"
+                  state: present
+                when: detected_lab | trim | length > 0
+
+              - name: Set FQDN using hostnamectl
+                ansible.builtin.hostname:
+                  name: "{{ current_hostname_u25.stdout | trim }}.{{ dns_search_domain }}"
+                  use: systemd
+                when: detected_lab | trim | length > 0
+
+              - name: Restart systemd-resolved
+                ansible.builtin.systemd:
+                  name: systemd-resolved
+                  state: restarted
+                when: detected_lab | trim | length > 0
+
+              - name: Warn if lab could not be detected
+                ansible.builtin.debug:
+                  msg: "WARNING: Could not detect lab for IP {{ ansible_default_ipv4.address }}. DNS not configured. Add the IP prefix to lab_dns_map."
+                when: detected_lab | trim | length == 0
+            when:
+              - ansible_distribution == "Ubuntu"
+              - ansible_distribution_version == "25.04"
 
   - name: users
     play: |
