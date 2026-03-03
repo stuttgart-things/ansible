@@ -16,7 +16,7 @@ requirements: |
       version: 2025.12.12
     - src: https://github.com/stuttgart-things/manage-filesystem.git
       scm: git
-      version: 2024.06.07
+      version: 2026.03.03
     - src: https://github.com/stuttgart-things/install-configure-vault.git
       scm: git
       version: 2025.12.11
