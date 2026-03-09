@@ -1,0 +1,393 @@
+---
+playbooks:
+  - name: k3s_arm
+    play: |
+      ---
+      - hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: true
+
+        vars:
+          # BASE OS
+          expand_rootfs: true
+          update_packages: true
+          install_requirements: true
+          install_motd: true
+          reboot_all: false
+          username: sthings
+          inotify_max_user_watches: 2099999999
+          inotify_max_user_instances: 2099999999
+          motd: |
+            echo -e "\n";
+            echo -e "\033[1;33m
+            {{ lookup('file', 'defaults/sthings.banner') }}\033[0m"
+            echo -e "\n"
+            echo -e "\033[1;33m CPU:\t \033[0m" `echo "$(nproc)"` "Cores"  "\t" "\033[1;33m FQDN:\t\t \033[0m" `hostname -f`
+            echo -e "\033[1;33m RAM:\t \033[0m" `free -h | grep Mem | awk '{ print $2 }' | sed 's/Gi//g'` "GB" "\t" "\033[1;33m DISTRIBUTION:\t \033[0m" `cat /etc/os-release | grep -w NAME | cut -d"=" -f2- | sed 's/"//g'` `cat /etc/os-release | grep -w VERSION | cut -d"=" -f2- | sed 's/"//g'`
+            echo -e "\033[1;33m DISK:\t \033[0m" `df -h / | awk 'NR==2{print $2}'` "\t" "\033[1;33m KERNEL:\t \033[0m" `uname -a | awk '{print $3}'`
+            echo -e "\033[1;33m UPTIME: \033[0m"  `uptime | awk '{print $3" "$4}' | sed 's/,//g'` "\t" "\033[1;33m DATE:\t\t \033[0m"  `date`
+            echo -e "\033[1;33m USER:\t \033[0m" `/usr/bin/whoami` "\t" "\033[1;33m GROUPS:\t \033[0m" `/usr/bin/groups`
+            echo -e "\033[1;33m PYTHON: \033[0m" `python3 --version | awk '{print $2}'` "\t" "\033[1;33m IP:\t\t \033[0m" `hostname -I | awk '{print $1}'` "\n"
+            echo -e "\033[1;33m SESSIONS:"
+            echo -e "\033[1;33m User     TTY          since             ip \033[0m"
+            echo -e "\033[1;37m `/usr/bin/who` \033[0m" "\n"
+            echo -e "\033[1;33m`sysctl fs.inotify.max_user_watches`\033[0m"
+            echo -e "\033[1;33m`sysctl fs.inotify.max_user_instances`\033[0m"
+            echo -e "\n"
+
+          # ARCHITECTURE
+          system_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+
+          # BINARIES
+          kubectl_version: v1.35.1
+          helm_version: "3.18.2"
+          helmfile_version: "0.171.0"
+          k9s_version: "0.50.6"
+
+          kubectl_binary:
+            kubectl:
+              bin_name: "kubectl"
+              bin_version: "{{ kubectl_version }}"
+              check_bin_version_before_installing: true
+              source_url: "https://dl.k8s.io/{{ kubectl_version }}/bin/linux/{{ system_arch }}/kubectl"
+              bin_to_copy: "kubectl"
+              to_remove: "kubectl"
+              bin_dir: "/usr/local/bin"
+              version_cmd: " version --client"
+              target_version: "{{ kubectl_version }}"
+
+          helm_binary:
+            helm:
+              bin_name: "helm"
+              bin_version: "{{ helm_version }}"
+              check_bin_version_before_installing: true
+              source_url: "https://get.helm.sh/helm-v{{ helm_version }}-linux-{{ system_arch }}.tar.gz"
+              bin_to_copy: "linux-{{ system_arch }}/helm"
+              to_remove: "linux-{{ system_arch }}"
+              bin_dir: "/usr/local/bin"
+              version_cmd: " version"
+              target_version: "{{ helm_version }}"
+
+          helmfile_binary:
+            helmfile:
+              bin_name: "helmfile"
+              bin_version: "{{ helmfile_version }}"
+              check_bin_version_before_installing: true
+              source_url: "https://github.com/helmfile/helmfile/releases/download/v{{ helmfile_version }}/helmfile_{{ helmfile_version }}_linux_{{ system_arch }}.tar.gz"
+              bin_to_copy: "helmfile"
+              to_remove: ""
+              bin_dir: "/usr/local/bin"
+              version_cmd: " version"
+              target_version: "{{ helmfile_version }}"
+
+          k9s_binary:
+            k9s:
+              bin_name: "k9s"
+              bin_version: "{{ k9s_version }}"
+              check_bin_version_before_installing: true
+              source_url: "https://github.com/derailed/k9s/releases/download/v{{ k9s_version }}/k9s_Linux_{{ system_arch }}.tar.gz"
+              bin_to_copy: "k9s"
+              to_remove: ""
+              bin_dir: "/usr/local/bin"
+              version_cmd: " version --short"
+              target_version: "{{ k9s_version }}"
+
+          # VAULT CA
+          vault_instances:
+            - https://vault.infra.sthings.lab
+
+          # K3S
+          k3s_k8s_version: "1.35.1"
+          k3s_release_kind: k3s1
+          k3s_version: "v{{ k3s_k8s_version }}+{{ k3s_release_kind }}"
+          k3s_installscript_url: https://get.k3s.io
+          k3s_config_dir: /etc/rancher/k3s
+          k3s_config_name: k3s-config.yaml
+          k3s_kubeconfig_path: /etc/rancher/k3s/k3s.yaml
+          k3s_path_to_generated_token: /var/lib/rancher/k3s/server/node-token
+          k3s_master_ip: "{{ groups.initial_master_node | map('extract', hostvars, 'ansible_default_ipv4') | map(attribute='address') }}"
+          k3s_additional_nodes: "{{ groups.additional_master_nodes | map('extract', hostvars) | map(attribute='ansible_hostname') }}"
+          k8s_api_port: 6443
+
+          k3s_config:
+            flannel_backend: none
+            disable_kube_proxy: true
+            disable_network_policy: true
+            cluster_init: true
+            disable:
+              - servicelb
+              - traefik
+
+          # DNS
+          lab_dns_map:
+            labda:
+              ip_prefixes:
+                - "10.100.136."
+              search_domain: "tiab.labda.sva.de"
+            labul:
+              ip_prefixes:
+                - "10.31.101."
+                - "10.31.102."
+                - "10.31.103."
+                - "10.31.104."
+              search_domain: "labul.sva.de"
+
+        roles:
+          - role: sthings.baseos.install_requirements
+            when: install_requirements|bool
+
+        pre_tasks:
+          - name: Include vars
+            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
+            when: path_to_vars_file is defined
+
+          - ansible.builtin.reboot:
+            when: reboot_all|bool
+
+        tasks:
+          - name: Expand root filesystem to use full SD card
+            block:
+              - name: Get root partition device
+                ansible.builtin.shell: findmnt -n -o SOURCE /
+                register: root_device
+                changed_when: false
+
+              - name: Extract disk and partition number
+                ansible.builtin.set_fact:
+                  root_disk: "{{ root_device.stdout | regex_replace('p?[0-9]+$', '') }}"
+                  root_part_num: "{{ root_device.stdout | regex_search('[0-9]+$') }}"
+
+              - name: Grow partition to fill available space
+                ansible.builtin.command: growpart {{ root_disk }} {{ root_part_num }}
+                register: growpart_result
+                changed_when: "'CHANGED' in growpart_result.stdout"
+                failed_when: growpart_result.rc != 0 and 'NOCHANGE' not in growpart_result.stdout
+
+              - name: Resize filesystem
+                ansible.builtin.command: resize2fs {{ root_device.stdout }}
+                when: growpart_result.changed
+            when: expand_rootfs|bool
+
+          - name: Install vault ca certificate to local system from multiple instances
+            ansible.builtin.include_role:
+              name: sthings.baseos.install_configure_vault
+              tasks_from: install-ca-auth
+            vars:
+              vault_url: "{{ vault_instance }}"
+            loop: "{{ vault_instances }}"
+            loop_control:
+              loop_var: vault_instance
+            when: vault_instances is defined
+
+          - name: Install kubectl
+            block:
+              - ansible.builtin.set_fact: bin="{{ kubectl_binary|combine(kubectl_binary) }}"
+              - ansible.builtin.include_role:
+                  name: download-install-binary
+
+          - name: Install helm
+            block:
+              - ansible.builtin.set_fact: bin="{{ helm_binary|combine(helm_binary) }}"
+              - ansible.builtin.include_role:
+                  name: download-install-binary
+
+          - name: Install helmfile
+            block:
+              - ansible.builtin.set_fact: bin="{{ helmfile_binary|combine(helmfile_binary) }}"
+              - ansible.builtin.include_role:
+                  name: download-install-binary
+
+          - name: Install k9s
+            block:
+              - ansible.builtin.set_fact: bin="{{ k9s_binary|combine(k9s_binary) }}"
+              - ansible.builtin.include_role:
+                  name: download-install-binary
+
+          - name: Install Homebrew for sthings user
+            block:
+              - name: Install brew dependencies
+                ansible.builtin.package:
+                  name:
+                    - build-essential
+                    - procps
+                    - curl
+                    - file
+                    - git
+                  state: present
+
+              - name: Check if brew is already installed
+                ansible.builtin.command: /home/linuxbrew/.linuxbrew/bin/brew --version
+                register: brew_check
+                changed_when: false
+                failed_when: false
+
+              - name: Install Homebrew
+                ansible.builtin.shell: |
+                  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                environment:
+                  HOME: /home/{{ username }}
+                when: brew_check.rc != 0
+
+              - name: Add brew to PATH in sthings bashrc
+                ansible.builtin.blockinfile:
+                  path: /home/{{ username }}/.bashrc
+                  marker: "# {mark} HOMEBREW"
+                  block: |
+                    eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+                become_user: "{{ username }}"
+
+          - name: Set inotify sysctl limits for k3s
+            ansible.posix.sysctl:
+              name: "{{ item.name }}"
+              value: "{{ item.value }}"
+              sysctl_set: true
+              state: present
+              reload: true
+            loop:
+              - { name: fs.inotify.max_user_watches, value: "2099999999" }
+              - { name: fs.inotify.max_user_instances, value: "2099999999" }
+
+          - name: Create k3s config dir
+            ansible.builtin.file:
+              path: "{{ k3s_config_dir }}"
+              state: directory
+              mode: "0755"
+
+          - name: Render k3s config
+            ansible.builtin.copy:
+              dest: "{{ k3s_config_dir }}/{{ k3s_config_name }}"
+              content: |
+                ---
+                flannel-backend: {{ k3s_config.flannel_backend }}
+                disable-kube-proxy: {{ k3s_config.disable_kube_proxy }}
+                disable-network-policy: {{ k3s_config.disable_network_policy }}
+                cluster-init: {{ k3s_config.cluster_init }}
+                disable:
+                {% for item in k3s_config.disable %}
+                - {{ item }}
+                {% endfor %}
+              mode: "0644"
+            when: inventory_hostname in groups['initial_master_node']
+
+          - name: Install k3s on initial master node
+            ansible.builtin.shell: |
+              curl -sfL {{ k3s_installscript_url }} | sh -s - --config={{ k3s_config_dir }}/{{ k3s_config_name }}
+            environment:
+              INSTALL_K3S_VERSION: "{{ k3s_version }}"
+            when: inventory_hostname in groups['initial_master_node']
+
+          - name: Read k3s token from initial master
+            ansible.builtin.shell: cat {{ k3s_path_to_generated_token }}
+            register: k3s_token
+            when: inventory_hostname in groups['initial_master_node']
+
+          - name: Set k3s token from initial master
+            ansible.builtin.set_fact:
+              k3s_shared_token: "{{ k3s_token.stdout }}"
+            run_once: true
+            delegate_to: initial_master_node
+
+          - name: Add external ip to kubeconfig
+            ansible.builtin.lineinfile:
+              path: "{{ k3s_kubeconfig_path }}"
+              regexp: "127.0.0.1:{{ k8s_api_port }}"
+              line: "    server: https://{% for host in groups['initial_master_node'] %}{{ hostvars[host]['ansible_default_ipv4']['address'] }}{% endfor %}:{{ k8s_api_port }}"
+            when: inventory_hostname in groups['initial_master_node']
+            ignore_errors: true
+
+          - name: Deploy additional nodes
+            ansible.builtin.shell: |
+              curl -sfL {{ k3s_installscript_url }} | sh -s -
+            environment:
+              K3S_URL: "https://{{ k3s_master_ip[0] }}:6443"
+              K3S_TOKEN: "{{ k3s_shared_token }}"
+              INSTALL_K3S_VERSION: "{{ k3s_version }}"
+            when: inventory_hostname in groups['additional_master_nodes']
+
+          - name: Label worker nodes
+            ansible.builtin.shell: |
+              kubectl label node {{ item }} node-role.kubernetes.io/worker=worker --overwrite
+            environment:
+              KUBECONFIG: "{{ k3s_kubeconfig_path }}"
+            with_items:
+              - "{{ k3s_additional_nodes }}"
+            when: inventory_hostname in groups['initial_master_node']
+
+        post_tasks:
+          - name: Set FQDN on Fedora systems
+            block:
+              - name: Get current short hostname
+                ansible.builtin.command: hostname -s
+                register: current_hostname
+                changed_when: false
+
+              - name: Get DNS domain from resolvectl
+                ansible.builtin.shell: resolvectl status | grep "DNS Domain" | awk '{print $3}'
+                register: dns_domain_result
+                changed_when: false
+
+              - name: Set domain fact
+                ansible.builtin.set_fact:
+                  domain: "{{ dns_domain_result.stdout | trim }}"
+                  short_hostname: "{{ current_hostname.stdout | trim }}"
+
+              - name: Set the FQDN using hostnamectl
+                ansible.builtin.hostname:
+                  name: "{{ short_hostname }}.{{ domain }}"
+                  use: systemd
+                when: domain | length > 0
+            when: ansible_distribution == "Fedora"
+
+          - name: Fix DNS resolution on Ubuntu
+            block:
+              - name: Detect lab environment from IP address
+                ansible.builtin.set_fact:
+                  detected_lab: >-
+                    {% for lab, config in lab_dns_map.items() %}
+                    {% for prefix in config.ip_prefixes %}
+                    {% if ansible_default_ipv4.address | default('') is match(prefix | regex_escape ~ '.*') %}
+                    {{ lab }}
+                    {% endif %}
+                    {% endfor %}
+                    {% endfor %}
+
+              - name: Set search domain fact from detected lab
+                ansible.builtin.set_fact:
+                  dns_search_domain: "{{ lab_dns_map[detected_lab | trim].search_domain }}"
+                when: detected_lab | trim | length > 0
+
+              - name: Configure systemd-resolved with correct search domain
+                ansible.builtin.lineinfile:
+                  path: /etc/systemd/resolved.conf
+                  regexp: '^#?Domains='
+                  line: 'Domains={{ dns_search_domain }}'
+                  state: present
+                when: detected_lab | trim | length > 0
+
+              - name: Get current short hostname
+                ansible.builtin.command: hostname -s
+                register: current_hostname_u
+                changed_when: false
+                when: detected_lab | trim | length > 0
+
+              - name: Ensure FQDN is set in /etc/hosts
+                ansible.builtin.lineinfile:
+                  path: /etc/hosts
+                  regexp: '^127\.0\.1\.1'
+                  line: "127.0.1.1 {{ current_hostname_u.stdout | trim }}.{{ dns_search_domain }} {{ current_hostname_u.stdout | trim }}"
+                  state: present
+                when: detected_lab | trim | length > 0
+
+              - name: Set FQDN using hostnamectl
+                ansible.builtin.hostname:
+                  name: "{{ current_hostname_u.stdout | trim }}.{{ dns_search_domain }}"
+                  use: systemd
+                when: detected_lab | trim | length > 0
+
+              - name: Restart systemd-resolved
+                ansible.builtin.systemd:
+                  name: systemd-resolved
+                  state: restarted
+                when: detected_lab | trim | length > 0
+            when:
+              - ansible_distribution == "Ubuntu"
