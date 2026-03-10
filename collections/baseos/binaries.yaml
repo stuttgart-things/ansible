@@ -52,7 +52,7 @@ playbooks:
         become: yes
 
         vars:
-          vhs_version: 0.10.0 # datasource=github-tags depName=charmbracelet/vhs
+          vhs_version: 0.11.0 # datasource=github-tags depName=charmbracelet/vhs
           bin:
             vhs:
               bin_name: vhs
