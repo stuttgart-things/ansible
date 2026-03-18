@@ -47,10 +47,10 @@ jobs:
       matrix: ${{ fromJson(needs.Analyze-Collection-Config.outputs.collection_folders) }}
     uses: stuttgart-things/github-workflow-templates/.github/workflows/call-ansible-collection.yaml@main
     with:
-      runs-on: dagger
+      runs-on: ubuntu-latest
       environment-name: k8s
       collection-directory: ${{ matrix.collection-directory }}
-      dagger-module-version: v0.13.0
-      dagger-version: v0.18.10
+      dagger-module-version: v0.86.0
+      dagger-version: v0.20.0
       branch-name: ${{ github.event.pull_request.head.ref }}
     secrets: inherit # pragma: allowlist secret
