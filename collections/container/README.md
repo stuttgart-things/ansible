@@ -31,7 +31,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `sthings.container.podman` | Install Podman on Debian/Ubuntu and RHEL |
 | `sthings.container.nerdctl` | Install nerdctl (v2.2.1) with containerd and buildkit |
 
-### KIND Clusters
+### KIND Cluster(s)
 
 | Playbook | Description |
 |----------|-------------|

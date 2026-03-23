@@ -349,7 +349,7 @@ ansible-playbook sthings.baseos.rename_proxmox_vm -vv \
 -e vmname_new=new-name \
 -e target_host=localhost
 
-# Delete a Proxmox VM
+# Delete a ProxmoxVM
 ansible-playbook sthings.baseos.delete_proxmox_vm -vv \
 -e vmname_delete=vm-to-delete \
 -e target_host=localhost
