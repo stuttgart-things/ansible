@@ -11,6 +11,101 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 </details>
 
+## ROLE DEPENDENCIES
+
+| Role | Version | Description |
+|------|---------|-------------|
+| download-install-binary | 2025.01.14 | Binary download and installation |
+| create-os-user | 2025.10.11 | OS user creation |
+| install-requirements | 2025.12.12 | General requirements installation |
+| manage-filesystem | 2026.03.03 | LVM filesystem management |
+| install-configure-vault | 2025.12.11 | Vault integration and CA certificates |
+| create-send-webhook | 2024.09.06 | Webhook creation |
+| install-configure-docker | 2025.04.24 | Docker installation |
+
+## PLAYBOOKS
+
+### Base OS Setup
+
+| Playbook | Description |
+|----------|-------------|
+| `sthings.baseos.setup` | Base OS setup: filesystem, packages, vault CA, motd, DNS configuration |
+| `sthings.baseos.users` | Create OS users from profile YAML |
+| `sthings.baseos.reboot_vm` | Reboot machines |
+| `sthings.baseos.prepare_env` | Prepare SSH keys from Vault, create inventory, wait for SSH |
+| `sthings.baseos.starship` | Install and configure starship shell prompt |
+
+### Developer Environment
+
+| Playbook | Description |
+|----------|-------------|
+| `sthings.baseos.dev` | Full dev machine setup (setup + binaries + ansible + golang + pre-commit + semantic-release + docker + container tools + nerdctl + podman + vhs + kind cluster) |
+| `sthings.baseos.dev_config` | Post-dev configuration: restart containerd, create .kube dir, install KCL |
+| `sthings.baseos.ansible` | Install Python3, virtualenv, Ansible (v10.4.0) and Python packages (kubernetes, openshift, hvac, pyvmomi) |
+| `sthings.baseos.golang` | Install Go (v1.25.1) with golangci-lint, goreleaser (v2.14.3), ko (v0.18.0), cobra-cli, protobuf |
+| `sthings.baseos.pre_commit` | Install pre-commit package |
+| `sthings.baseos.semantic_release` | Install NVM, Node.js 20, semantic-release and plugins |
+| `sthings.baseos.ai` | Install AI tools via Homebrew (dagger, gemini-cli, crush) |
+| `sthings.baseos.uv` | Install UV Python package manager (v0.9.3) |
+
+### Binaries and Tools
+
+| Playbook | Description |
+|----------|-------------|
+| `sthings.baseos.binaries` | Install CLI binaries (gum, gh, task, hugo, terraform, packer, yq, jq, machineshop, minio, sops, crossplane) |
+| `sthings.baseos.brew` | Install Homebrew and build dependencies |
+| `sthings.baseos.vhs` | Install VHS terminal recorder with Google Chrome and system dependencies |
+
+### Kubernetes (ARM)
+
+| Playbook | Description |
+|----------|-------------|
+| `sthings.baseos.k3s_arm` | Full K3s cluster setup on ARM: requirements, kubectl, helm, helmfile, k9s, Homebrew, inotify tuning, k3s master/worker setup, DNS resolution |
+
+### Infrastructure
+
+| Playbook | Description |
+|----------|-------------|
+| `sthings.baseos.nfs` | Setup NFS server with exports for Kubernetes StorageClass |
+| `sthings.baseos.pdns` | Create PowerDNS A records using Vault for API token |
+
+### VM Provisioning
+
+| Playbook | Description |
+|----------|-------------|
+| `sthings.baseos.render_upload_vm` | Render Terraform VM config from J2 templates and upload to S3 (supports vSphere and Proxmox) |
+| `sthings.baseos.get_execute_terraform` | Retrieve Terraform config from S3 and apply for VM provisioning |
+| `sthings.baseos.rename_proxmox_vm` | Rename Proxmox VMs via API |
+| `sthings.baseos.delete_proxmox_vm` | Delete Proxmox VMs via API |
+
+### Tinkerbell
+
+| Playbook | Description |
+|----------|-------------|
+| `sthings.baseos.tink` | Tinkerbell bare-metal provisioning: user creation, package updates, Python venv, reboot |
+
+## CUSTOM MODULES
+
+| Module | Description |
+|--------|-------------|
+| `sthings.baseos.get_checksum` | Generate checksums (md5, sha1, sha256, sha512) for files or directories |
+
+## BINARIES (installed by `sthings.baseos.binaries`)
+
+| Tool | Version |
+|------|---------|
+| gum | 0.16.2 |
+| gh | 2.88.1 |
+| task | 3.49.1 |
+| hugo | 0.157.0 |
+| terraform | 1.14.7 |
+| packer | 1.15.0 |
+| yq | 4.52.4 |
+| jq | 1.7.1 |
+| machineshop | 2.11.0 |
+| sops | 3.12.1 |
+| crossplane | 1.20.5 |
+
 ## USAGE
 
 <details><summary>DEPLOY DEV MACHINE</summary>
@@ -45,6 +140,70 @@ ansible-playbook -i ./inv-dev-vm sthings.baseos.dev -e path_to_vars_file=$(pwd)/
 
 </details>
 
+<details><summary>BASE OS SETUP</summary>
+
+```bash
+ansible-playbook sthings.baseos.setup -vv \
+-e manage_filesystem=true \
+-e update_packages=true \
+-e install_requirements=true \
+-e install_motd=true \
+-e username=sthings \
+-i /tmp/hosts
+```
+
+</details>
+
+<details><summary>INSTALL ANSIBLE ENVIRONMENT</summary>
+
+```bash
+ansible-playbook sthings.baseos.ansible -vv \
+-i /tmp/hosts
+```
+
+</details>
+
+<details><summary>INSTALL GOLANG</summary>
+
+```bash
+ansible-playbook sthings.baseos.golang -vv \
+-e golang_version=1.25.1 \
+-i /tmp/hosts
+```
+
+</details>
+
+<details><summary>INSTALL AI TOOLS</summary>
+
+```bash
+ansible-playbook sthings.baseos.ai -vv \
+-e target_host=all \
+-i /tmp/hosts
+```
+
+</details>
+
+<details><summary>INSTALL UV PYTHON PACKAGE MANAGER</summary>
+
+```bash
+ansible-playbook sthings.baseos.uv -vv \
+-e target_host=all \
+-i /tmp/hosts
+```
+
+</details>
+
+<details><summary>INSTALL STARSHIP PROMPT</summary>
+
+```bash
+ansible-playbook sthings.baseos.starship -vv \
+-e target_host=all \
+-e developer=sthings \
+-i /tmp/hosts
+```
+
+</details>
+
 <details><summary>CREATE PDNS-ENTRY</summary>
 
 ```bash
@@ -52,7 +211,7 @@ export VAULT_ROLE_ID=""
 export VAULT_SECRET_ID=""
 export VAULT_ADDR=https://vault.example.com:8200
 
-ansible-playbook sthings.baseos.pdns-entry \
+ansible-playbook sthings.baseos.pdns \
 -e pdns_url=https://pdns-vsphere.example.com::8443 \
 -e entry_zone=sthings-vsphere.example.com. \
 -e ip_address=10.31.103.10 \
@@ -98,6 +257,22 @@ ansible-playbook sthings.baseos.binaries -vv \
 
 </details>
 
+<details><summary>DEPLOY K3S ON ARM</summary>
+
+```bash
+cat <<EOF > k3s-arm
+[initial_master_node]
+10.100.136.151
+[additional_master_nodes]
+10.100.136.152
+EOF
+
+ansible-playbook sthings.baseos.k3s_arm -vv \
+-i k3s-arm
+```
+
+</details>
+
 <details><summary>RENDERING OF VM CONFIG + UPLOAD</summary>
 
 ### GENERATE RANDOM VM CONFIG + UPLOAD TO S3
@@ -133,6 +308,51 @@ ansible-playbook sthings.baseos.render_upload_vm -vv \
 -e vm_disk=32 \
 -e vm_cpu=2 \
 -e s3=labul-automation
+```
+
+```bash
+# Render for Proxmox
+ansible-playbook sthings.baseos.render_upload_vm -vv \
+-e lab=labul \
+-e cloud=proxmox \
+-e vmName=test-vm \
+-e s3=labul-automation
+```
+
+</details>
+
+<details><summary>EXECUTE TERRAFORM FROM S3</summary>
+
+```bash
+export VAULT_ROLE_ID=""
+export VAULT_SECRET_ID=""
+export VAULT_ADDR=https://vault.example.com:8200
+
+ansible-playbook sthings.baseos.get_execute_terraform -vv \
+-e vmName=test-vm \
+-e cloud=vsphere \
+-e s3=labul-automation
+```
+
+</details>
+
+<details><summary>MANAGE PROXMOX VMS</summary>
+
+```bash
+export VAULT_ROLE_ID=""
+export VAULT_SECRET_ID=""
+export VAULT_ADDR=https://vault.example.com:8200
+
+# Rename a Proxmox VM
+ansible-playbook sthings.baseos.rename_proxmox_vm -vv \
+-e vmname_old=old-name \
+-e vmname_new=new-name \
+-e target_host=localhost
+
+# Delete a Proxmox VM
+ansible-playbook sthings.baseos.delete_proxmox_vm -vv \
+-e vmname_delete=vm-to-delete \
+-e target_host=localhost
 ```
 
 </details>
