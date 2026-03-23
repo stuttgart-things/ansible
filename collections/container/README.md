@@ -41,6 +41,16 @@ sthings.container.deploy_helmfile \
 
 </details>
 
+<details><summary>DEPLOY DAGGER ENGINE</summary>
+
+```bash
+ansible-playbook sthings.container.dagger -vv \
+-e target_host=all \
+-i /tmp/hosts
+```
+
+</details>
+
 
 <details><summary>CREATE KIND CROSSPLANE CLUSTER</summary>
 
