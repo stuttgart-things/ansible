@@ -1,0 +1,78 @@
+---
+playbooks:
+  - name: dagger
+    play: |
+      ---
+      - hosts: "{{ target_host | default('all') }}"
+        become: true
+
+        vars:
+          dagger_version: v0.20.3 # datasource=github-tags depName=dagger/dagger
+          dagger_engine_name: "dagger-engine-{{ dagger_version }}"
+          dagger_engine_image: "registry.dagger.io/engine:{{ dagger_version }}"
+          dagger_ca_dest_dir: "{{ ansible_env.HOME }}/.config/dagger/ca-certificates"
+          dagger_ca_certificates: []
+          # Example:
+          # dagger_ca_certificates:
+          #   - name: labul-ca.crt
+          #     url: https://vault.labul.exmaple.com:8200/v1/pki/ca/pem
+          #   - name: labda-ca.crt
+          #     url: https://vault.tiab.labda.exmaple.com:8200/v1/pki/ca/pem
+
+        tasks:
+          - name: Ensure dagger ca-certificates directory exists
+            ansible.builtin.file:
+              path: "{{ dagger_ca_dest_dir }}"
+              state: directory
+              mode: "0755"
+
+          - name: Download CA certificates
+            ansible.builtin.get_url:
+              url: "{{ item.url }}"
+              dest: "{{ dagger_ca_dest_dir }}/{{ item.name }}"
+              mode: "0644"
+              validate_certs: false
+            loop: "{{ dagger_ca_certificates }}"
+            when: dagger_ca_certificates | length > 0
+
+          - name: Pull dagger engine image
+            community.docker.docker_image:
+              name: "{{ dagger_engine_image }}"
+              source: pull
+
+          - name: Get list of running dagger engine containers
+            community.docker.docker_host_info:
+              containers: true
+              containers_filters:
+                name: dagger-engine-
+            register: _dagger_containers
+
+          - name: Stop and remove stale dagger engine containers
+            community.docker.docker_container:
+              name: "{{ item }}"
+              state: absent
+            loop: >-
+              {{ _dagger_containers.containers
+                  | default([])
+                  | map(attribute='Names')
+                  | flatten
+                  | select('match', '^/?dagger-engine-')
+                  | map('regex_replace', '^/', '')
+                  | list }}
+
+          - name: Start dagger engine with custom CA certificates
+            community.docker.docker_container:
+              name: "{{ dagger_engine_name }}"
+              image: "{{ dagger_engine_image }}"
+              state: started
+              restart_policy: unless-stopped
+              privileged: true
+              volumes:
+                - "{{ dagger_engine_name }}:/var/lib/dagger"
+                - "{{ dagger_ca_dest_dir }}:/usr/local/share/ca-certificates/:ro"
+
+          - name: Verify dagger engine is running
+            community.docker.docker_container_info:
+              name: "{{ dagger_engine_name }}"
+            register: _engine_info
+            failed_when: not _engine_info.container.State.Running

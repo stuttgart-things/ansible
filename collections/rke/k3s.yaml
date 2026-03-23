@@ -15,8 +15,9 @@ playbooks:
           install_k3s: trueq
           copy_kubeconfig: true
           fetch_kubeconfig: true
-          fetched_kubeconfig_path: /tmp/kubeconfig
           k3s_state: present #absent
+          fetched_kubeconfig_path: /tmp/kubeconfig
+          prepare_rancher_ha_nodes: true #false
           k3s_k8s_version: 1.35.1
           cilium_version: 0.19.0
           k3s_release_kind: k3s1
