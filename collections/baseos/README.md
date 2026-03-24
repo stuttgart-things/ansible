@@ -39,13 +39,14 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 | Playbook | Description |
 |----------|-------------|
-| `sthings.baseos.dev` | Full dev machine setup (setup + binaries + ansible + golang + pre-commit + semantic-release + docker + container tools + nerdctl + podman + vhs + kind cluster) |
+| `sthings.baseos.dev` | Full dev machine setup (setup + binaries + ansible + golang + pre-commit + semantic-release + docker + container tools + nerdctl + podman + vhs + claude-code + starship + kind cluster) |
 | `sthings.baseos.dev_config` | Post-dev configuration: restart containerd, create .kube dir, install KCL |
 | `sthings.baseos.ansible` | Install Python3, virtualenv, Ansible (v10.4.0) and Python packages (kubernetes, openshift, hvac, pyvmomi) |
 | `sthings.baseos.golang` | Install Go (v1.25.1) with golangci-lint, goreleaser (v2.14.3), ko (v0.18.0), cobra-cli, protobuf |
 | `sthings.baseos.pre_commit` | Install pre-commit package |
 | `sthings.baseos.semantic_release` | Install NVM, Node.js 20, semantic-release and plugins |
 | `sthings.baseos.ai` | Install AI tools via Homebrew (dagger, gemini-cli, crush) |
+| `sthings.baseos.claude_code` | Install Claude Code CLI for the developer user |
 | `sthings.baseos.uv` | Install UV Python package manager (v0.9.3) |
 
 ### Binaries and Tools
@@ -187,6 +188,16 @@ ansible-playbook sthings.baseos.ai -vv \
 
 ```bash
 ansible-playbook sthings.baseos.uv -vv \
+-e target_host=all \
+-i /tmp/hosts
+```
+
+</details>
+
+<details><summary>INSTALL CLAUDE CODE CLI</summary>
+
+```bash
+ansible-playbook sthings.baseos.claude_code -vv \
 -e target_host=all \
 -i /tmp/hosts
 ```
