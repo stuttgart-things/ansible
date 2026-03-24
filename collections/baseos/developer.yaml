@@ -276,6 +276,72 @@ playbooks:
             become: yes
             become_user: "{{ developer }}"
 
+  - name: claude_code
+    play: |
+      ---
+      - name: Install Claude Code CLI
+        hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: true
+
+        vars:
+          developer: sthings
+          developer_user_dir: "/home/{{ developer }}"
+          claude_install_script: "https://claude.ai/install.sh"
+          claude_bin_paths:
+            - "{{ developer_user_dir }}/.local/bin"
+            - "{{ developer_user_dir }}/.claude/bin"
+          shell_rc: "{{ developer_user_dir }}/.bashrc"
+
+        tasks:
+          - name: Ensure curl is installed
+            ansible.builtin.package:
+              name: curl
+              state: present
+
+          - name: Download and run Claude Code native installer
+            ansible.builtin.shell:
+              cmd: curl -fsSL {{ claude_install_script }} | bash
+            args:
+              creates: "{{ developer_user_dir }}/.local/bin/claude"
+            become_user: "{{ developer }}"
+            register: claude_install
+            changed_when: claude_install.rc == 0
+
+          - name: Check claude binary locations
+            ansible.builtin.stat:
+              path: "{{ item }}/claude"
+            loop: "{{ claude_bin_paths }}"
+            register: claude_bin_stat
+
+          - name: Set claude binary path fact
+            ansible.builtin.set_fact:
+              claude_bin_dir: "{{ item.item }}"
+            loop: "{{ claude_bin_stat.results }}"
+            when: item.stat.exists
+
+          - name: Ensure claude bin dir is in PATH
+            ansible.builtin.lineinfile:
+              path: "{{ shell_rc }}"
+              line: 'export PATH="{{ claude_bin_dir }}:$PATH"'
+              regexp: "claude_bin_dir|{{ claude_bin_dir }}"
+              create: true
+              mode: "0644"
+            become_user: "{{ developer }}"
+            when: claude_bin_dir is defined
+
+          - name: Verify claude installation
+            ansible.builtin.command:
+              cmd: "{{ claude_bin_dir }}/claude --version"
+            register: claude_version
+            changed_when: false
+            when: claude_bin_dir is defined
+
+          - name: Show installed version
+            ansible.builtin.debug:
+              msg: "Claude Code installed: {{ claude_version.stdout }}"
+            when: claude_version.stdout is defined
+
 vars:
   - name: dev-vars
     file: |
