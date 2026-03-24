@@ -108,12 +108,20 @@ playbooks:
       - name: Reboot
         ansible.builtin.import_playbook: sthings.baseos.reboot_vm
 
+      - name: Install Claude Code CLI
+        ansible.builtin.import_playbook: sthings.baseos.claude_code
+
+      - name: Install starship prompt
+        ansible.builtin.import_playbook: sthings.baseos.starship
+
       - name: Execute dev config
         ansible.builtin.import_playbook: sthings.baseos.dev_config
 
       - name: Create kind dev cluster
         ansible.builtin.import_playbook: sthings.container.kind
         vars:
+          kind_version: v0.31.0
+          api_server_address: "{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}"
           kind_cluster_name: dev
           ansible_user: sthings
           count_worker_nodes: 3
