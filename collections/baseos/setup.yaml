@@ -532,7 +532,7 @@ playbooks:
 
           - name: Create starship configuration using template
             ansible.builtin.template:
-              src: starship.toml.j2
+              src: starship.toml.j2.yaml
               dest: "{{ developer_user_dir }}/.config/starship.toml"
             become_user: "{{ developer }}"
 
