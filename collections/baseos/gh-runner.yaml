@@ -1,0 +1,167 @@
+---
+playbooks:
+  - name: gh_runner
+    play: |
+      ---
+      - name: Install and configure GitHub Actions runner
+        hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: true
+
+        vars:
+          runner_version: "2.325.0"
+          runner_user: gh-runner
+          runner_group: gh-runner
+          runner_home: /opt/actions-runner
+          runner_work_dir: "{{ runner_home }}/_work"
+          runner_name: "{{ ansible_hostname }}"
+          runner_labels: "self-hosted,Linux,{{ ansible_architecture }}"
+          github_api_url: "https://api.github.com"
+          runner_service_name: "actions.runner.{{ github_owner }}-{{ github_repo }}.{{ runner_name }}"
+          system_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'x64' }}"
+          runner_tarball: "actions-runner-linux-{{ system_arch }}-{{ runner_version }}.tar.gz"
+          runner_download_url: "https://github.com/actions/runner/releases/download/v{{ runner_version }}/{{ runner_tarball }}"
+          runner_required_packages:
+            - curl
+            - jq
+            - libicu-dev
+            - libssl-dev
+
+        pre_tasks:
+          - name: Include vars
+            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
+            when: path_to_vars_file is defined
+
+          - name: Validate required variables
+            ansible.builtin.assert:
+              that:
+                - github_owner is defined
+                - github_repo is defined
+                - github_pat is defined
+              fail_msg: "Required variables: github_owner, github_repo, github_pat (personal access token with repo/admin:org scope)"
+
+        tasks:
+          - name: Install required packages
+            ansible.builtin.apt:
+              name: "{{ runner_required_packages }}"
+              state: present
+              update_cache: yes
+
+          - name: Create runner group
+            ansible.builtin.group:
+              name: "{{ runner_group }}"
+              state: present
+
+          - name: Create runner user
+            ansible.builtin.user:
+              name: "{{ runner_user }}"
+              group: "{{ runner_group }}"
+              home: "{{ runner_home }}"
+              shell: /bin/bash
+              system: true
+              create_home: true
+
+          - name: Request runner registration token from GitHub API
+            ansible.builtin.uri:
+              url: "{{ github_api_url }}/repos/{{ github_owner }}/{{ github_repo }}/actions/runners/registration-token"
+              method: POST
+              headers:
+                Authorization: "token {{ github_pat }}"
+                Accept: "application/vnd.github+json"
+                X-GitHub-Api-Version: "2022-11-28"
+              status_code: 201
+              validate_certs: true
+            register: runner_token_response
+
+          - name: Set runner token fact
+            ansible.builtin.set_fact:
+              runner_token: "{{ runner_token_response.json.token }}"
+
+          - name: Download GitHub Actions runner
+            ansible.builtin.get_url:
+              url: "{{ runner_download_url }}"
+              dest: "/tmp/{{ runner_tarball }}"
+              mode: '0644'
+
+          - name: Create runner directory
+            ansible.builtin.file:
+              path: "{{ runner_home }}"
+              state: directory
+              owner: "{{ runner_user }}"
+              group: "{{ runner_group }}"
+              mode: '0755'
+
+          - name: Extract runner archive
+            ansible.builtin.unarchive:
+              src: "/tmp/{{ runner_tarball }}"
+              dest: "{{ runner_home }}"
+              remote_src: true
+              owner: "{{ runner_user }}"
+              group: "{{ runner_group }}"
+
+          - name: Remove runner tarball
+            ansible.builtin.file:
+              path: "/tmp/{{ runner_tarball }}"
+              state: absent
+
+          - name: Install runner dependencies
+            ansible.builtin.shell: "{{ runner_home }}/bin/installdependencies.sh"
+            args:
+              creates: "{{ runner_home }}/bin/Runner.Listener"
+
+          - name: Check if runner is already configured
+            ansible.builtin.stat:
+              path: "{{ runner_home }}/.runner"
+            register: runner_config
+
+          - name: Configure the runner
+            ansible.builtin.command: >
+              ./config.sh
+              --url https://github.com/{{ github_owner }}/{{ github_repo }}
+              --token {{ runner_token }}
+              --name {{ runner_name }}
+              --labels {{ runner_labels }}
+              --work {{ runner_work_dir }}
+              --unattended
+              --replace
+            args:
+              chdir: "{{ runner_home }}"
+            become_user: "{{ runner_user }}"
+            when: not runner_config.stat.exists
+
+          - name: Install runner as systemd service
+            ansible.builtin.command: ./svc.sh install {{ runner_user }}
+            args:
+              chdir: "{{ runner_home }}"
+
+          - name: Start runner service
+            ansible.builtin.command: ./svc.sh start
+            args:
+              chdir: "{{ runner_home }}"
+
+          - name: Verify runner service is active
+            ansible.builtin.systemd:
+              name: "{{ runner_service_name }}"
+              state: started
+              enabled: true
+
+          - name: Display runner status
+            ansible.builtin.debug:
+              msg: "GitHub Actions runner '{{ runner_name }}' is installed and running for {{ github_owner }}/{{ github_repo }}"
+
+vars:
+  - name: gh_runner
+    file: |
+      ---
+      # GitHub repository settings
+      github_owner: "your-org-or-user"
+      github_repo: "your-repo"
+      github_pat: "{{ lookup('env', 'GITHUB_PAT') }}"
+
+      # Runner settings
+      runner_version: "2.325.0"
+      runner_name: "{{ ansible_hostname }}"
+      runner_labels: "self-hosted,Linux,{{ ansible_architecture }}"
+      runner_user: gh-runner
+      runner_group: gh-runner
+      runner_home: /opt/actions-runner
