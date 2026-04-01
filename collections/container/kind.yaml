@@ -24,6 +24,7 @@ playbooks:
           docker_install_compose: true
           install_kind: true
           create_kind_cluster: true
+          rebuild_kind_cluster: true
 
         roles:
           - role: sthings.container.install_configure_docker
