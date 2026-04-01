@@ -3,7 +3,7 @@ playbooks:
   - name: gh_runner
     play: |
       ---
-      - name: Install and configure GitHub Actions runner
+      - name: Install and configure GitHub Actions runners
         hosts: "{{ target_host | default('all') }}"
         become: true
         gather_facts: true
@@ -11,21 +11,23 @@ playbooks:
         vars:
           runner_version: "2.325.0"
           runner_user: gh-runner
-          runner_group: gh-runner
-          runner_home: /opt/actions-runner
-          runner_work_dir: "{{ runner_home }}/_work"
-          runner_name: "{{ ansible_hostname }}"
+          runner_linux_group: gh-runner
+          runner_user_home: /home/gh-runner
+          runner_base_dir: /opt/actions-runner
           runner_labels: "self-hosted,Linux,{{ ansible_architecture }}"
           github_api_url: "https://api.github.com"
-          runner_service_name: "actions.runner.{{ github_owner }}-{{ github_repo }}.{{ runner_name }}"
           system_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'x64' }}"
           runner_tarball: "actions-runner-linux-{{ system_arch }}-{{ runner_version }}.tar.gz"
           runner_download_url: "https://github.com/actions/runner/releases/download/v{{ runner_version }}/{{ runner_tarball }}"
           runner_required_packages:
+            - acl
             - curl
             - jq
             - libicu-dev
             - libssl-dev
+          runner_scope: repo
+          runner_instances:
+            - name: "{{ ansible_hostname }}"
 
         pre_tasks:
           - name: Include vars
@@ -36,9 +38,16 @@ playbooks:
             ansible.builtin.assert:
               that:
                 - github_owner is defined
-                - github_repo is defined
                 - github_pat is defined
-              fail_msg: "Required variables: github_owner, github_repo, github_pat (personal access token with repo/admin:org scope)"
+                - runner_scope == 'org' or github_repo is defined
+              fail_msg: "Required variables: github_owner, github_pat, github_repo (repo scope)"
+
+          - name: Validate runner group requires org scope
+            ansible.builtin.assert:
+              that:
+                - runner_scope == 'org'
+              fail_msg: "runner_github_group requires runner_scope=org"
+            when: runner_github_group is defined
 
         tasks:
           - name: Install required packages
@@ -47,23 +56,30 @@ playbooks:
               state: present
               update_cache: yes
 
-          - name: Create runner group
+          - name: Create runner linux group
             ansible.builtin.group:
-              name: "{{ runner_group }}"
+              name: "{{ runner_linux_group }}"
               state: present
 
           - name: Create runner user
             ansible.builtin.user:
               name: "{{ runner_user }}"
-              group: "{{ runner_group }}"
-              home: "{{ runner_home }}"
+              group: "{{ runner_linux_group }}"
+              home: "{{ runner_user_home }}"
               shell: /bin/bash
               system: true
               create_home: true
 
+          - name: Set registration token URL and config URL
+            ansible.builtin.set_fact:
+              _token_url: >-
+                {{ github_api_url }}/{% if runner_scope == 'org' %}orgs/{{ github_owner }}{% else %}repos/{{ github_owner }}/{{ github_repo }}{% endif %}/actions/runners/registration-token
+              _config_url: >-
+                https://github.com/{{ github_owner }}{% if runner_scope == 'repo' %}/{{ github_repo }}{% endif %}
+
           - name: Request runner registration token from GitHub API
             ansible.builtin.uri:
-              url: "{{ github_api_url }}/repos/{{ github_owner }}/{{ github_repo }}/actions/runners/registration-token"
+              url: "{{ _token_url }}"
               method: POST
               headers:
                 Authorization: "token {{ github_pat }}"
@@ -77,91 +93,129 @@ playbooks:
             ansible.builtin.set_fact:
               runner_token: "{{ runner_token_response.json.token }}"
 
-          - name: Download GitHub Actions runner
+          - name: Download GitHub Actions runner tarball
             ansible.builtin.get_url:
               url: "{{ runner_download_url }}"
               dest: "/tmp/{{ runner_tarball }}"
               mode: '0644'
 
-          - name: Create runner directory
+          - name: Create runner instance directories
             ansible.builtin.file:
-              path: "{{ runner_home }}"
+              path: "{{ runner_base_dir }}-{{ item.name }}"
               state: directory
               owner: "{{ runner_user }}"
-              group: "{{ runner_group }}"
+              group: "{{ runner_linux_group }}"
               mode: '0755'
+            loop: "{{ runner_instances }}"
+            loop_control:
+              label: "{{ item.name }}"
 
-          - name: Extract runner archive
+          - name: Extract runner archive into instance directories
             ansible.builtin.unarchive:
               src: "/tmp/{{ runner_tarball }}"
-              dest: "{{ runner_home }}"
+              dest: "{{ runner_base_dir }}-{{ item.name }}"
               remote_src: true
               owner: "{{ runner_user }}"
-              group: "{{ runner_group }}"
+              group: "{{ runner_linux_group }}"
+              creates: "{{ runner_base_dir }}-{{ item.name }}/config.sh"
+            loop: "{{ runner_instances }}"
+            loop_control:
+              label: "{{ item.name }}"
 
           - name: Remove runner tarball
             ansible.builtin.file:
               path: "/tmp/{{ runner_tarball }}"
               state: absent
 
-          - name: Install runner dependencies
-            ansible.builtin.shell: "{{ runner_home }}/bin/installdependencies.sh"
+          - name: Install runner dependencies per instance
+            ansible.builtin.shell: "{{ runner_base_dir }}-{{ item.name }}/bin/installdependencies.sh"
             args:
-              creates: "{{ runner_home }}/bin/Runner.Listener"
+              creates: "{{ runner_base_dir }}-{{ item.name }}/bin/Runner.Listener"
+            loop: "{{ runner_instances }}"
+            loop_control:
+              label: "{{ item.name }}"
 
-          - name: Check if runner is already configured
+          - name: Check which runners are already configured
             ansible.builtin.stat:
-              path: "{{ runner_home }}/.runner"
-            register: runner_config
+              path: "{{ runner_base_dir }}-{{ item.name }}/.runner"
+            loop: "{{ runner_instances }}"
+            loop_control:
+              label: "{{ item.name }}"
+            register: _runner_configs
 
-          - name: Configure the runner
-            ansible.builtin.command: >
+          - name: Configure runner instances
+            ansible.builtin.command: >-
               ./config.sh
-              --url https://github.com/{{ github_owner }}/{{ github_repo }}
+              --url {{ _config_url }}
               --token {{ runner_token }}
-              --name {{ runner_name }}
-              --labels {{ runner_labels }}
-              --work {{ runner_work_dir }}
+              --name {{ item.item.name }}
+              --labels {{ item.item.labels | default(runner_labels) }}
+              --work {{ runner_base_dir }}-{{ item.item.name }}/_work
               --unattended
               --replace
+              {{ '--runnergroup ' + runner_github_group if runner_github_group is defined else '' }}
             args:
-              chdir: "{{ runner_home }}"
+              chdir: "{{ runner_base_dir }}-{{ item.item.name }}"
             become_user: "{{ runner_user }}"
-            when: not runner_config.stat.exists
+            loop: "{{ _runner_configs.results }}"
+            loop_control:
+              label: "{{ item.item.name }}"
+            when: not item.stat.exists
 
-          - name: Install runner as systemd service
+          - name: Install runner instances as systemd services
             ansible.builtin.command: ./svc.sh install {{ runner_user }}
             args:
-              chdir: "{{ runner_home }}"
+              chdir: "{{ runner_base_dir }}-{{ item.name }}"
+              creates: "/etc/systemd/system/actions.runner.*{{ item.name }}.service"
+            loop: "{{ runner_instances }}"
+            loop_control:
+              label: "{{ item.name }}"
 
-          - name: Start runner service
+          - name: Start runner instances
             ansible.builtin.command: ./svc.sh start
             args:
-              chdir: "{{ runner_home }}"
-
-          - name: Verify runner service is active
-            ansible.builtin.systemd:
-              name: "{{ runner_service_name }}"
-              state: started
-              enabled: true
+              chdir: "{{ runner_base_dir }}-{{ item.name }}"
+            loop: "{{ runner_instances }}"
+            loop_control:
+              label: "{{ item.name }}"
+            register: _svc_start
+            changed_when: "'started' in _svc_start.stdout | default('')"
+            failed_when: _svc_start.rc != 0 and 'already' not in _svc_start.stdout | default('')
 
           - name: Display runner status
             ansible.builtin.debug:
-              msg: "GitHub Actions runner '{{ runner_name }}' is installed and running for {{ github_owner }}/{{ github_repo }}"
+              msg: >-
+                Runner '{{ item.name }}' is running
+                (scope={{ runner_scope }}, owner={{ github_owner }}{{ ', repo=' + github_repo if runner_scope == 'repo' else '' }}{{ ', group=' + runner_github_group if runner_github_group is defined else '' }})
+            loop: "{{ runner_instances }}"
+            loop_control:
+              label: "{{ item.name }}"
 
 vars:
   - name: gh_runner
     file: |
       ---
-      # GitHub repository settings
+      # GitHub settings
       github_owner: "your-org-or-user"
       github_repo: "your-repo"
-      github_pat: "{{ lookup('env', 'GITHUB_PAT') }}"
+      github_pat: "{{ lookup('env', 'GITHUB_TOKEN') }}"
+
+      # Runner scope: "repo" (default) or "org"
+      # Use "org" for organization-level runners and runner groups
+      runner_scope: repo
+
+      # GitHub runner group (org scope only)
+      # runner_github_group: "my-runner-group"
+
+      # Runner instances - deploy multiple runners per host
+      runner_instances:
+        - name: "{{ ansible_hostname }}-1"
+        - name: "{{ ansible_hostname }}-2"
+          labels: "self-hosted,Linux,{{ ansible_architecture }},special"
 
       # Runner settings
       runner_version: "2.325.0"
-      runner_name: "{{ ansible_hostname }}"
       runner_labels: "self-hosted,Linux,{{ ansible_architecture }}"
       runner_user: gh-runner
-      runner_group: gh-runner
-      runner_home: /opt/actions-runner
+      runner_linux_group: gh-runner
+      runner_base_dir: /opt/actions-runner
