@@ -37,11 +37,12 @@ playbooks:
               kind_cluster_name: "{{ kind_cluster_name }}"
               state: present
 
-  - name: kind_post_deploy
+  - name: kind_xplane_cluster
     play: |
       ---
       - hosts: "{{ target_host | default('all') }}"
         become: true
+
         pre_tasks:
           - name: Include vars
             ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
@@ -49,71 +50,99 @@ playbooks:
 
         vars:
           ansible_user: sthings
-          kind_cluster_name: dev
-          path_to_kubeconfig: "/home/{{ ansible_user }}/.kube/{{ kind_cluster_name }}"
-          kind_version: 0.31.0 # datasource=github-tags depName=kubernetes-sigs/kind
-          kubectl_version: 1.35.0 # datasource=github-tags depName=kubernetes/kubectl
-          count_worker_nodes: 3
-          count_controlplane_nodes: 1
-          enable_ingress_ports: true
-          enable_host_paths: true
-          provision_cluster: true
-          docker_install_compose: true
-          install_kind: true
-          create_kind_cluster: true
-          rebuild_kind_cluster: true
-          update_kubeconfig_ip: false
-          deploy_cilium: true
-          deploy_cert_manager: true
-          deploy_ingress_nginx: true
+          kind_cluster_name: dev2
+          kubeconfig_folder: "/home/{{ ansible_user }}/.kube"
 
-        roles:
-          - role: sthings.container.install_configure_docker
+          kustomize_urls:
+            - https://github.com/stuttgart-things/helm/infra/crds/cilium
+            - https://github.com/stuttgart-things/helm/infra/crds/cert-manager
+            - https://github.com/stuttgart-things/helm/cicd/crds/crossplane
 
-        post_tasks:
-          - name: Set stats for deployment
+          helmfile_deployments:
+            - location: "git::https://github.com/stuttgart-things/helm.git@infra/cilium.yaml.gotmpl"
+              state: "{{ deploy_cilium | default('present') }}"
+              state_values:
+                config: kind
+                clusterName: "{{ kind_cluster_name}}"
+                configureLB: false
+
+            - location: "git::https://github.com/stuttgart-things/helm.git@infra/cert-manager.yaml.gotmpl"
+              state: "{{ deploy_cert_manager | default('present') }}"
+              state_values:
+                installCrds: false
+
+            - location: "git::https://github.com/stuttgart-things/helm.git@cicd/crossplane.yaml.gotmpl"
+              state: "{{ deploy_crossplane | default('present') }}"
+              state_values:
+                version: 2.2.0
+
+            - location: "git::https://github.com/stuttgart-things/helm.git@cicd/crossplane-config.yaml.gotmpl"
+              state: "{{ deploy_crossplane_config | default('present') }}"
+
+        tasks:
+          - name: Verify kind cluster
+            ansible.builtin.shell: |
+              kind get clusters
+              kubectl get nodes --kubeconfig {{ kubeconfig_folder }}/{{ kind_cluster_name }}
+            become: yes
+            become_user: "{{ ansible_user }}"
+
+          - name: Set kind name as fact
             set_fact:
-              path_to_kubeconfig: "{{ path_to_kubeconfig }}"
               kind_cluster_name: "{{ kind_cluster_name }}"
-              state: present
 
-      - name: Deploy cilium on kind cluster
-        import_playbook: sthings.container.deploy_to_k8s
-        vars:
-          profile: cilium-kind
-          target_host: all
-          cluster_name: "{{ kind_cluster_name }}"
-          kind_cluster_name: "{{ kind_cluster_name }}"
-          state: "{{ state }}"
-          path_to_kubeconfig: "{{ path_to_kubeconfig }}"
-        when: deploy_cilium | default(true) | bool
+          - name: Apply Kustomize configurations (server-side apply)
+            ansible.builtin.shell: |
+              kubectl apply -k {{ item }} \
+                --server-side \
+                --force-conflicts \
+                --kubeconfig {{ kubeconfig_folder }}/{{ kind_cluster_name }}
+            become: yes
+            become_user: "{{ ansible_user }}"
+            loop: "{{ kustomize_urls }}"
+            when: kustomize_urls is defined and kustomize_urls | length > 0
 
-      - name: Deploy cert-manager on kind cluster
-        import_playbook: sthings.container.deploy_to_k8s
-        vars:
-          profile: cert-manager-kind
-          state: "{{ state }}"
-          path_to_kubeconfig: "{{ path_to_kubeconfig }}"
-          target_host: all
-          cluster_name: "{{ kind_cluster_name }}"
-        when: deploy_cert_manager | default(true) | bool
+          - name: Clear helmfile git cache
+            ansible.builtin.file:
+              path: "/home/{{ ansible_user }}/.cache/helmfile/states/https_github_com_stuttgart-things_helm_git"
+              state: absent
+            become: yes
+            become_user: "{{ ansible_user }}"
 
-      - name: Deploy ingress-nginx on kind cluster
-        import_playbook: sthings.container.deploy_to_k8s
-        vars:
-          profile: ingress-nginx-kind
-          path_to_kubeconfig: "{{ path_to_kubeconfig }}"
-          target_host: all
-          cluster_name: "{{ kind_cluster_name }}"
-          state: "{{ state }}"
-        when: deploy_ingress_nginx | default(true) | bool
+          - name: Validate and process Helmfile deployments
+            ansible.builtin.assert:
+              that:
+                - item.state in ['present', 'absent', 'sync']
+              msg: "State must be 'present', 'absent', or 'sync'"
+            loop: "{{ helmfile_deployments }}"
+            loop_control:
+              label: "{{ item.location }}"
+            when: helmfile_deployments is defined and helmfile_deployments | length > 0
 
-      - name: Get controlplane IP
-        import_playbook: sthings.container.get_controlplane_ip
-        vars:
-          kind_cluster_name: "{{ kind_cluster_name }}"
-          ansible_user: sthings
-        when: provision_cluster is defined and provision_cluster|bool
+          - name: Apply, Sync, or Destroy Helmfile configurations
+            ansible.builtin.shell:
+              cmd: |
+                helmfile init --force
+                {% set state_args = [] %}
+                {% if item.state_values is defined %}
+                {% for key, value in item.state_values.items() %}
+                {% set _ = state_args.append('--state-values-set ' ~ key ~ '=' ~ value|string) %}
+                {% endfor %}
+                {% endif %}
+
+                {% if item.state == 'present' %}
+                helmfile apply -f {{ item.location }} --kubeconfig {{ kubeconfig_folder }}/{{ kind_cluster_name }} {{ state_args | join(' ') }}
+                {% elif item.state == 'absent' %}
+                helmfile destroy -f {{ item.location }} --kubeconfig {{ kubeconfig_folder }}/{{ kind_cluster_name }} {{ state_args | join(' ') }}
+                {% elif item.state == 'sync' %}
+                helmfile sync -f {{ item.location }} --kubeconfig {{ kubeconfig_folder }}/{{ kind_cluster_name }} {{ state_args | join(' ') }}
+                {% endif %}
+            become: yes
+            become_user: "{{ ansible_user }}"
+            loop: "{{ helmfile_deployments }}"
+            loop_control:
+              label: "{{ item.location }} (state: {{ item.state }})"
+            when: helmfile_deployments is defined and helmfile_deployments | length > 0
 
   - name: get_controlplane_ip
     play: |
@@ -144,93 +173,3 @@ playbooks:
           - name: Set control plane IP fact
             set_fact:
               control_plane_ip: "{{ control_plane_ip.stdout }}"
-
-  - name: kind_xplane
-    play: |
-      ---
-      - hosts: "{{ target_host | default('all') }}"
-        become: true
-
-        pre_tasks:
-          - name: Include vars
-            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
-            when: path_to_vars_file is defined
-
-        vars:
-          docker_install_compose: true
-          install_kind: true
-          create_kind_cluster: true
-          ansible_user: sthings
-
-          kind_cluster_name: xplane
-          kind_api_port: 6443
-
-          count_worker_nodes: 2
-          count_controlplane_nodes: 1
-
-          custom_control_plane_ports:
-            - containerPort: "{{ port1 | default(range(34000, 36001) | random) }}"
-              hostPort: "{{ port1 | default(range(34000, 36001) | random) }}"
-              protocol: TCP
-            - containerPort: "{{ port2 | default(range(34000, 36001) | random) }}"
-              hostPort: "{{ port2 | default(range(34000, 36001) | random) }}"
-              protocol: TCP
-
-          api_server_address: "{{ ansible_default_ipv4.address }}"
-          api_server_port: 33846
-          generate_api_server_port: false
-
-          set_inotify: true
-          install_kind_bins: true
-          # Worker Node Specific Mounts
-          worker_node_mounts:
-            0:  # First worker (index 0)
-              - hostPath: /mnt/xplane-1
-                containerPath: /data
-            1:  # Second worker (index 1)
-              - hostPath: /mnt/xplane-2
-                containerPath: /data
-
-          rebuild_kind_cluster: true
-
-          disableDefaultCNI: true
-          kubeProxyMode: "none"
-
-           # Feature Flags
-          enable_ingress_ports: false
-          enable_host_paths: true
-
-          kustomize_urls:
-            - https://github.com/stuttgart-things/helm/infra/crds/cilium
-            - https://github.com/stuttgart-things/helm/infra/crds/cert-manager
-            #- https://github.com/stuttgart-things/helm/cicd/crds/crossplane
-
-          helmfile_deployments:
-            - location: "git::https://github.com/stuttgart-things/helm.git@infra/cilium.yaml.gotmpl"
-              state: "{{ deploy_cilium | default('present') }}"
-              state_values:
-                config: kind
-                clusterName: "{{ kind_cluster_name}}"
-                configureLB: false
-
-            - location: "git::https://github.com/stuttgart-things/helm.git@infra/cert-manager.yaml.gotmpl"
-              state: "{{ deploy_cert_manager | default('present') }}"
-              state_values:
-                installCrds: false
-
-            # - location: "git::https://github.com/stuttgart-things/helm.git@cicd/crossplane.yaml.gotmpl"
-            #   state: "{{ deploy_crossplane | default('present') }}"
-            #   state_values:
-            #     version: 2.1.3
-            #     deployTeraformProvider: false
-            #     deployFunctions: false
-            #     deployConfigurations: false
-
-          # manifest_urls:
-          #   - https://raw.githubusercontent.com/stuttgart-things/crossplane/refs/heads/main/packages/functions/function-auto-ready.yaml
-          #   - https://raw.githubusercontent.com/stuttgart-things/crossplane/refs/heads/main/packages/functions/function-go-templating.yaml
-          #   - https://raw.githubusercontent.com/stuttgart-things/crossplane/refs/heads/main/packages/functions/function-kcl.yaml
-          #   - https://raw.githubusercontent.com/stuttgart-things/crossplane/refs/heads/main/packages/functions/function-patch-and-transform.yaml
-
-        roles:
-          - role: sthings.container.install_configure_docker
