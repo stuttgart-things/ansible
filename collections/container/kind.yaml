@@ -46,7 +46,7 @@ playbooks:
           kind_cluster_name: "{{ kind_cluster_name }}"
           state: "{{ state }}"
           path_to_kubeconfig: "{{ path_to_kubeconfig }}"
-        when: provision_cluster is defined and provision_cluster|bool
+        when: deploy_cilium | default(true) | bool
 
       - name: Deploy cert-manager on dev kind cluster
         import_playbook: sthings.container.deploy_to_k8s
@@ -56,7 +56,7 @@ playbooks:
           path_to_kubeconfig: "{{ path_to_kubeconfig }}"
           target_host: all
           cluster_name: "{{ kind_cluster_name }}"
-        when: provision_cluster is defined and provision_cluster|bool
+        when: deploy_cert_manager | default(true) | bool
 
       - name: Deploy ingress-nginx on dev kind cluster
         import_playbook: sthings.container.deploy_to_k8s
@@ -66,7 +66,7 @@ playbooks:
           target_host: all
           cluster_name: "{{ kind_cluster_name }}"
           state: "{{ state }}"
-        when: provision_cluster is defined and provision_cluster|bool
+        when: deploy_ingress_nginx | default(true) | bool
 
       - name: Set fact Controlplane IP
         import_playbook: sthings.container.get_controlplane_ip
