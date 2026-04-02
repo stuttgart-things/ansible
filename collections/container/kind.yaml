@@ -26,9 +26,6 @@ playbooks:
           create_kind_cluster: true
           rebuild_kind_cluster: true
           update_kubeconfig_ip: false
-          deploy_cilium: false
-          deploy_cert_manager: false
-          deploy_ingress_nginx: false
 
         roles:
           - role: sthings.container.install_configure_docker
@@ -40,43 +37,6 @@ playbooks:
               kind_cluster_name: "{{ kind_cluster_name }}"
               state: present
 
-      - name: Deploy cilium on dev kind cluster
-        import_playbook: sthings.container.deploy_to_k8s
-        vars:
-          profile: cilium-kind
-          target_host: all
-          cluster_name: "{{ kind_cluster_name }}"
-          kind_cluster_name: "{{ kind_cluster_name }}"
-          state: "{{ state }}"
-          path_to_kubeconfig: "{{ path_to_kubeconfig }}"
-        when: deploy_cilium | default(false) | bool
-
-      - name: Deploy cert-manager on dev kind cluster
-        import_playbook: sthings.container.deploy_to_k8s
-        vars:
-          profile: cert-manager-kind
-          state: "{{ state }}"
-          path_to_kubeconfig: "{{ path_to_kubeconfig }}"
-          target_host: all
-          cluster_name: "{{ kind_cluster_name }}"
-        when: deploy_cert_manager | default(false) | bool
-
-      - name: Deploy ingress-nginx on dev kind cluster
-        import_playbook: sthings.container.deploy_to_k8s
-        vars:
-          profile: ingress-nginx-kind
-          path_to_kubeconfig: "{{ path_to_kubeconfig }}"
-          target_host: all
-          cluster_name: "{{ kind_cluster_name }}"
-          state: "{{ state }}"
-        when: deploy_ingress_nginx | default(false) | bool
-
-      - name: Set fact Controlplane IP
-        import_playbook: sthings.container.get_controlplane_ip
-        vars:
-          kind_cluster_name: "{{ kind_cluster_name }}"
-          ansible_user: sthings
-        when: provision_cluster is defined and provision_cluster|bool
 
   - name: get_controlplane_ip
     play: |
