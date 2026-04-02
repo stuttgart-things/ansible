@@ -37,7 +37,7 @@ playbooks:
               kind_cluster_name: "{{ kind_cluster_name }}"
               state: present
 
-  - name: kind_full
+  - name: kind_post_deploy
     play: |
       ---
       - hosts: "{{ target_host | default('all') }}"
