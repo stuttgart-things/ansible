@@ -14,7 +14,7 @@ playbooks:
           ansible_user: sthings
           kind_cluster_name: dev
           path_to_kubeconfig: "/home/{{ ansible_user }}/.kube/{{ kind_cluster_name }}"
-          kind_version: 0.34.0 # datasource=github-tags depName=kubernetes-sigs/kind
+          kind_version: 0.31.0 # datasource=github-tags depName=kubernetes-sigs/kind
           kubectl_version: 1.35.0 # datasource=github-tags depName=kubernetes/kubectl
           count_worker_nodes: 3
           count_controlplane_nodes: 1
@@ -25,6 +25,7 @@ playbooks:
           install_kind: true
           create_kind_cluster: true
           rebuild_kind_cluster: true
+          update_kubeconfig_ip: false
 
         roles:
           - role: sthings.container.install_configure_docker

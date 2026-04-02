@@ -25,4 +25,4 @@ requirements: |
       version: 2024.09.06
     - src: https://github.com/stuttgart-things/install-configure-docker.git
       scm: git
-      version: 2026.04.01
+      version: 2026.04.02
