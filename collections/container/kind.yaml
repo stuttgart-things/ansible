@@ -196,7 +196,7 @@ playbooks:
           disableDefaultCNI: true
           kubeProxyMode: "none"
 
-          # Feature Flags
+           # Feature Flags
           enable_ingress_ports: false
           enable_host_paths: true
 
