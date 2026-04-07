@@ -58,6 +58,9 @@ playbooks:
             - https://github.com/stuttgart-things/helm/infra/crds/cert-manager
             - https://github.com/stuttgart-things/helm/cicd/crds/crossplane
 
+          manifest_urls:
+            - https://github.com/stuttgart-things/helm/cicd/crossplane-config
+
           helmfile_deployments:
             - location: "git::https://github.com/stuttgart-things/helm.git@infra/cilium.yaml.gotmpl"
               state: "{{ deploy_cilium | default('present') }}"
@@ -76,8 +79,6 @@ playbooks:
               state_values:
                 version: 2.2.0
 
-            - location: "git::https://github.com/stuttgart-things/helm.git@cicd/crossplane-config.yaml.gotmpl"
-              state: "{{ deploy_crossplane_config | default('present') }}"
 
         tasks:
           - name: Verify kind cluster
@@ -101,6 +102,15 @@ playbooks:
             become_user: "{{ ansible_user }}"
             loop: "{{ kustomize_urls }}"
             when: kustomize_urls is defined and kustomize_urls | length > 0
+
+          - name: Apply manifest configurations
+            ansible.builtin.shell: |
+              kubectl apply -f {{ item }} \
+                --kubeconfig {{ kubeconfig_folder }}/{{ kind_cluster_name }}
+            become: yes
+            become_user: "{{ ansible_user }}"
+            loop: "{{ manifest_urls }}"
+            when: manifest_urls is defined and manifest_urls | length > 0
 
           - name: Clear helmfile git cache
             ansible.builtin.file:
