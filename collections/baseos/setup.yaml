@@ -253,7 +253,7 @@ playbooks:
                   name: "{{ short_hostname }}.{{ domain }}"
                   use: systemd
                 when: domain | length > 0
-            when: ansible_distribution == "Fedora"
+            when: ansible_facts['distribution'] == "Fedora"
 
           - name: Fix DNS resolution on Ubuntu 25.04
             block:
@@ -317,8 +317,8 @@ playbooks:
                   msg: "WARNING: Could not detect lab for IP {{ ansible_default_ipv4.address }}. DNS not configured. Add the IP prefix to lab_dns_map."
                 when: detected_lab | trim | length == 0
             when:
-              - ansible_distribution == "Ubuntu"
-              - ansible_distribution_version == "25.04"
+              - ansible_facts['distribution'] == "Ubuntu"
+              - ansible_facts['distribution_version'] == "25.04"
 
   - name: users
     play: |
