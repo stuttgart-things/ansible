@@ -350,6 +350,40 @@ playbooks:
               msg: "Claude Code installed: {{ claude_version.stdout }}"
             when: claude_version.stdout is defined
 
+  - name: chezmoi
+    play: |
+      ---
+      - name: Install chezmoi
+        hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: true
+
+        vars:
+          chezmoi_install_script: "https://get.chezmoi.io"
+          chezmoi_bin_dir: "/usr/local/bin"
+
+        tasks:
+          - name: Ensure curl is installed
+            ansible.builtin.package:
+              name: curl
+              state: present
+
+          - name: Install chezmoi via one-line binary installer
+            ansible.builtin.shell:
+              cmd: sh -c "$(curl -fsLS {{ chezmoi_install_script }})" -- -b {{ chezmoi_bin_dir }}
+            args:
+              creates: "{{ chezmoi_bin_dir }}/chezmoi"
+
+          - name: Verify chezmoi installation
+            ansible.builtin.command:
+              cmd: "{{ chezmoi_bin_dir }}/chezmoi --version"
+            register: chezmoi_version
+            changed_when: false
+
+          - name: Show installed version
+            ansible.builtin.debug:
+              msg: "chezmoi installed: {{ chezmoi_version.stdout }}"
+
 vars:
   - name: dev-vars
     file: |
