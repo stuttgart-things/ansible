@@ -7,7 +7,7 @@ playbooks:
         become: true
 
         vars:
-          dagger_version: 0.20.5 # datasource=github-tags depName=dagger/dagger
+          dagger_version: 0.20.6 # datasource=github-tags depName=dagger/dagger
           dagger_engine_name: "dagger-engine-{{ dagger_version }}"
           dagger_engine_image: "registry.dagger.io/engine:{{ dagger_version }}"
           dagger_ca_dest_dir: "{{ ansible_env.HOME }}/.config/dagger/ca-certificates"

@@ -31,7 +31,7 @@ vars:
       glab_version: 1.92.1 # datasource=gitlab-tags depName=gitlab-org/cli
       cilium_version: 0.19.2 # datasource=github-tags depName=cilium/cilium-cli
       xpdig_version: 1.22.0 # datasource=github-tags depName=brunoluiz/xpdig
-      dagger_version: 0.20.5 # datasource=github-tags depName=dagger/dagger
+      dagger_version: 0.20.6 # datasource=github-tags depName=dagger/dagger
       tkn_version: 0.44.1 # datasource=github-tags depName=tektoncd/cli
       vcluster_version: 0.33.1 # datasource=github-tags depName=loft-sh/vcluster
       vals_version: 0.43.9 # datasource=github-tags depName=helmfile/vals
