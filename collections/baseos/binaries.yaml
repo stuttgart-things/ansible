@@ -121,7 +121,7 @@ vars:
       gh_version: 2.90.0 # datasource=github-tags depName=cli/cli
       task_version: 3.50.0 # datasource=github-tags depName=go-task/task
       hugo_version: 0.160.1 # datasource=github-tags depName=gohugoio/hugo
-      terraform_version: 1.14.8 # datasource=custom.hashicorp
+      terraform_version: 1.14.9 # datasource=custom.hashicorp
       packer_version: 1.15.1 # datasource=custom.hashicorp
       yq_version: 4.53.2 # datasource=github-tags depName=mikefarah/yq
       jq_version: 1.7.1 # datasource=github-tags depName=jqlang/jq
