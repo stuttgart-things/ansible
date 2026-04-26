@@ -14,7 +14,7 @@ on:
       dagger-module-version:
         description: DAGGER MODULE VERSION
         type: string
-        default: v0.107.1
+        default: v0.108.0
       dagger-version:
         description: DAGGER MODULE VERSION
         type: string
