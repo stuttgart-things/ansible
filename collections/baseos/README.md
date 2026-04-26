@@ -11,7 +11,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 </details>
 
-## ROLE DEPENDENCIES
+## ROLE DEPS
 
 | Role | Version | Description |
 |------|---------|-------------|

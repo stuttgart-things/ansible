@@ -50,7 +50,7 @@ jobs:
       runs-on: ubuntu-latest
       environment-name: k8s
       collection-directory: ${{ matrix.collection-directory }}
-      dagger-module-version: v0.108.0
+      dagger-module-version: v0.109.0
       dagger-version: v0.20.6
       branch-name: ${{ github.event.pull_request.head.ref }}
     secrets: inherit # pragma: allowlist secret
