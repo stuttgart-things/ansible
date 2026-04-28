@@ -21,4 +21,4 @@ collections:
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-25.4.506.tar.gz/sthings-awx-25.4.506.tar.gz
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-26.1.1334.tar.gz/sthings-container-26.1.1334.tar.gz
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-rke-26.1.776.tar.gz/sthings-rke-26.1.776.tar.gz
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-26.2.611.tar.gz/sthings-baseos-26.2.611.tar.gz
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-26.2.844.tar.gz/sthings-baseos-26.2.844.tar.gz
