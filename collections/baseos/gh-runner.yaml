@@ -167,8 +167,8 @@ playbooks:
               - runner_force_reconfigure | bool
               - _runner_configs.results | selectattr('stat.exists') | list | length > 0
 
-          - name: Stop runner systemd service before re-registration
-            ansible.builtin.command: ./svc.sh stop
+          - name: Uninstall runner systemd service before re-registration
+            ansible.builtin.command: ./svc.sh uninstall
             args:
               chdir: "{{ runner_base_dir }}-{{ item.item.name }}"
             loop: "{{ _runner_configs.results }}"
