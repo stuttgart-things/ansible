@@ -69,6 +69,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 |----------|-------------|
 | `sthings.baseos.nfs` | Setup NFS server with exports for Kubernetes StorageClass |
 | `sthings.baseos.pdns` | Create PowerDNS A records using Vault for API token |
+| `sthings.baseos.gh_runner` | Install and configure self-hosted GitHub Actions runners (repo or org scope) with optional Docker installation |
 
 ### VM Provisioning
 
@@ -365,6 +366,86 @@ ansible-playbook sthings.baseos.delete_proxmox_vm -vv \
 -e vmname_delete=vm-to-delete \
 -e target_host=localhost
 ```
+
+</details>
+
+<details><summary>DEPLOY GITHUB ACTIONS RUNNER</summary>
+
+### REPO-SCOPED RUNNER
+
+```bash
+export GITHUB_TOKEN="ghp_xxx"   # PAT with repo admin scope
+
+ansible-playbook sthings.baseos.gh_runner -vv \
+-e github_owner=stuttgart-things \
+-e github_repo=ansible \
+-e runner_scope=repo \
+-i /tmp/hosts
+```
+
+### ORG-SCOPED RUNNER (AVAILABLE TO WHOLE ORG)
+
+```bash
+export GITHUB_TOKEN="ghp_xxx"   # PAT with admin:org scope
+
+ansible-playbook sthings.baseos.gh_runner -vv \
+-e github_owner=stuttgart-things \
+-e runner_scope=org \
+-i /tmp/hosts
+```
+
+### ORG-SCOPED RUNNER WITH RUNNER GROUP
+
+```bash
+ansible-playbook sthings.baseos.gh_runner -vv \
+-e github_owner=stuttgart-things \
+-e runner_scope=org \
+-e runner_github_group=my-runner-group \
+-i /tmp/hosts
+```
+
+### MULTIPLE RUNNERS / CUSTOM LABELS / DOCKER TOGGLE
+
+```bash
+cat <<EOF > ./gh-runner-vars.yaml
+---
+github_owner: stuttgart-things
+github_pat: "{{ lookup('env', 'GITHUB_TOKEN') }}"
+runner_scope: org
+runner_github_group: my-runner-group
+
+# Install Docker via sthings.container.install_configure_docker
+install_docker: true
+docker_install_compose: true
+
+# Multiple runners per host with custom labels
+runner_instances:
+  - name: "{{ ansible_hostname }}-1"
+  - name: "{{ ansible_hostname }}-2"
+    labels: "self-hosted,Linux,{{ ansible_architecture }},special"
+
+runner_version: "2.334.0"
+EOF
+
+ansible-playbook sthings.baseos.gh_runner -vv \
+-e path_to_vars_file=$(pwd)/gh-runner-vars \
+-i /tmp/hosts
+```
+
+### KEY VARIABLES
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `github_owner` | _(required)_ | GitHub user or organization name |
+| `github_repo` | _(required for repo scope)_ | Target repository name |
+| `github_pat` | _(required)_ | GitHub PAT (repo admin or `admin:org` for org scope) |
+| `runner_scope` | `repo` | `repo` or `org` |
+| `runner_github_group` | _(unset)_ | Runner group name (org scope only) |
+| `runner_version` | `2.334.0` | actions/runner release version |
+| `runner_instances` | `[{ name: "{{ ansible_hostname }}" }]` | List of runners to deploy on the host |
+| `runner_labels` | `self-hosted,Linux,{{ ansible_architecture }}` | Default labels |
+| `install_docker` | `true` | Install Docker via `sthings.container.install_configure_docker` |
+| `docker_install_compose` | `true` | Also install docker compose plugin |
 
 </details>
 
