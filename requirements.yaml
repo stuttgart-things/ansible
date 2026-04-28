@@ -1,40 +1,4 @@
 ---
-roles:
-  - src: https://github.com/stuttgart-things/deploy-configure-rke.git
-    scm: git
-  - src: https://github.com/stuttgart-things/install-configure-powerdns.git
-    scm: git
-  - src: https://github.com/stuttgart-things/configure-rke-node.git
-    scm: git
-  - src: https://github.com/stuttgart-things/install-requirements.git
-    version: 2025.12.12
-    scm: git
-  - src: https://github.com/stuttgart-things/create-send-webhook.git
-    version: 2024.06.06
-    scm: git
-  - src: https://github.com/stuttgart-things/install-configure-vault.git
-    scm: git
-  - src: https://github.com/stuttgart-things/install-configure-nfs.git
-    scm: git
-  - src: https://github.com/stuttgart-things/manage-filesystem.git
-    version: 2024.06.07
-    scm: git
-  - src: https://github.com/stuttgart-things/download-install-binary.git
-    scm: git
-    version: 2025.03.27
-  - src: https://github.com/stuttgart-things/create-os-user.git
-    scm: git
-    version: 2024.05.03
-  - src: https://github.com/stuttgart-things/install-configure-docker.git
-    scm: git
-    version: 2025.04.29
-  - src: https://github.com/stuttgart-things/install-configure-podman.git
-    scm: git
-    version: 2024.05.08
-  - src: https://github.com/stuttgart-things/manage-proxmox-resources.git
-    scm: git
-    version: 2024.05.27
-
 collections:
   - name: ansible.netcommon
     version: 8.5.0
@@ -55,6 +19,6 @@ collections:
   - name: kubernetes.core
     version: 6.4.0
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-25.4.506.tar.gz/sthings-awx-25.4.506.tar.gz
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-26.3.1208.tar.gz/sthings-container-26.3.1208.tar.gz
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-26.1.1334.tar.gz/sthings-container-26.1.1334.tar.gz
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-rke-26.1.776.tar.gz/sthings-rke-26.1.776.tar.gz
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-26.3.1208.tar.gz/sthings-baseos-26.3.1208.tar.gz
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-26.2.611.tar.gz/sthings-baseos-26.2.611.tar.gz

@@ -446,6 +446,7 @@ ansible-playbook sthings.baseos.gh_runner -vv \
 | `runner_labels` | `self-hosted,Linux,{{ ansible_architecture }}` | Default labels |
 | `install_docker` | `true` | Install Docker via `sthings.container.install_configure_docker` |
 | `docker_install_compose` | `true` | Also install docker compose plugin |
+| `runner_force_reconfigure` | `false` | Unregister + re-register existing runners (needed when changing labels, group, name, or scope after first deploy) |
 
 </details>
 
