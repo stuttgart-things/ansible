@@ -13,6 +13,7 @@ playbooks:
           docker_install_compose: true
           install_kind: false
           runner_version: "2.334.0"
+          runner_force_reconfigure: false
           runner_user: gh-runner
           runner_linux_group: gh-runner
           runner_user_home: /home/gh-runner
@@ -150,6 +151,58 @@ playbooks:
               label: "{{ item.name }}"
             register: _runner_configs
 
+          - name: Request runner removal token from GitHub API
+            ansible.builtin.uri:
+              url: >-
+                {{ github_api_url }}/{% if runner_scope == 'org' %}orgs/{{ github_owner }}{% else %}repos/{{ github_owner }}/{{ github_repo }}{% endif %}/actions/runners/remove-token
+              method: POST
+              headers:
+                Authorization: "token {{ github_pat }}"
+                Accept: "application/vnd.github+json"
+                X-GitHub-Api-Version: "2022-11-28"
+              status_code: 201
+              validate_certs: true
+            register: _runner_remove_token_response
+            when:
+              - runner_force_reconfigure | bool
+              - _runner_configs.results | selectattr('stat.exists') | list | length > 0
+
+          - name: Stop runner systemd service before re-registration
+            ansible.builtin.command: ./svc.sh stop
+            args:
+              chdir: "{{ runner_base_dir }}-{{ item.item.name }}"
+            loop: "{{ _runner_configs.results }}"
+            loop_control:
+              label: "{{ item.item.name }}"
+            when:
+              - runner_force_reconfigure | bool
+              - item.stat.exists
+            failed_when: false
+            changed_when: true
+
+          - name: Unregister existing runner from GitHub
+            ansible.builtin.command: >-
+              ./config.sh remove
+              --token {{ _runner_remove_token_response.json.token }}
+            args:
+              chdir: "{{ runner_base_dir }}-{{ item.item.name }}"
+            become_user: "{{ runner_user }}"
+            loop: "{{ _runner_configs.results }}"
+            loop_control:
+              label: "{{ item.item.name }}"
+            when:
+              - runner_force_reconfigure | bool
+              - item.stat.exists
+
+          - name: Re-check runner configuration state after force_reconfigure
+            ansible.builtin.stat:
+              path: "{{ runner_base_dir }}-{{ item.name }}/.runner"
+            loop: "{{ runner_instances }}"
+            loop_control:
+              label: "{{ item.name }}"
+            register: _runner_configs
+            when: runner_force_reconfigure | bool
+
           - name: Configure runner instances
             ansible.builtin.command: >-
               ./config.sh
@@ -224,6 +277,10 @@ vars:
       install_docker: true
       docker_install_compose: true
       install_kind: false
+
+      # Force unregister + re-register existing runners (use when changing
+      # labels, runner group, name, or scope after the initial deploy).
+      runner_force_reconfigure: false
 
       # Runner settings
       runner_version: "2.334.0"
