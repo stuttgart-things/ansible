@@ -164,8 +164,9 @@ playbooks:
           vault_instances:
             - https://vault.tiab.labda.sva.de:8200
             # - https://vault.labul.sva.de:8200
-            # - https://vault-vsphere.labul.sva.de:8200
+            - https://vault-vsphere.labul.sva.de:8200
             - https://vault-vsphere.tiab.labda.sva.de:8200
+            - https://vault.infra.sthings-vsphere.labul.sva.de
 
         roles:
           - role: sthings.baseos.manage_filesystem
