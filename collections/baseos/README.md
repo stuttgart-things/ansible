@@ -47,6 +47,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `sthings.baseos.semantic_release` | Install NVM, Node.js 20, semantic-release and plugins |
 | `sthings.baseos.ai` | Install AI tools via Homebrew (dagger, gemini-cli, crush) |
 | `sthings.baseos.claude_code` | Install Claude Code CLI for the developer user |
+| `sthings.baseos.tmux` | Install tmux, deploy `~/.tmux.conf` (vi copy-mode, OSC52 clipboard, Catppuccin status bar) and register `alias tt` that fetches the `gum`-driven session taskfile from `stuttgart-things/tasks` via task's remote-taskfiles experiment |
 | `sthings.baseos.uv` | Install UV Python package manager (v0.9.3) |
 
 ### Binaries and Tools
@@ -202,6 +203,39 @@ ansible-playbook sthings.baseos.claude_code -vv \
 -e target_host=all \
 -i /tmp/hosts
 ```
+
+</details>
+
+<details><summary>INSTALL TMUX + REMOTE SESSION TASKFILE</summary>
+
+Installs the `tmux` package, deploys `~/.tmux.conf` (vi copy-mode, OSC52 clipboard bridge, Catppuccin status bar) and registers a managed block in `~/.bashrc` that exposes the remote session manager as `tt`.
+
+```bash
+ansible-playbook sthings.baseos.tmux -vv \
+-e target_host=all \
+-i /tmp/hosts
+```
+
+The bashrc block enables go-task's remote-taskfiles experiment and aliases `tt` to fetch the session manager from `stuttgart-things/tasks` on demand:
+
+```bash
+export TASK_X_REMOTE_TASKFILES=1
+export TASK_REMOTE_TRUSTED_HOSTS="github.com,raw.githubusercontent.com"
+alias tt='task --taskfile https://github.com/stuttgart-things/tasks.git//dev/tmux.yaml?ref=main'
+```
+
+Usage after `source ~/.bashrc`:
+
+| Command | Action |
+|---------|--------|
+| `tt t` | Smart entry — create if no sessions, otherwise prompt attach/create/kill/list |
+| `tt tc` | Create a new session (preset: `custom`, `claude-code`, `k8s-ops`, `homelab`) |
+| `tt ta` | Fuzzy-pick an existing session to attach |
+| `tt tk` | Multi-select sessions to kill (with confirm) |
+| `tt tl` | List running sessions |
+| `tt tp` | Jump to a project session under `$PROJECTS_ROOT` (one session per repo) |
+
+Pin to a specific revision instead of `main` by overriding `tmux_taskfile_url` (e.g. `?ref=<commit-sha>`). Requires `gum` and `task` on `$PATH` — both come from `sthings.baseos.binaries`.
 
 </details>
 

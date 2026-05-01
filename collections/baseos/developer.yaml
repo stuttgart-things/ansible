@@ -114,6 +114,9 @@ playbooks:
       - name: Install starship prompt
         ansible.builtin.import_playbook: sthings.baseos.starship
 
+      - name: Install tmux + dev taskfile
+        ansible.builtin.import_playbook: sthings.baseos.tmux
+
       - name: Execute dev config
         ansible.builtin.import_playbook: sthings.baseos.dev_config
 
@@ -349,6 +352,178 @@ playbooks:
             ansible.builtin.debug:
               msg: "Claude Code installed: {{ claude_version.stdout }}"
             when: claude_version.stdout is defined
+
+  - name: tmux
+    play: |
+      ---
+      - name: Install tmux, deploy ~/.tmux.conf, wire remote taskfile alias
+        hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: true
+
+        vars:
+          developer: sthings
+          developer_user_dir: "/home/{{ developer }}"
+          tmux_taskfile_url: "https://github.com/stuttgart-things/tasks.git//dev/tmux.yaml?ref=main"
+
+        tasks:
+          - name: Install tmux
+            ansible.builtin.package:
+              name: tmux
+              state: present
+              update_cache: yes
+
+          - name: Deploy ~/.tmux.conf
+            ansible.builtin.copy:
+              dest: "{{ developer_user_dir }}/.tmux.conf"
+              owner: "{{ developer }}"
+              group: "{{ developer }}"
+              mode: '0644'
+              content: |
+                # ============================================================================
+                # General
+                # ============================================================================
+
+                # Remap prefix from Ctrl-b to Ctrl-a (closer reach, fewer collisions)
+                unbind C-b
+                set -g prefix C-a
+                bind C-a send-prefix
+
+                # 256 colors + True Color support
+                set -g default-terminal "tmux-256color"
+                set -ga terminal-overrides ",*256col*:Tc"
+                set -ga terminal-overrides ",xterm-256color:Tc"
+
+                # Faster command sequence (avoids vim/nvim Esc lag)
+                set -sg escape-time 10
+
+                # Larger scrollback buffer
+                set -g history-limit 50000
+
+                # Start window/pane indices at 1 (easier on the keyboard)
+                set -g base-index 1
+                setw -g pane-base-index 1
+                set -g renumber-windows on
+
+                # Set terminal title from session/window
+                set -g set-titles on
+                set -g set-titles-string "#S / #W"
+
+                # Forward focus events to programs (vim/nvim autoread)
+                set -g focus-events on
+
+                # Activity monitoring (no annoying bell)
+                set -g monitor-activity on
+                set -g visual-activity off
+
+                # ============================================================================
+                # Mouse
+                # ============================================================================
+
+                set -g mouse on
+
+                # Scroll wheel: forward events to TUI apps (claude, k9s, lazygit, htop),
+                # otherwise enter copy-mode for shell scrollback
+                bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" \
+                  "send-keys -M" \
+                  "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'copy-mode -e'"
+
+                # Double-click selects word, triple-click selects line
+                bind -T copy-mode-vi DoubleClick1Pane select-pane \; send-keys -X select-word
+                bind -T copy-mode-vi TripleClick1Pane select-pane \; send-keys -X select-line
+
+                # ============================================================================
+                # Copy-mode (vi-style) + clipboard bridge via OSC52
+                # ============================================================================
+
+                setw -g mode-keys vi
+
+                # Enable OSC52: tmux emits an escape sequence that the terminal emulator
+                # (VS Code integrated terminal, iTerm2, Ghostty, ...) translates into a
+                # system clipboard write. Works over SSH without X-forwarding.
+                set -s set-clipboard on
+                set -ag terminal-overrides ",*:Ms=\\E]52;c;%p2%s\\7"
+
+                # Vim-style selection and yank (uses OSC52 via load-buffer -w)
+                bind -T copy-mode-vi v send-keys -X begin-selection
+                bind -T copy-mode-vi y send-keys -X copy-pipe-no-clear "tmux load-buffer -w -"
+                bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-no-clear "tmux load-buffer -w -"
+
+                # Escape leaves copy-mode
+                bind -T copy-mode-vi Escape send-keys -X cancel
+
+                # ============================================================================
+                # Pane / window management
+                # ============================================================================
+
+                # Splits open in current working directory
+                bind | split-window -h -c "#{pane_current_path}"
+                bind - split-window -v -c "#{pane_current_path}"
+                unbind '"'
+                unbind %
+
+                # New windows also inherit current working directory
+                bind c new-window -c "#{pane_current_path}"
+
+                # Vim-style pane navigation
+                bind h select-pane -L
+                bind j select-pane -D
+                bind k select-pane -U
+                bind l select-pane -R
+
+                # Pane resize (repeatable with -r)
+                bind -r H resize-pane -L 5
+                bind -r J resize-pane -D 5
+                bind -r K resize-pane -U 5
+                bind -r L resize-pane -R 5
+
+                # Window switching with Alt+Arrow (no prefix needed)
+                bind -n M-Left  previous-window
+                bind -n M-Right next-window
+
+                # Reload config without restart
+                bind r source-file ~/.tmux.conf \; display-message "tmux.conf reloaded"
+
+                # ============================================================================
+                # Status bar
+                # ============================================================================
+
+                set -g status-interval 5
+                set -g status-position bottom
+                set -g status-justify left
+
+                # Catppuccin Mocha-ish palette (subtle, dark)
+                set -g status-style "bg=#1e1e2e,fg=#cdd6f4"
+
+                # Left: session name
+                set -g status-left-length 40
+                set -g status-left "#[bg=#89b4fa,fg=#1e1e2e,bold] #S #[bg=#1e1e2e,fg=#89b4fa] "
+
+                # Right: date, time, hostname
+                set -g status-right-length 80
+                set -g status-right "#[fg=#89b4fa]#[bg=#89b4fa,fg=#1e1e2e] %Y-%m-%d  %H:%M #[bg=#f5c2e7,fg=#1e1e2e,bold] #h "
+
+                # Window list
+                setw -g window-status-format " #I:#W "
+                setw -g window-status-current-format "#[bg=#f5c2e7,fg=#1e1e2e,bold] #I:#W "
+
+                # Pane borders
+                set -g pane-border-style "fg=#45475a"
+                set -g pane-active-border-style "fg=#89b4fa"
+
+                # Command-line / messages
+                set -g message-style "bg=#f5c2e7,fg=#1e1e2e,bold"
+
+          - name: Register remote tmux taskfile alias and env in bashrc
+            ansible.builtin.blockinfile:
+              path: "{{ developer_user_dir }}/.bashrc"
+              create: true
+              marker: "# {mark} ANSIBLE MANAGED: tmux remote taskfile"
+              block: |
+                export TASK_X_REMOTE_TASKFILES=1
+                export TASK_REMOTE_TRUSTED_HOSTS="github.com,raw.githubusercontent.com"
+                alias tt='task --taskfile {{ tmux_taskfile_url }}'
+            become_user: "{{ developer }}"
 
   - name: chezmoi
     play: |
