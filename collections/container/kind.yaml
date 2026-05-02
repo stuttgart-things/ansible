@@ -26,6 +26,8 @@ playbooks:
           create_kind_cluster: true
           rebuild_kind_cluster: true
           update_kubeconfig_ip: false
+          fetch_kubeconfig: true
+          fetched_kubeconfig_path: "/tmp/{{ kind_cluster_name }}"
 
         roles:
           - role: sthings.container.install_configure_docker
