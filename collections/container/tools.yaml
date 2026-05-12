@@ -32,7 +32,7 @@ vars:
       cilium_version: 0.19.2 # datasource=github-tags depName=cilium/cilium-cli
       xpdig_version: 1.22.0 # datasource=github-tags depName=brunoluiz/xpdig
       dagger_version: 0.20.8 # datasource=github-tags depName=dagger/dagger
-      tkn_version: 0.44.1 # datasource=github-tags depName=tektoncd/cli
+      tkn_version: 0.45.0 # datasource=github-tags depName=tektoncd/cli
       vcluster_version: 0.34.0 # datasource=github-tags depName=loft-sh/vcluster
       vals_version: 0.44.0 # datasource=github-tags depName=helmfile/vals
 
