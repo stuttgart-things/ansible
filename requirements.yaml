@@ -3,7 +3,7 @@ collections:
   - name: ansible.netcommon
     version: 8.5.2
   - name: ansible.posix
-    version: 2.1.0
+    version: 2.2.0
   - name: awx.awx
     version: 24.6.1
   - name: community.crypto
