@@ -18,7 +18,7 @@ vars:
   - name: tools
     file: |
       ---
-      kind_version: 0.31.0 # datasource=github-tags depName=kubernetes-sigs/kind
+      kind_version: 0.32.0 # datasource=github-tags depName=kubernetes-sigs/kind
       skopeo_version: 1.22.2 # datasource=github-tags depName=lework/skopeo-binary
       helm_version: 4.2.0 # datasource=github-tags depName=helm/helm
       kubectl_version: v1.35.0 # datasource=github-tags depName=kubernetes/kubectl
