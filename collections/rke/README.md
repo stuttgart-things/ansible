@@ -26,8 +26,8 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 | Playbook | Description |
 |----------|-------------|
-| `sthings.rke.rke2` | Deploy multi-node RKE2 cluster (default k8s v1.33.4) with Cilium, registry mirrors, and LB IP pool |
-| `sthings.rke.rke2_cluster` | Deploy single-node RKE2 cluster (default k8s v1.35.1) with airgapped installation |
+| `sthings.rke.rke2` | Deploy multi-node RKE2 cluster (default k8s v1.36.1) with Cilium, registry mirrors, and LB IP pool |
+| `sthings.rke.rke2_cluster` | Deploy single-node RKE2 cluster (default k8s v1.36.1) with airgapped installation |
 | `sthings.rke.rke2_workflow` | General RKE2 deployment workflow using vars file |
 | `sthings.rke.upload_kubeconfig_vault` | Fetch kubeconfig from cluster and upload to HashiCorp Vault |
 | `sthings.rke.api_token` | Create Rancher API tokens with configurable TTL |
@@ -46,8 +46,8 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `rke_state` | `present` | Set to `absent` to destroy the cluster |
-| `rke2_k8s_version` | `1.33.4` | Kubernetes version |
-| `rke2_release_kind` | `rke2r1` | Release kind (rke2r1 or rke2r2) |
+| `rke2_k8s_version` | `1.36.1` | Kubernetes version |
+| `rke2_release_kind` | `rke2r2` | Release kind (rke2r1 or rke2r2) |
 | `cluster_setup` | `multinode` | Cluster mode: `singlenode` or `multinode` |
 | `rke2_airgapped_installation` | `true` | Enable airgapped installation |
 | `install_cilium` | `true` | Install Cilium CNI |
@@ -115,8 +115,8 @@ mkdir -p /home/sthings/.kube/
 ansible-playbook sthings.rke.rke2 \
 -i rke2 \
 -e rke2_fetched_kubeconfig_path=/home/sthings/.kube/${CLUSTER_NAME} \
--e rke2_k8s_version=1.33.4 \
--e rke2_release_kind=rke2r1 \
+-e rke2_k8s_version=1.36.1 \
+-e rke2_release_kind=rke2r2 \
 -vv
 
 # TEST CLUSTER CONNECTION
