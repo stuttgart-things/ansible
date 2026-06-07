@@ -15,9 +15,9 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 | Role | Version | Description |
 |------|---------|-------------|
-| deploy-configure-rke | 2026.02.16-2 | Main RKE/K3s deployment orchestration |
+| deploy-configure-rke | 2026.06.07 | Main RKE/K3s deployment orchestration |
 | configure-rke-node | 2025.12.13 | Node configuration |
-| install-requirements | 2025.12.12 | Prerequisites installation |
+| install-requirements | 2026.04.13 | Prerequisites installation |
 | download-install-binary | 2025.03.27 | Binary download utilities |
 
 ## PLAYBOOKS
@@ -36,7 +36,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 | Playbook | Description |
 |----------|-------------|
-| `sthings.rke.k3s` | Deploy single-node K3s cluster (default k8s v1.35.1) with Cilium, ingress-nginx (v4.14.1), cert-manager (v1.19.1), and LB IP pool |
+| `sthings.rke.k3s` | Deploy single-node K3s cluster (default k8s v1.36.1) with Cilium, ingress-nginx (v4.14.1), cert-manager (v1.19.1), and LB IP pool |
 | `sthings.rke.k3s_cluster` | Deploy single-node K3s cluster (minimal, fetches kubeconfig) |
 
 ## KEY VARIABLES
@@ -64,7 +64,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `k3s_state` | `present` | Set to `absent` to destroy the cluster |
-| `k3s_k8s_version` | `1.35.1` | Kubernetes version |
+| `k3s_k8s_version` | `1.36.1` | Kubernetes version |
 | `k3s_release_kind` | `k3s1` | Release kind |
 | `cluster_setup` | `singlenode` | Cluster mode |
 | `deploy_helm_charts` | `true` | Deploy ingress-nginx and cert-manager |
@@ -186,7 +186,7 @@ mkdir -p /home/sthings/.kube/
 # CHECK FOR K3s RELEASES: https://github.com/k3s-io/k3s/releases
 
 ansible-playbook sthings.rke.k3s \
--e k3s_k8s_version=1.35.1 \
+-e k3s_k8s_version=1.36.1 \
 -i k3s \
 -e cilium_lbrange_start_ip=192.168.5.10 \
 -e cilium_lbrange_stop_ip=192.168.5.20 \
