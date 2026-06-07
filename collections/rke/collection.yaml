@@ -5,13 +5,13 @@ requirements: |
   roles:
     - src: https://github.com/stuttgart-things/deploy-configure-rke.git
       scm: git
-      version: 2026.02.16-2
+      version: 2026.06.07
     - src: https://github.com/stuttgart-things/configure-rke-node.git
       scm: git
       version: 2025.12.13
     - src: https://github.com/stuttgart-things/install-requirements.git
       scm: git
-      version: 2025.12.12
+      version: 2026.04.13
     - src: https://github.com/stuttgart-things/download-install-binary.git
       scm: git
       version: 2025.03.27

@@ -12,17 +12,42 @@ playbooks:
             when: path_to_vars_file is defined
 
         vars:
-          install_k3s: trueq
+          install_k3s: true
           copy_kubeconfig: true
           fetch_kubeconfig: true
           k3s_state: present #absent
           fetched_kubeconfig_path: /tmp/kubeconfig
           prepare_rancher_ha_nodes: true #false
-          k3s_k8s_version: 1.35.1
-          cilium_version: 0.19.0
+          k3s_k8s_version: 1.36.1
+          cilium_version: 0.19.4
           k3s_release_kind: k3s1
           cluster_setup: singlenode
-          install_cillium: true
+          install_cilium: true
+
+          # === optional new k3s features (uncomment to enable) ==============
+          # air-gapped IMAGES from a mirror (images-only; binary/script upstream):
+          # k3s_airgapped_installation: true
+          # k3s_airgapped_image_url: "https://your-mirror/k3s-airgap-images-amd64.tar.zst"
+          # k3s_airgapped_checksum: "sha256:..."          # optional integrity check
+          # fully-offline binary (stage k3s binary + INSTALL_K3S_SKIP_DOWNLOAD):
+          # k3s_airgapped_skip_download: true
+          # k3s_airgapped_binary_url: "https://your-mirror/k3s"
+          # k3s_installscript_url: "https://your-mirror/k3s-install.sh"   # zero egress
+          # registry pull-through mirror (writes /etc/rancher/k3s/registries.yaml):
+          # k3s_registry_mirrors:
+          #   - name: "docker.io"
+          #     endpoints:
+          #       - "https://docker.harbor.example.com"
+          #       - "https://registry-1.docker.io"        # upstream fallback
+          # k3s_registry_configs:                          # optional per-host auth/TLS
+          #   "docker.harbor.example.com":
+          #     username: "robot-puller"
+          #     password: "<robot-token>"
+          #     tls:
+          #       insecure_skip_verify: false
+          # SELinux toggles (enforcing RHEL-family air-gap):
+          # k3s_skip_selinux_rpm: true   # don't fetch k3s-selinux from a repo
+          # k3s_selinux_warn: true       # missing SELinux policy -> warn, not fatal
 
         roles:
           - role: sthings.rke.deploy_configure_rke
@@ -44,11 +69,37 @@ playbooks:
           fetch_kubeconfig: true
           fetched_kubeconfig_path: ./kubeconfig
           k3s_state: present #absent
-          k3s_k8s_version: 1.35.1
+          k3s_k8s_version: 1.36.1
           k3s_release_kind: k3s1
           cluster_setup: singlenode
           install_helm_diff: true
-          install_cillium: true
+          install_cilium: true
+
+          # === optional new k3s features (uncomment to enable) ==============
+          # air-gapped IMAGES from a mirror (images-only; binary/script upstream):
+          # k3s_airgapped_installation: true
+          # k3s_airgapped_image_url: "https://your-mirror/k3s-airgap-images-amd64.tar.zst"
+          # k3s_airgapped_checksum: "sha256:..."          # optional integrity check
+          # fully-offline binary (stage k3s binary + INSTALL_K3S_SKIP_DOWNLOAD):
+          # k3s_airgapped_skip_download: true
+          # k3s_airgapped_binary_url: "https://your-mirror/k3s"
+          # k3s_installscript_url: "https://your-mirror/k3s-install.sh"   # zero egress
+          # registry pull-through mirror (writes /etc/rancher/k3s/registries.yaml):
+          # k3s_registry_mirrors:
+          #   - name: "docker.io"
+          #     endpoints:
+          #       - "https://docker.harbor.example.com"
+          #       - "https://registry-1.docker.io"        # upstream fallback
+          # k3s_registry_configs:                          # optional per-host auth/TLS
+          #   "docker.harbor.example.com":
+          #     username: "robot-puller"
+          #     password: "<robot-token>"
+          #     tls:
+          #       insecure_skip_verify: false
+          # SELinux toggles (enforcing RHEL-family air-gap):
+          # k3s_skip_selinux_rpm: true   # don't fetch k3s-selinux from a repo
+          # k3s_selinux_warn: true       # missing SELinux policy -> warn, not fatal
+
           deploy_helm_charts: true
           helm_repositories:
             ingress-nginx:
