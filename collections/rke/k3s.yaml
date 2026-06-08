@@ -48,6 +48,15 @@ playbooks:
           # SELinux toggles (enforcing RHEL-family air-gap):
           # k3s_skip_selinux_rpm: true   # don't fetch k3s-selinux from a repo
           # k3s_selinux_warn: true       # missing SELinux policy -> warn, not fatal
+          # Cilium air-gapped images (off by default). cilium-cli pulls from
+          # quay.io; this pre-loads its images from a tar into containerd and
+          # pins the pull policy so pods start offline. Build the tar with
+          # deploy-configure-rke's hack/export-cilium-images.sh on a node that
+          # already runs Cilium:
+          # cilium_airgapped_images: true
+          # cilium_airgapped_image_url: "https://your-mirror/cilium-images.tar"
+          # cilium_image_pull_policy: Never                # Always (default) keeps online pull
+          # cilium_airgapped_checksum: "sha256:..."        # optional integrity check
 
         roles:
           - role: sthings.rke.deploy_configure_rke
@@ -99,6 +108,15 @@ playbooks:
           # SELinux toggles (enforcing RHEL-family air-gap):
           # k3s_skip_selinux_rpm: true   # don't fetch k3s-selinux from a repo
           # k3s_selinux_warn: true       # missing SELinux policy -> warn, not fatal
+          # Cilium air-gapped images (off by default). cilium-cli pulls from
+          # quay.io; this pre-loads its images from a tar into containerd and
+          # pins the pull policy so pods start offline. Build the tar with
+          # deploy-configure-rke's hack/export-cilium-images.sh on a node that
+          # already runs Cilium:
+          # cilium_airgapped_images: true
+          # cilium_airgapped_image_url: "https://your-mirror/cilium-images.tar"
+          # cilium_image_pull_policy: Never                # Always (default) keeps online pull
+          # cilium_airgapped_checksum: "sha256:..."        # optional integrity check
 
           deploy_helm_charts: true
           helm_repositories:

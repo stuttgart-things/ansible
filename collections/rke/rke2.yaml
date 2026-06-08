@@ -27,6 +27,16 @@ playbooks:
             - rke2-snapshot-validation-webhook
           rke2_cni: none
           install_cilium: true
+          # === optional: Cilium air-gapped images (off by default) ==========
+          # cilium-cli pulls from quay.io; this pre-loads its images from a tar
+          # into containerd and pins the pull policy so pods start offline.
+          # Build the tar with deploy-configure-rke's hack/export-cilium-images.sh
+          # on a node that already runs Cilium (CTR=/var/lib/rancher/rke2/bin/ctr).
+          # Keep rke2_cni: none so cilium-cli (not RKE2's bundled CNI) manages it.
+          # cilium_airgapped_images: true
+          # cilium_airgapped_image_url: "https://your-mirror/cilium-images.tar"
+          # cilium_image_pull_policy: Never                # Always (default) keeps online pull
+          # cilium_airgapped_checksum: "sha256:..."        # optional integrity check
           cluster_name: "{{ cluster_name | default('rke2') }}"
           fetched_kubeconfig_path: /tmp/kubeconfig
 
@@ -138,6 +148,16 @@ playbooks:
             - rke2-snapshot-validation-webhook
           rke2_cni: none
           install_cilium: true
+          # === optional: Cilium air-gapped images (off by default) ==========
+          # cilium-cli pulls from quay.io; this pre-loads its images from a tar
+          # into containerd and pins the pull policy so pods start offline.
+          # Build the tar with deploy-configure-rke's hack/export-cilium-images.sh
+          # on a node that already runs Cilium (CTR=/var/lib/rancher/rke2/bin/ctr).
+          # Keep rke2_cni: none so cilium-cli (not RKE2's bundled CNI) manages it.
+          # cilium_airgapped_images: true
+          # cilium_airgapped_image_url: "https://your-mirror/cilium-images.tar"
+          # cilium_image_pull_policy: Never                # Always (default) keeps online pull
+          # cilium_airgapped_checksum: "sha256:..."        # optional integrity check
           cluster_name: rke2
           fetched_kubeconfig_path: "{{ cluster_name | default('kubeconfig') }}.yaml"
           rke2_registry_mirrors:
