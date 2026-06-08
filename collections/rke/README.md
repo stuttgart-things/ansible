@@ -72,6 +72,26 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `cilium_lbrange_start_ip` | `192.168.1.10` | Cilium LB IP pool start |
 | `cilium_lbrange_stop_ip` | `192.168.1.20` | Cilium LB IP pool end |
 
+### Cilium Air-Gapped Images (optional, off by default)
+
+Cilium is installed via cilium-cli, which pulls its images from `quay.io`. On
+edge/offline nodes, pre-load those images from a tar into containerd and pin the
+pull policy so pods start without reaching out. Applies to both RKE2 and K3s; all
+options are **disabled by default** (normal online pull).
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `cilium_airgapped_images` | `false` | Enable the image pre-load into containerd |
+| `cilium_airgapped_image_url` | `""` | HTTPS source for the Cilium images tar (required when enabled) |
+| `cilium_image_pull_policy` | `Always` | Pull policy on agent/operator/envoy; set `Never` on edge |
+| `cilium_airgapped_checksum` | - | Optional `sha256:...` integrity check for the tar |
+
+Build the tar from a node that already runs Cilium with
+`deploy-configure-rke`'s `hack/export-cilium-images.sh` (override
+`CTR=/var/lib/rancher/rke2/bin/ctr` for RKE2), publish it to your mirror, then set
+`cilium_airgapped_images: true`, `cilium_airgapped_image_url`, and
+`cilium_image_pull_policy: Never`.
+
 ### Vault Upload Variables
 
 | Variable | Default | Description |
