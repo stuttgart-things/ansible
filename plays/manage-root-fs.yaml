@@ -1,0 +1,53 @@
+---
+- name: Manage root filesystem (LVM-aware, no virt-type branching)
+  hosts: all
+  become: true
+  tasks:
+    - name: Find the device backing /
+      ansible.builtin.set_fact:
+        root_source: "{{ ansible_facts['mounts']
+          | selectattr('mount', 'equalto', '/')
+          | map(attribute='device') | first }}"
+
+    - name: Detect whether root is on LVM
+      ansible.builtin.set_fact:
+        root_is_lvm: "{{ root_source is match('^/dev/mapper/') or root_source is match('^/dev/dm-') }}"
+
+    - name: Show what was detected
+      ansible.builtin.debug:
+        msg: "root device={{ root_source }} lvm={{ root_is_lvm }}"
+
+    # ---------- non-LVM path (this VM) ----------
+    - name: Grow + resize a plain root partition
+      when: not root_is_lvm
+      block:
+        - name: Parse disk and partition number from root device
+          ansible.builtin.set_fact:
+            root_disk: "/dev/{{ root_pkname }}"
+            root_partnum: "{{ root_source | regex_replace('^.*[^0-9]([0-9]+)$', '\\1') }}"
+          vars:
+            root_pkname: "{{ (ansible_facts['device_links'] is defined) | ternary('', '') }}{{ root_source | regex_replace('^/dev/', '') | regex_replace('[0-9]+$', '') }}"
+
+        - name: Ensure growpart is available
+          ansible.builtin.package:
+            name: cloud-guest-utils
+            state: present
+
+        - name: Grow the partition to fill the disk
+          ansible.builtin.command: "growpart {{ root_disk }} {{ root_partnum }}"
+          register: growpart_result
+          changed_when: "'NOCHANGE' not in growpart_result.stdout"
+          failed_when:
+            - growpart_result.rc != 0
+            - "'NOCHANGE' not in growpart_result.stdout"
+
+        - name: Grow the ext4 filesystem
+          ansible.builtin.command: "resize2fs {{ root_source }}"
+          register: resize_result
+          changed_when: "'Nothing to do' not in resize_result.stderr"
+
+    # ---------- LVM path (other templates) ----------
+    - name: Manage LVM-backed root
+      when: root_is_lvm
+      ansible.builtin.debug:
+        msg: "Root is on LVM ({{ root_source }}); plug your existing LVM extend tasks here."
