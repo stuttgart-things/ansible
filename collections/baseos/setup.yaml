@@ -184,6 +184,11 @@ playbooks:
             when: reboot_all|bool
 
         tasks:
+          - name: Set system hostname from vm_hostname
+            ansible.builtin.hostname:
+              name: "{{ vm_hostname }}"
+            when: vm_hostname is defined and (vm_hostname | string | length > 0)
+
           - name: Install vault ca certificate to local system from multiple instances
             ansible.builtin.include_role:
               name: sthings.baseos.install_configure_vault
