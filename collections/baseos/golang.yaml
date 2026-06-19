@@ -40,7 +40,7 @@ playbooks:
               source_url: "https://github.com/ko-build/ko/releases/download/v{{ ko_version }}/ko_Linux_x86_64.tar.gz"
               bin_to_copy: ko
               to_remove: ""
-              bin_dir: "/usr/bin/ko"
+              bin_dir: "/usr/bin"
               version_cmd: "version"
               target_version: "{{ ko_version }}"
 
