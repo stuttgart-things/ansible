@@ -44,7 +44,7 @@ vars:
           source_url: "https://github.com/helmfile/vals/releases/download/v{{ vals_version }}/vals_{{ vals_version }}_linux_amd64.tar.gz"
           bin_to_copy: vals
           to_remove: ""
-          bin_dir: "/usr/bin/vcluster"
+          bin_dir: "/usr/bin"
           version_cmd: "version"
           target_version: "{{ vcluster_version }}"
         vcluster:
@@ -54,7 +54,7 @@ vars:
           source_url: "https://github.com/loft-sh/vcluster/releases/download/v{{ vcluster_version }}/vcluster-linux-amd64"
           bin_to_copy: vcluster-linux-amd64
           to_remove: ""
-          bin_dir: "/usr/bin/vcluster"
+          bin_dir: "/usr/bin"
           version_cmd: "version"
           target_version: "{{ vcluster_version }}"
         tkn:
@@ -74,7 +74,7 @@ vars:
           source_url: "https://github.com/fluxcd/flux2/releases/download/v{{ flux_version }}/flux_{{ flux_version }}_linux_amd64.tar.gz"
           bin_to_copy: flux
           to_remove: ""
-          bin_dir: "/usr/bin/flux"
+          bin_dir: "/usr/bin"
           version_cmd: "version"
           target_version: "{{ flux_version }}"
         argocd:
@@ -84,7 +84,7 @@ vars:
           source_url: "https://github.com/argoproj/argo-cd/releases/download/v{{ argocd_version }}/argocd-linux-amd64"
           bin_to_copy: argocd-linux-amd64
           to_remove: ""
-          bin_dir: "/usr/bin/argocd"
+          bin_dir: "/usr/bin"
           version_cmd: "version"
           target_version: "{{ argocd_version }}"
         kind:
@@ -94,7 +94,7 @@ vars:
           source_url: "https://github.com/kubernetes-sigs/kind/releases/download/v{{ kind_version }}/kind-linux-amd64"
           bin_to_copy: kind-linux-amd64
           to_remove: ""
-          bin_dir: "/usr/bin/kind"
+          bin_dir: "/usr/bin"
           version_cmd: "version"
           target_version: "{{ kind_version }}"
         skopeo:
@@ -104,7 +104,7 @@ vars:
           source_url: "https://github.com/lework/skopeo-binary/releases/download/v{{ skopeo_version }}/skopeo-linux-amd64"
           bin_to_copy: skopeo-linux-amd64
           to_remove: ""
-          bin_dir: "/usr/bin/skopeo"
+          bin_dir: "/usr/bin"
           version_cmd: "version"
           target_version: "v{{ skopeo_version }}"
         helm:
@@ -184,7 +184,7 @@ vars:
           source_url: "https://github.com/cilium/cilium-cli/releases/download/v{{ cilium_version }}/cilium-linux-amd64.tar.gz"
           bin_to_copy: cilium
           to_remove: ""
-          bin_dir: "/usr/bin/cilium"
+          bin_dir: "/usr/bin"
           version_cmd: "version"
           target_version: "{{ cilium_version }}"
         xpdig:
@@ -194,7 +194,7 @@ vars:
           source_url: "https://github.com/brunoluiz/xpdig/releases/download/v{{ xpdig_version }}/xpdig_Linux_x86_64.tar.gz"
           bin_to_copy: xpdig
           to_remove: ""
-          bin_dir: "/usr/bin/xpdig"
+          bin_dir: "/usr/bin"
           version_cmd: "version"
           target_version: "{{ xpdig_version }}"
         dagger:
@@ -204,6 +204,6 @@ vars:
           source_url: "https://github.com/dagger/dagger/releases/download/v{{ dagger_version }}/dagger_v{{ dagger_version }}_linux_amd64.tar.gz"
           bin_to_copy: dagger
           to_remove: ""
-          bin_dir: "/usr/bin/dagger"
+          bin_dir: "/usr/bin"
           version_cmd: "version"
           target_version: "{{ dagger_version }}"
