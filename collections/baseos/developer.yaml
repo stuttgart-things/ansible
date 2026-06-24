@@ -123,7 +123,7 @@ playbooks:
       - name: Create kind dev cluster
         ansible.builtin.import_playbook: sthings.container.kind
         vars:
-          kind_version: v0.31.0
+          kind_version: 0.31.0
           api_server_address: "{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}"
           kind_cluster_name: dev
           ansible_user: sthings
