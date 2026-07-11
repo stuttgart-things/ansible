@@ -4,10 +4,14 @@
 # stuttgart-things "machinery" cluster: a vSphere VM builder. Mirrors the
 # platform-engineering-showcase Taskfile `profile-machinery`.
 #
-# Kept in lockstep with the validated local harness
-# `plays/kind-machinery-test.yaml` (same var names, preflight guards, and
-# task bodies) — that harness is the copy proven end-to-end (failed=0 on a
-# fresh k8s-1.35 labul VM); this is its packaged collection form.
+# Ships two plays:
+#   - kind_machinery_profile : opinionated remote form (hosts=all, become,
+#     per-task become_user) for driving a target host over SSH.
+#   - kind_machinery         : flat/local-testable form (hosts=localhost,
+#     connection=local by default, no become) — the exact copy proven
+#     end-to-end (failed=0 on a fresh k8s-1.35 labul VM), mirroring
+#     plays/kind-machinery-test.yaml.
+# Both walk the identical sequence and share var names; pick by execution model.
 #
 #   sops-operator + age key -> openebs -> tekton -> crossplane
 #   (WAITED: core -> providers -> config -> provider-configs) ->
@@ -238,3 +242,167 @@ playbooks:
           - name: Machinery status
             ansible.builtin.debug:
               var: machinery_status.stdout_lines
+
+  # ====================================================================
+  # Flat / local-testable form — no become, runs as the current user
+  # against a local kubeconfig by default. Proven copy (mirrors
+  # plays/kind-machinery-test.yaml). Override target_host/ansible_connection
+  # to drive a remote host.
+  # ====================================================================
+  - name: kind_machinery
+    play: |
+      ---
+      - name: kind machinery bootstrap (flat / local-testable)
+        hosts: "{{ target_host | default('localhost') }}"
+        connection: "{{ ansible_connection | default('local') }}"
+        gather_facts: false
+
+        vars:
+          ansible_user: "{{ lookup('env', 'USER') | default('sthings', true) }}"
+          kind_cluster_name: dev2
+          kubeconfig: "/home/{{ ansible_user }}/.kube/{{ kind_cluster_name }}"
+
+          vsphere_env: labul                         # labul | labda
+          capabilities_enabled: true                 # false = stop after crossplane
+          sops_age_key: "{{ lookup('env', 'SOPS_AGE_KEY') }}"
+          secrets_dir: "/home/{{ ansible_user }}/projects/stuttgart-things/secrets"
+          age_key_namespaces: [crossplane-system, tekton-ci]
+
+          helm_repo: "git::https://github.com/stuttgart-things/helm.git"
+          sops_operator_ref: v0.8.4
+          sops_operator_kustomize: "https://github.com/stuttgart-things/sops-secrets-operator/config/default"
+          charts_oci: "oci://ghcr.io/stuttgart-things/charts"
+          vspherevm_chart_version: "0.10.0"
+          ansible_chart_version: "0.3.0"
+
+          configuration_packages:
+            - name: vspherevm
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.7.0"
+              provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
+
+        tasks:
+          - name: Preflight — SOPS_AGE_KEY present
+            ansible.builtin.assert:
+              that:
+                - sops_age_key | length > 0
+              fail_msg: "export SOPS_AGE_KEY before running (age private key)."
+
+          - name: Preflight — cluster reachable
+            ansible.builtin.command: "kubectl get nodes --kubeconfig {{ kubeconfig }}"
+            changed_when: false
+
+          - name: Deploy sops-secrets-operator (kustomize)
+            ansible.builtin.command: >
+              kubectl apply -k {{ sops_operator_kustomize }}?ref={{ sops_operator_ref }}
+              --kubeconfig {{ kubeconfig }}
+
+          - name: Wait for sops-secrets-operator controller rollout
+            ansible.builtin.command: >
+              kubectl -n sops-secrets-operator-system rollout status deployment --timeout=180s
+              --kubeconfig {{ kubeconfig }}
+            changed_when: false
+
+          - name: Install the sops age-key Secret into each consumer namespace
+            ansible.builtin.shell: |
+              kubectl create namespace {{ item }} --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+              kubectl -n {{ item }} create secret generic sops-age-key \
+                --from-literal=age.agekey='{{ sops_age_key }}' \
+                --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+            loop: "{{ age_key_namespaces }}"
+            no_log: true
+
+          - name: Clear helmfile git cache
+            ansible.builtin.file:
+              path: "/home/{{ ansible_user }}/.cache/helmfile/states/https_github_com_stuttgart-things_helm_git"
+              state: absent
+
+          - name: Apply openebs + tekton helmfiles
+            ansible.builtin.shell: |
+              helmfile init --force
+              helmfile apply -f {{ item }} --kubeconfig {{ kubeconfig }}
+            loop:
+              - "{{ helm_repo }}@infra/openebs.yaml.gotmpl"
+              - "{{ helm_repo }}@cicd/tekton.yaml.gotmpl"
+
+          - name: Wait for TektonPipeline Ready
+            ansible.builtin.shell: |
+              kubectl -n tekton-operator rollout status deploy/tekton-operator --timeout=180s --kubeconfig {{ kubeconfig }}
+              for i in $(seq 1 60); do kubectl get tektonpipeline pipeline --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && break; sleep 5; done
+              kubectl wait tektonpipeline --all --for=condition=Ready --timeout=300s --kubeconfig {{ kubeconfig }}
+            changed_when: false
+
+          - name: Crossplane core + rollout
+            ansible.builtin.shell: |
+              helmfile apply -f {{ helm_repo }}@cicd/crossplane.yaml.gotmpl --kubeconfig {{ kubeconfig }}
+              kubectl -n crossplane-system rollout status deploy/crossplane --timeout=180s --kubeconfig {{ kubeconfig }}
+
+          - name: Crossplane providers + wait Healthy
+            ansible.builtin.shell: |
+              helmfile apply -f {{ helm_repo }}@cicd/crossplane-providers.yaml.gotmpl --kubeconfig {{ kubeconfig }}
+              kubectl wait provider.pkg.crossplane.io --all --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
+
+          - name: Crossplane config (functions+configurations) + wait Healthy
+            ansible.builtin.shell: |
+              helmfile apply -f {{ helm_repo }}@cicd/crossplane-config.yaml.gotmpl --kubeconfig {{ kubeconfig }}
+              kubectl wait configuration.pkg.crossplane.io --all --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
+              kubectl wait function.pkg.crossplane.io --all --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
+
+          - name: Wait for transitive kubernetes.m CRD, then provider-configs
+            ansible.builtin.shell: |
+              for i in $(seq 1 60); do kubectl get crd clusterproviderconfigs.kubernetes.m.crossplane.io --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && break; sleep 5; done
+              helmfile apply -f {{ helm_repo }}@cicd/crossplane-provider-configs.yaml.gotmpl --kubeconfig {{ kubeconfig }}
+
+          - name: Install Configuration packages
+            ansible.builtin.shell: |
+              cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+              apiVersion: pkg.crossplane.io/v1
+              kind: Configuration
+              metadata:
+                name: {{ item.name }}
+              spec:
+                package: {{ item.package }}
+              EOF
+            loop: "{{ configuration_packages }}"
+            loop_control:
+              label: "{{ item.name }}"
+
+          - name: Wait Configuration Healthy + provider CRD established
+            ansible.builtin.shell: |
+              kubectl wait configuration.pkg.crossplane.io/{{ item.name }} --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
+              for i in $(seq 1 60); do kubectl get crd {{ item.provider_crd }} --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && break; sleep 5; done
+              kubectl wait --for=condition=established crd/{{ item.provider_crd }} --timeout=180s --kubeconfig {{ kubeconfig }}
+            loop: "{{ configuration_packages }}"
+            loop_control:
+              label: "{{ item.name }}"
+
+          - name: Deploy vspherevm capability ({{ vsphere_env }})
+            ansible.builtin.command: >
+              helm upgrade --install vspherevm-{{ vsphere_env }} {{ charts_oci }}/vspherevm
+              --version {{ vspherevm_chart_version }}
+              --set environment={{ vsphere_env }}
+              --set secretStore.backend=sops --set configuration.install=false
+              --set-file secretStore.sops.encryptedCredentials={{ secrets_dir }}/vsphere-creds-{{ vsphere_env }}.enc.yaml
+              -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
+            when: capabilities_enabled | bool
+
+          - name: Deploy ansible capability (single release)
+            ansible.builtin.command: >
+              helm upgrade --install ansible {{ charts_oci }}/ansible
+              --version {{ ansible_chart_version }}
+              --set environment={{ vsphere_env }} --set sshCredentials.backend=sops
+              --set-file sshCredentials.sops.encryptedCredentials={{ secrets_dir }}/ansible-credentials.enc.yaml
+              -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
+            when: capabilities_enabled | bool
+
+          - name: Show machinery readiness
+            ansible.builtin.command: >
+              kubectl get provider.pkg.crossplane.io,configuration.pkg.crossplane.io,environmentconfig
+              --kubeconfig {{ kubeconfig }}
+            changed_when: false
+            register: readiness
+
+          - name: Machinery status
+            ansible.builtin.debug:
+              var: readiness.stdout_lines
