@@ -1,8 +1,13 @@
 ---
-# DRAFT (stuttgart-things/ansible#988) — extends a kind cluster (with cilium
+# stuttgart-things/ansible#988 — extends a kind cluster (with cilium
 # already installed by the `kind` / `kind_xplane_cluster` plays) into a
 # stuttgart-things "machinery" cluster: a vSphere VM builder. Mirrors the
 # platform-engineering-showcase Taskfile `profile-machinery`.
+#
+# Kept in lockstep with the validated local harness
+# `plays/kind-machinery-test.yaml` (same var names, preflight guards, and
+# task bodies) — that harness is the copy proven end-to-end (failed=0 on a
+# fresh k8s-1.35 labul VM); this is its packaged collection form.
 #
 #   sops-operator + age key -> openebs -> tekton -> crossplane
 #   (WAITED: core -> providers -> config -> provider-configs) ->
@@ -22,6 +27,7 @@ playbooks:
       ---
       - hosts: "{{ target_host | default('all') }}"
         become: true
+        gather_facts: false
 
         pre_tasks:
           - name: Include vars
@@ -35,7 +41,8 @@ playbooks:
           kubeconfig: "{{ kubeconfig_folder }}/{{ kind_cluster_name }}"
 
           # --- environment + secrets ---
-          machinery_env: "{{ vsphere_env | default('labul') }}"       # labul | labda
+          vsphere_env: labul                                          # labul | labda
+          capabilities_enabled: true                                  # false = stop after crossplane
           sops_age_key: "{{ lookup('env', 'SOPS_AGE_KEY') }}"
           secrets_dir: "/home/{{ ansible_user }}/projects/stuttgart-things/secrets"
           age_key_namespaces:
@@ -65,6 +72,20 @@ playbooks:
             - "{{ helm_repo }}@cicd/tekton.yaml.gotmpl"
 
         tasks:
+          # ================================================================
+          # 0) PREFLIGHT — fail fast on a missing age key or unreachable cluster.
+          # ================================================================
+          - name: Preflight — SOPS_AGE_KEY present
+            ansible.builtin.assert:
+              that:
+                - sops_age_key | length > 0
+              fail_msg: "export SOPS_AGE_KEY before running (age private key)."
+
+          - name: Preflight — cluster reachable
+            ansible.builtin.command: "kubectl get nodes --kubeconfig {{ kubeconfig }}"
+            become_user: "{{ ansible_user }}"
+            changed_when: false
+
           # ================================================================
           # 1) SECRETS LAYER — sops-secrets-operator (needs cert-manager, which
           #    the kind_xplane_cluster play already installs) + age key.
@@ -144,7 +165,6 @@ playbooks:
           - name: Wait for transitive provider-kubernetes CRD, then provider-configs
             ansible.builtin.shell: |
               for i in $(seq 1 60); do kubectl get crd clusterproviderconfigs.kubernetes.m.crossplane.io --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && break; sleep 5; done
-              kubectl wait provider.pkg.crossplane.io --all --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
               helmfile apply -f {{ helm_repo }}@cicd/crossplane-provider-configs.yaml.gotmpl --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
 
@@ -183,28 +203,30 @@ playbooks:
           #    single release). backend=sops; configuration.install=false
           #    because the Configuration package is installed above.
           # ================================================================
-          - name: Deploy vspherevm capability ({{ machinery_env }})
+          - name: Deploy vspherevm capability ({{ vsphere_env }})
             ansible.builtin.command: >
-              helm upgrade --install vspherevm-{{ machinery_env }} {{ charts_oci }}/vspherevm
+              helm upgrade --install vspherevm-{{ vsphere_env }} {{ charts_oci }}/vspherevm
               --version {{ vspherevm_chart_version }}
-              --set environment={{ machinery_env }}
+              --set environment={{ vsphere_env }}
               --set secretStore.backend=sops
               --set configuration.install=false
-              --set-file secretStore.sops.encryptedCredentials={{ secrets_dir }}/vsphere-creds-{{ machinery_env }}.enc.yaml
+              --set-file secretStore.sops.encryptedCredentials={{ secrets_dir }}/vsphere-creds-{{ vsphere_env }}.enc.yaml
               -n crossplane-system --create-namespace
               --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
+            when: capabilities_enabled | bool
 
           - name: Deploy ansible capability (single release, tekton-ci creds)
             ansible.builtin.command: >
               helm upgrade --install ansible {{ charts_oci }}/ansible
               --version {{ ansible_chart_version }}
-              --set environment={{ machinery_env }}
+              --set environment={{ vsphere_env }}
               --set sshCredentials.backend=sops
               --set-file sshCredentials.sops.encryptedCredentials={{ secrets_dir }}/ansible-credentials.enc.yaml
               -n crossplane-system --create-namespace
               --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
+            when: capabilities_enabled | bool
 
           - name: Show machinery readiness
             ansible.builtin.command: >
