@@ -23,7 +23,7 @@ on:
 jobs:
   collection-build:
     name: Collection Build
-    runs-on: dagger-labul
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Project
         uses: actions/checkout@v7.0.0
