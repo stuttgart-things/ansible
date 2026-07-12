@@ -13,9 +13,13 @@
 #     plays/kind-machinery-test.yaml.
 # Both walk the identical sequence and share var names; pick by execution model.
 #
-#   sops-operator + age key -> openebs -> tekton -> crossplane
+#   cert-manager -> sops-operator + age key -> openebs -> tekton -> crossplane
 #   (WAITED: core -> providers -> config -> provider-configs) ->
 #   Configuration packages (+ provider-CRD wait) -> capabilities (backend=sops)
+#
+# cert-manager is installed by both plays before sops (the sops-secrets-operator
+# webhook needs a cert-manager-issued serving cert). The apply is idempotent, so
+# it is a fast no-op on a cluster already prepared by kind_xplane_cluster.
 #
 # Requires on the target host: helmfile, helm, kubectl, kustomize; a reachable
 # kind cluster with cilium; SOPS_AGE_KEY exported; the age-encrypted creds blobs
@@ -60,6 +64,7 @@ playbooks:
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
           vspherevm_chart_version: "0.10.0"
           ansible_chart_version: "0.3.0"
+          cert_manager_version: v1.21.0
 
           # Configuration packages (each pulls its provider via dependsOn).
           configuration_packages:
@@ -91,9 +96,21 @@ playbooks:
             changed_when: false
 
           # ================================================================
-          # 1) SECRETS LAYER — sops-secrets-operator (needs cert-manager, which
-          #    the kind_xplane_cluster play already installs) + age key.
+          # 1) SECRETS LAYER — cert-manager (sops webhook serving-cert
+          #    dependency), then sops-secrets-operator + age key.
           # ================================================================
+          - name: Ensure cert-manager (sops-secrets-operator webhook dependency)
+            ansible.builtin.shell: |
+              kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/{{ cert_manager_version }}/cert-manager.yaml --kubeconfig {{ kubeconfig }}
+              for d in cert-manager cert-manager-webhook cert-manager-cainjector; do
+                kubectl -n cert-manager rollout status deploy/$d --timeout=180s --kubeconfig {{ kubeconfig }}
+              done
+              for i in $(seq 1 30); do
+                echo '{"apiVersion":"cert-manager.io/v1","kind":"Issuer","metadata":{"name":"cm-webhook-probe","namespace":"kube-system"},"spec":{"selfSigned":{}}}' | kubectl apply --dry-run=server --kubeconfig {{ kubeconfig }} -f - >/dev/null 2>&1 && break
+                sleep 5
+              done
+            become_user: "{{ ansible_user }}"
+
           - name: Deploy sops-secrets-operator (kustomize)
             ansible.builtin.command: >
               kubectl apply -k {{ sops_operator_kustomize }}?ref={{ sops_operator_ref }}
@@ -274,6 +291,7 @@ playbooks:
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
           vspherevm_chart_version: "0.10.0"
           ansible_chart_version: "0.3.0"
+          cert_manager_version: v1.21.0
 
           configuration_packages:
             - name: vspherevm
@@ -290,6 +308,17 @@ playbooks:
           - name: Preflight — cluster reachable
             ansible.builtin.command: "kubectl get nodes --kubeconfig {{ kubeconfig }}"
             changed_when: false
+
+          - name: Ensure cert-manager (sops-secrets-operator webhook dependency)
+            ansible.builtin.shell: |
+              kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/{{ cert_manager_version }}/cert-manager.yaml --kubeconfig {{ kubeconfig }}
+              for d in cert-manager cert-manager-webhook cert-manager-cainjector; do
+                kubectl -n cert-manager rollout status deploy/$d --timeout=180s --kubeconfig {{ kubeconfig }}
+              done
+              for i in $(seq 1 30); do
+                echo '{"apiVersion":"cert-manager.io/v1","kind":"Issuer","metadata":{"name":"cm-webhook-probe","namespace":"kube-system"},"spec":{"selfSigned":{}}}' | kubectl apply --dry-run=server --kubeconfig {{ kubeconfig }} -f - >/dev/null 2>&1 && break
+                sleep 5
+              done
 
           - name: Deploy sops-secrets-operator (kustomize)
             ansible.builtin.command: >
