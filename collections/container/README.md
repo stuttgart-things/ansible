@@ -37,6 +37,8 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 |----------|-------------|
 | `sthings.container.kind` | Create KIND cluster with Cilium, cert-manager and ingress-nginx |
 | `sthings.container.kind_xplane` | Create KIND cluster for Crossplane with helmfile deployments |
+| `sthings.container.kind_machinery_profile` | Extend a cilium KIND cluster into a "machinery" vSphere-VM builder (remote/become form): sops-operator + age key → openebs → tekton → waited crossplane → Configuration packages → capabilities |
+| `sthings.container.kind_machinery` | Same machinery bootstrap, flat/local-testable form (hosts=localhost, connection=local, no become) — the copy proven end-to-end |
 | `sthings.container.get_controlplane_ip` | Extract control plane IP from KIND cluster |
 
 ### K3s Clusters
