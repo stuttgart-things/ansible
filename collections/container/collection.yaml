@@ -17,4 +17,4 @@ requirements: |
       version: 2022.01.01
     - src: https://github.com/stuttgart-things/download-install-binary.git
       scm: git
-      version: 2026.07.13
+      version: 2026.07.15
