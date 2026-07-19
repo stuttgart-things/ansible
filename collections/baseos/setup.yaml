@@ -189,16 +189,47 @@ playbooks:
               name: "{{ vm_hostname }}"
             when: vm_hostname is defined and (vm_hostname | string | length > 0)
 
-          - name: Install vault ca certificate to local system from multiple instances
+          # vault_instances is an infra-wide list, but any single entry can be
+          # sealed, down or behind a broken ingress at any time. Installing the
+          # CA straight from the list made ONE such instance fail the whole
+          # play — and therefore every VM build in the fleet. So probe first and
+          # only install from the instances that actually serve the CA.
+          - name: Probe vault instances for a reachable PKI CA endpoint
+            ansible.builtin.uri:
+              url: "{{ vault_instance }}/v1/pki/ca/pem"
+              method: GET
+              validate_certs: false
+              timeout: 10
+            loop: "{{ vault_instances }}"
+            loop_control:
+              loop_var: vault_instance
+            register: vault_ca_probe
+            failed_when: false
+            changed_when: false
+            when: vault_instances is defined
+
+          - name: Report unreachable vault instances
+            ansible.builtin.debug:
+              msg: >-
+                Skipping vault CA install from {{ item.vault_instance }} —
+                not reachable ({{ item.msg | default('status ' ~ (item.status | default('unknown'))) }})
+            loop: "{{ vault_ca_probe.results | default([]) | rejectattr('status', 'defined') | list
+                      + vault_ca_probe.results | default([]) | selectattr('status', 'defined') | rejectattr('status', 'equalto', 200) | list }}"
+            loop_control:
+              label: "{{ item.vault_instance }}"
+
+          - name: Install vault ca certificate to local system from reachable instances
             ansible.builtin.include_role:
               name: sthings.baseos.install_configure_vault
               tasks_from: install-ca-auth
             vars:
               vault_url: "{{ vault_instance }}"
-            loop: "{{ vault_instances }}"
+            loop: "{{ vault_ca_probe.results | default([])
+                      | selectattr('status', 'defined')
+                      | selectattr('status', 'equalto', 200)
+                      | map(attribute='vault_instance') | list }}"
             loop_control:
               loop_var: vault_instance
-            when: vault_instances is defined
 
           - name: Send event to homerun if enabled
             block:
