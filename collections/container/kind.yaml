@@ -204,6 +204,11 @@ playbooks:
             delegate_to: localhost
             when: replace_ip|bool
 
+          # Stored RAW, not base64. Vault KVv2 values are JSON strings and hold
+          # YAML fine, so the encoding was redundant — and provider-kubeconfig
+          # (RemoteCluster with source.type: vault) hands the value straight to
+          # clientcmd.RESTConfigFromKubeConfig with no decode step, so a base64
+          # blob fails to parse.
           - name: Write kubeconfig to vault using key value V2 engine
             community.hashi_vault.vault_write:
               auth_method: approle
@@ -214,7 +219,7 @@ playbooks:
               path: "{{ secret_path_kubeconfig }}/data/{{ cluster_name }}"
               data:
                 data:
-                  kubeconfig: "{{ lookup('ansible.builtin.file', kubeconfig_path|basename)|b64encode }}"
+                  kubeconfig: "{{ lookup('ansible.builtin.file', kubeconfig_path|basename) }}"
             delegate_to: localhost
 
   - name: get_controlplane_ip
