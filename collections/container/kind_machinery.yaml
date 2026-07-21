@@ -35,7 +35,9 @@
 #
 # Requires on the target host: helmfile, helm, kubectl, kustomize; a reachable
 # kind cluster with cilium; SOPS_AGE_KEY exported; the age-encrypted creds blobs
-# under {{ secrets_dir }} (vsphere-creds-<env>.enc.yaml, ansible-credentials.enc.yaml).
+# under {{ secrets_dir }} — one per capability_charts entry per env
+# (vsphere-creds-<env>.enc.yaml, proxmox-creds-<env>.enc.yaml) plus
+# ansible-credentials.enc.yaml.
 #
 # NB (containerd 2.x): k8s 1.35 nodes run containerd 2.x, which REJECTS an
 # old-format `registry.mirrors` containerdConfigPatch (CRI plugin disabled ->
@@ -63,6 +65,8 @@ playbooks:
           # --- environment + secrets ---
           vsphere_env: labul                                          # labul | labda — primary env (ansible chart, secrets dir)
           vsphere_envs: ["{{ vsphere_env }}"]                         # one vspherevm capability release per entry
+          proxmox_env: labul                                          # only labul creds exist today
+          proxmox_envs: ["{{ proxmox_env }}"]                         # one proxmoxvm capability release per entry
           capabilities_enabled: true                                  # false = stop after crossplane
           platform_enabled: true                                      # false = pure VM builder, no cni/Flux/platform
           sops_age_key: "{{ lookup('env', 'SOPS_AGE_KEY') }}"
@@ -85,9 +89,34 @@ playbooks:
           sops_operator_ref: v0.8.4
           sops_operator_kustomize: "https://github.com/stuttgart-things/sops-secrets-operator/config/default"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
-          vspherevm_chart_version: "0.10.1"
           ansible_chart_version: "0.3.6"
           cert_manager_version: v1.21.0
+
+          # Per-environment capability charts. One Helm release per entry in
+          # `envs`, named `<chart>-<env>`, credentials read from
+          # <secrets_dir>/<credentials_prefix>-<env>.enc.yaml. Every chart here
+          # follows the same shape: `--set environment=<env>` selects the
+          # placement block, `<backend_key>=sops` picks the sops backend (kind
+          # clusters have no Vault/ESO), and the Configuration package itself is
+          # skipped because `configuration_packages` above installs it.
+          # Add a hypervisor by adding an entry — no new task.
+          capability_charts:
+            - chart: vspherevm
+              version: "0.10.1"
+              envs: "{{ vsphere_envs }}"
+              credentials_prefix: vsphere-creds
+              backend_key: secretStore.backend
+              credentials_key: secretStore.sops.encryptedCredentials
+              extra_set:
+                - configuration.install=false
+            - chart: proxmoxvm
+              version: "0.3.0"
+              envs: "{{ proxmox_envs }}"
+              credentials_prefix: proxmox-creds
+              backend_key: secretStore.backend
+              credentials_key: secretStore.sops.encryptedCredentials
+              extra_set:
+                - configuration.install=false
 
           # The kubeconfig-vault chart is not published to OCI — it is installed
           # from a path in the stuttgart-things monorepo.
@@ -298,22 +327,26 @@ playbooks:
                  + (platform_environment_config_manifests if platform_enabled | bool else []) }}
 
           # ================================================================
-          # 5) CAPABILITIES — vspherevm (per-env) + ansible (env-independent,
-          #    single release). backend=sops; configuration.install=false
-          #    because the Configuration package is installed above.
+          # 5) CAPABILITIES — the per-environment hypervisor charts from
+          #    `capability_charts` (vspherevm, proxmoxvm — one release per env),
+          #    then ansible, which is env-independent and keeps its own task
+          #    because it is a single release with different value paths
+          #    (sshCredentials.*) and an un-suffixed credentials file.
           # ================================================================
-          - name: Deploy vspherevm capability
+          - name: Deploy per-environment capability charts
             ansible.builtin.command: >
-              helm upgrade --install vspherevm-{{ item }} {{ charts_oci }}/vspherevm
-              --version {{ vspherevm_chart_version }}
-              --set environment={{ item }}
-              --set secretStore.backend=sops
-              --set configuration.install=false
-              --set-file secretStore.sops.encryptedCredentials={{ secrets_dir }}/vsphere-creds-{{ item }}.enc.yaml
+              helm upgrade --install {{ item.0.chart }}-{{ item.1 }} {{ charts_oci }}/{{ item.0.chart }}
+              --version {{ item.0.version }}
+              --set environment={{ item.1 }}
+              --set {{ item.0.backend_key }}=sops
+              {{ item.0.extra_set | default([]) | map('regex_replace', '^', '--set ') | join(' ') }}
+              --set-file {{ item.0.credentials_key }}={{ secrets_dir }}/{{ item.0.credentials_prefix }}-{{ item.1 }}.enc.yaml
               -n crossplane-system --create-namespace
               --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
-            loop: "{{ vsphere_envs }}"
+            loop: "{{ capability_charts | subelements('envs') }}"
+            loop_control:
+              label: "{{ item.0.chart }}-{{ item.1 }}"
             when: capabilities_enabled | bool
 
           - name: Deploy ansible capability (single release, tekton-ci creds)
@@ -380,6 +413,8 @@ playbooks:
 
           vsphere_env: labul                         # labul | labda — primary env
           vsphere_envs: ["{{ vsphere_env }}"]        # one vspherevm release per entry
+          proxmox_env: labul                         # only labul creds exist today
+          proxmox_envs: ["{{ proxmox_env }}"]        # one proxmoxvm release per entry
           capabilities_enabled: true                 # false = stop after crossplane
           platform_enabled: true                     # false = pure VM builder, no cni/Flux/platform
           sops_age_key: "{{ lookup('env', 'SOPS_AGE_KEY') }}"
@@ -394,9 +429,34 @@ playbooks:
           sops_operator_ref: v0.8.4
           sops_operator_kustomize: "https://github.com/stuttgart-things/sops-secrets-operator/config/default"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
-          vspherevm_chart_version: "0.10.1"
           ansible_chart_version: "0.3.6"
           cert_manager_version: v1.21.0
+
+          # Per-environment capability charts. One Helm release per entry in
+          # `envs`, named `<chart>-<env>`, credentials read from
+          # <secrets_dir>/<credentials_prefix>-<env>.enc.yaml. Every chart here
+          # follows the same shape: `--set environment=<env>` selects the
+          # placement block, `<backend_key>=sops` picks the sops backend (kind
+          # clusters have no Vault/ESO), and the Configuration package itself is
+          # skipped because `configuration_packages` above installs it.
+          # Add a hypervisor by adding an entry — no new task.
+          capability_charts:
+            - chart: vspherevm
+              version: "0.10.1"
+              envs: "{{ vsphere_envs }}"
+              credentials_prefix: vsphere-creds
+              backend_key: secretStore.backend
+              credentials_key: secretStore.sops.encryptedCredentials
+              extra_set:
+                - configuration.install=false
+            - chart: proxmoxvm
+              version: "0.3.0"
+              envs: "{{ proxmox_envs }}"
+              credentials_prefix: proxmox-creds
+              backend_key: secretStore.backend
+              credentials_key: secretStore.sops.encryptedCredentials
+              extra_set:
+                - configuration.install=false
 
           stuttgart_things_repo: "https://github.com/stuttgart-things/stuttgart-things.git"
           stuttgart_things_ref: main
@@ -554,15 +614,18 @@ playbooks:
               {{ environment_config_manifests
                  + (platform_environment_config_manifests if platform_enabled | bool else []) }}
 
-          - name: Deploy vspherevm capability
+          - name: Deploy per-environment capability charts
             ansible.builtin.command: >
-              helm upgrade --install vspherevm-{{ item }} {{ charts_oci }}/vspherevm
-              --version {{ vspherevm_chart_version }}
-              --set environment={{ item }}
-              --set secretStore.backend=sops --set configuration.install=false
-              --set-file secretStore.sops.encryptedCredentials={{ secrets_dir }}/vsphere-creds-{{ item }}.enc.yaml
+              helm upgrade --install {{ item.0.chart }}-{{ item.1 }} {{ charts_oci }}/{{ item.0.chart }}
+              --version {{ item.0.version }}
+              --set environment={{ item.1 }}
+              --set {{ item.0.backend_key }}=sops
+              {{ item.0.extra_set | default([]) | map('regex_replace', '^', '--set ') | join(' ') }}
+              --set-file {{ item.0.credentials_key }}={{ secrets_dir }}/{{ item.0.credentials_prefix }}-{{ item.1 }}.enc.yaml
               -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
-            loop: "{{ vsphere_envs }}"
+            loop: "{{ capability_charts | subelements('envs') }}"
+            loop_control:
+              label: "{{ item.0.chart }}-{{ item.1 }}"
             when: capabilities_enabled | bool
 
           - name: Deploy ansible capability (single release)
