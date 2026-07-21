@@ -24,9 +24,10 @@
 # — cni + Flux + apps pushed onto REMOTE clusters via RemoteCluster-derived
 # ClusterProviderConfigs. Set platform_enabled=false for a pure VM builder.
 #
-# NB: `platform:v0.3.0` declares `dependsOn flux-init >=v0.3.0`. If that tag is
-# not yet on ghcr the Configuration goes Unhealthy and the wait task fails
-# loudly (by design — a silent skip would leave a half-built cluster).
+# NB: the pins below must stay resolvable against each other — `platform:v0.3.0`
+# declares `dependsOn flux-init >=v0.3.0`, so bumping platform without pushing
+# the flux-init tag it wants makes the Configuration Unhealthy and the wait task
+# fails loudly (by design — a silent skip would leave a half-built cluster).
 #
 # cert-manager is installed by both plays before sops (the sops-secrets-operator
 # webhook needs a cert-manager-issued serving cert). The apply is idempotent, so
@@ -128,7 +129,7 @@ playbooks:
             - name: platform
               package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.0"
             - name: flux-apps
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/flux-apps:v0.1.1"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/flux-apps:v0.1.2"
 
           configuration_packages: >-
             {{ machinery_packages
@@ -422,7 +423,7 @@ playbooks:
             - name: platform
               package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.0"
             - name: flux-apps
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/flux-apps:v0.1.1"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/flux-apps:v0.1.2"
 
           configuration_packages: >-
             {{ machinery_packages
