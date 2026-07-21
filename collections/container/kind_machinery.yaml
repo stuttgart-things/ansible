@@ -15,7 +15,19 @@
 #
 #   cert-manager -> sops-operator + age key -> openebs -> tekton -> crossplane
 #   (WAITED: core -> providers -> config -> provider-configs) ->
-#   Configuration packages (+ provider-CRD wait) -> capabilities (backend=sops)
+#   Configuration packages (+ provider-CRD wait) -> EnvironmentConfigs ->
+#   capabilities (backend=sops) -> provider-kubeconfig-vault (optional)
+#
+# Scope note: the package set below is kept at parity with the reference
+# machinery cluster (kind1). `machinery_packages` is the VM/image-builder half;
+# `platform_packages` (platform_enabled, default true) is the fleet-manager half
+# — cni + Flux + apps pushed onto REMOTE clusters via RemoteCluster-derived
+# ClusterProviderConfigs. Set platform_enabled=false for a pure VM builder.
+#
+# NB: the pins below must stay resolvable against each other — `platform:v0.3.0`
+# declares `dependsOn flux-init >=v0.3.0`, so bumping platform without pushing
+# the flux-init tag it wants makes the Configuration Unhealthy and the wait task
+# fails loudly (by design — a silent skip would leave a half-built cluster).
 #
 # cert-manager is installed by both plays before sops (the sops-secrets-operator
 # webhook needs a cert-manager-issued serving cert). The apply is idempotent, so
@@ -49,31 +61,79 @@ playbooks:
           kubeconfig: "{{ kubeconfig_folder }}/{{ kind_cluster_name }}"
 
           # --- environment + secrets ---
-          vsphere_env: labul                                          # labul | labda
+          vsphere_env: labul                                          # labul | labda — primary env (ansible chart, secrets dir)
+          vsphere_envs: ["{{ vsphere_env }}"]                         # one vspherevm capability release per entry
           capabilities_enabled: true                                  # false = stop after crossplane
+          platform_enabled: true                                      # false = pure VM builder, no cni/Flux/platform
           sops_age_key: "{{ lookup('env', 'SOPS_AGE_KEY') }}"
           secrets_dir: "/home/{{ ansible_user }}/projects/stuttgart-things/secrets"
           age_key_namespaces:
             - crossplane-system
             - tekton-ci
 
+          # --- provider-kubeconfig / Vault-backed RemoteCluster (optional) ---
+          # Emits the `vault-kubeconfigs` ClusterProviderConfig that RemoteCluster
+          # CRs reference, plus the DeploymentRuntimeConfig carrying VAULT_CACERT
+          # and the pinned SA name. Off by default: the AppRole role ID is not
+          # committed, and the matching `vault-approle` Secret (key `secret-id`)
+          # must already exist in crossplane-system.
+          vault_kubeconfigs_enabled: false
+          vault_approle_role_id: ""
+
           # --- component refs / versions ---
           helm_repo: "git::https://github.com/stuttgart-things/helm.git"
           sops_operator_ref: v0.8.4
           sops_operator_kustomize: "https://github.com/stuttgart-things/sops-secrets-operator/config/default"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
-          vspherevm_chart_version: "0.10.0"
-          ansible_chart_version: "0.3.0"
+          vspherevm_chart_version: "0.10.1"
+          ansible_chart_version: "0.3.6"
           cert_manager_version: v1.21.0
 
-          # Configuration packages (each pulls its provider via dependsOn).
-          configuration_packages:
+          # The kubeconfig-vault chart is not published to OCI — it is installed
+          # from a path in the stuttgart-things monorepo.
+          stuttgart_things_repo: "https://github.com/stuttgart-things/stuttgart-things.git"
+          stuttgart_things_ref: main
+
+          # EnvironmentConfigs ship as examples/ inside crossplane-configurations
+          # (no chart packages them), so they are applied straight from git.
+          # The vspherevm/proxmoxvm/ansible-run ones come from the capability
+          # charts instead and are deliberately absent here.
+          crossplane_configurations_raw: "https://raw.githubusercontent.com/stuttgart-things/crossplane-configurations"
+          crossplane_configurations_ref: main
+          environment_config_manifests:
+            - cicd/packer-build/examples/environmentconfig.yaml
+          platform_environment_config_manifests:
+            - bootstrap/flux-init/examples/environment-config.yaml
+            - bootstrap/flux-apps/examples/environment-config.yaml
+
+          # Machinery half: VM + image builders. Each pulls its provider via
+          # dependsOn. `provider_crd` is the CRD that provider registers — waited
+          # on so the capability charts can reference it; omit when the package
+          # pulls no provider beyond the ones already waited on above.
+          # ansible-run is NOT listed: vspherevm and proxmoxvm both pull it.
+          machinery_packages:
             - name: vspherevm
               package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.7.0"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
-            # - name: proxmoxvm
-            #   package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.4.0"
-            #   provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
+            - name: proxmoxvm
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.4.0"
+              provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
+            # Tekton-backed Packer builder — only provider-kubernetes, already up.
+            - name: packer-build
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.2.0"
+
+          # Fleet-manager half. `platform` pulls cni + flux-init via dependsOn.
+          # flux-apps is listed explicitly because platform composes FluxApps
+          # children but does not declare the dependency (gap as of v0.3.0).
+          platform_packages:
+            - name: platform
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.0"
+            - name: flux-apps
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/flux-apps:v0.1.2"
+
+          configuration_packages: >-
+            {{ machinery_packages
+               + (platform_packages if platform_enabled | bool else []) }}
 
           # Storage + CI helmfiles (no strict inter-step waits needed here).
           pre_crossplane_helmfiles:
@@ -89,6 +149,13 @@ playbooks:
               that:
                 - sops_age_key | length > 0
               fail_msg: "export SOPS_AGE_KEY before running (age private key)."
+
+          - name: Preflight — vault AppRole role ID present when kubeconfig-vault is enabled
+            ansible.builtin.assert:
+              that:
+                - vault_approle_role_id | length > 0
+              fail_msg: "vault_kubeconfigs_enabled=true requires vault_approle_role_id."
+            when: vault_kubeconfigs_enabled | bool
 
           - name: Preflight — cluster reachable
             ansible.builtin.command: "kubectl get nodes --kubeconfig {{ kubeconfig }}"
@@ -212,29 +279,41 @@ playbooks:
           - name: Wait Configuration Healthy + provider CRD established
             ansible.builtin.shell: |
               kubectl wait configuration.pkg.crossplane.io/{{ item.name }} --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
+              {% if item.provider_crd is defined %}
               for i in $(seq 1 60); do kubectl get crd {{ item.provider_crd }} --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && break; sleep 5; done
               kubectl wait --for=condition=established crd/{{ item.provider_crd }} --timeout=180s --kubeconfig {{ kubeconfig }}
+              {% endif %}
             become_user: "{{ ansible_user }}"
             loop: "{{ configuration_packages }}"
             loop_control:
               label: "{{ item.name }}"
+
+          - name: Apply EnvironmentConfigs shipped as crossplane-configurations examples
+            ansible.builtin.command: >
+              kubectl apply --kubeconfig {{ kubeconfig }}
+              -f {{ crossplane_configurations_raw }}/{{ crossplane_configurations_ref }}/{{ item }}
+            become_user: "{{ ansible_user }}"
+            loop: >-
+              {{ environment_config_manifests
+                 + (platform_environment_config_manifests if platform_enabled | bool else []) }}
 
           # ================================================================
           # 5) CAPABILITIES — vspherevm (per-env) + ansible (env-independent,
           #    single release). backend=sops; configuration.install=false
           #    because the Configuration package is installed above.
           # ================================================================
-          - name: Deploy vspherevm capability ({{ vsphere_env }})
+          - name: Deploy vspherevm capability
             ansible.builtin.command: >
-              helm upgrade --install vspherevm-{{ vsphere_env }} {{ charts_oci }}/vspherevm
+              helm upgrade --install vspherevm-{{ item }} {{ charts_oci }}/vspherevm
               --version {{ vspherevm_chart_version }}
-              --set environment={{ vsphere_env }}
+              --set environment={{ item }}
               --set secretStore.backend=sops
               --set configuration.install=false
-              --set-file secretStore.sops.encryptedCredentials={{ secrets_dir }}/vsphere-creds-{{ vsphere_env }}.enc.yaml
+              --set-file secretStore.sops.encryptedCredentials={{ secrets_dir }}/vsphere-creds-{{ item }}.enc.yaml
               -n crossplane-system --create-namespace
               --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
+            loop: "{{ vsphere_envs }}"
             when: capabilities_enabled | bool
 
           - name: Deploy ansible capability (single release, tekton-ci creds)
@@ -248,6 +327,26 @@ playbooks:
               --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
             when: capabilities_enabled | bool
+
+          # ================================================================
+          # 6) REMOTE-CLUSTER CREDENTIALS (optional) — the vault-kubeconfigs
+          #    ClusterProviderConfig that RemoteCluster CRs reference. Chart
+          #    lives in the monorepo, not on OCI, so it is cloned first.
+          # ================================================================
+          - name: Deploy provider-kubeconfig-vault
+            ansible.builtin.shell: |
+              set -e
+              rm -rf /tmp/stuttgart-things-baseline
+              git clone --depth 1 --branch {{ stuttgart_things_ref }} \
+                {{ stuttgart_things_repo }} /tmp/stuttgart-things-baseline
+              helm upgrade --install provider-kubeconfig-vault \
+                /tmp/stuttgart-things-baseline/crossplane/platform/baseline/provider-kubeconfig-vault \
+                --set vault.appRole.roleId={{ vault_approle_role_id }} \
+                -n crossplane-system --create-namespace \
+                --kubeconfig {{ kubeconfig }}
+            become_user: "{{ ansible_user }}"
+            when: vault_kubeconfigs_enabled | bool
+            no_log: true    # never echo the AppRole role ID
 
           - name: Show machinery readiness
             ansible.builtin.command: >
@@ -279,24 +378,56 @@ playbooks:
           kind_cluster_name: dev2
           kubeconfig: "/home/{{ ansible_user }}/.kube/{{ kind_cluster_name }}"
 
-          vsphere_env: labul                         # labul | labda
+          vsphere_env: labul                         # labul | labda — primary env
+          vsphere_envs: ["{{ vsphere_env }}"]        # one vspherevm release per entry
           capabilities_enabled: true                 # false = stop after crossplane
+          platform_enabled: true                     # false = pure VM builder, no cni/Flux/platform
           sops_age_key: "{{ lookup('env', 'SOPS_AGE_KEY') }}"
           secrets_dir: "/home/{{ ansible_user }}/projects/stuttgart-things/secrets"
           age_key_namespaces: [crossplane-system, tekton-ci]
+
+          # See the profile play above for the full commentary on these.
+          vault_kubeconfigs_enabled: false
+          vault_approle_role_id: ""
 
           helm_repo: "git::https://github.com/stuttgart-things/helm.git"
           sops_operator_ref: v0.8.4
           sops_operator_kustomize: "https://github.com/stuttgart-things/sops-secrets-operator/config/default"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
-          vspherevm_chart_version: "0.10.0"
-          ansible_chart_version: "0.3.0"
+          vspherevm_chart_version: "0.10.1"
+          ansible_chart_version: "0.3.6"
           cert_manager_version: v1.21.0
 
-          configuration_packages:
+          stuttgart_things_repo: "https://github.com/stuttgart-things/stuttgart-things.git"
+          stuttgart_things_ref: main
+
+          crossplane_configurations_raw: "https://raw.githubusercontent.com/stuttgart-things/crossplane-configurations"
+          crossplane_configurations_ref: main
+          environment_config_manifests:
+            - cicd/packer-build/examples/environmentconfig.yaml
+          platform_environment_config_manifests:
+            - bootstrap/flux-init/examples/environment-config.yaml
+            - bootstrap/flux-apps/examples/environment-config.yaml
+
+          machinery_packages:
             - name: vspherevm
               package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.7.0"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
+            - name: proxmoxvm
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.4.0"
+              provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
+            - name: packer-build
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.2.0"
+
+          platform_packages:
+            - name: platform
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.0"
+            - name: flux-apps
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/flux-apps:v0.1.2"
+
+          configuration_packages: >-
+            {{ machinery_packages
+               + (platform_packages if platform_enabled | bool else []) }}
 
         tasks:
           - name: Preflight — SOPS_AGE_KEY present
@@ -304,6 +435,13 @@ playbooks:
               that:
                 - sops_age_key | length > 0
               fail_msg: "export SOPS_AGE_KEY before running (age private key)."
+
+          - name: Preflight — vault AppRole role ID present when kubeconfig-vault is enabled
+            ansible.builtin.assert:
+              that:
+                - vault_approle_role_id | length > 0
+              fail_msg: "vault_kubeconfigs_enabled=true requires vault_approle_role_id."
+            when: vault_kubeconfigs_enabled | bool
 
           - name: Preflight — cluster reachable
             ansible.builtin.command: "kubectl get nodes --kubeconfig {{ kubeconfig }}"
@@ -400,20 +538,31 @@ playbooks:
           - name: Wait Configuration Healthy + provider CRD established
             ansible.builtin.shell: |
               kubectl wait configuration.pkg.crossplane.io/{{ item.name }} --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
+              {% if item.provider_crd is defined %}
               for i in $(seq 1 60); do kubectl get crd {{ item.provider_crd }} --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && break; sleep 5; done
               kubectl wait --for=condition=established crd/{{ item.provider_crd }} --timeout=180s --kubeconfig {{ kubeconfig }}
+              {% endif %}
             loop: "{{ configuration_packages }}"
             loop_control:
               label: "{{ item.name }}"
 
-          - name: Deploy vspherevm capability ({{ vsphere_env }})
+          - name: Apply EnvironmentConfigs shipped as crossplane-configurations examples
             ansible.builtin.command: >
-              helm upgrade --install vspherevm-{{ vsphere_env }} {{ charts_oci }}/vspherevm
+              kubectl apply --kubeconfig {{ kubeconfig }}
+              -f {{ crossplane_configurations_raw }}/{{ crossplane_configurations_ref }}/{{ item }}
+            loop: >-
+              {{ environment_config_manifests
+                 + (platform_environment_config_manifests if platform_enabled | bool else []) }}
+
+          - name: Deploy vspherevm capability
+            ansible.builtin.command: >
+              helm upgrade --install vspherevm-{{ item }} {{ charts_oci }}/vspherevm
               --version {{ vspherevm_chart_version }}
-              --set environment={{ vsphere_env }}
+              --set environment={{ item }}
               --set secretStore.backend=sops --set configuration.install=false
-              --set-file secretStore.sops.encryptedCredentials={{ secrets_dir }}/vsphere-creds-{{ vsphere_env }}.enc.yaml
+              --set-file secretStore.sops.encryptedCredentials={{ secrets_dir }}/vsphere-creds-{{ item }}.enc.yaml
               -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
+            loop: "{{ vsphere_envs }}"
             when: capabilities_enabled | bool
 
           - name: Deploy ansible capability (single release)
@@ -424,6 +573,20 @@ playbooks:
               --set-file sshCredentials.sops.encryptedCredentials={{ secrets_dir }}/ansible-credentials.enc.yaml
               -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
             when: capabilities_enabled | bool
+
+          - name: Deploy provider-kubeconfig-vault
+            ansible.builtin.shell: |
+              set -e
+              rm -rf /tmp/stuttgart-things-baseline
+              git clone --depth 1 --branch {{ stuttgart_things_ref }} \
+                {{ stuttgart_things_repo }} /tmp/stuttgart-things-baseline
+              helm upgrade --install provider-kubeconfig-vault \
+                /tmp/stuttgart-things-baseline/crossplane/platform/baseline/provider-kubeconfig-vault \
+                --set vault.appRole.roleId={{ vault_approle_role_id }} \
+                -n crossplane-system --create-namespace \
+                --kubeconfig {{ kubeconfig }}
+            when: vault_kubeconfigs_enabled | bool
+            no_log: true
 
           - name: Show machinery readiness
             ansible.builtin.command: >
