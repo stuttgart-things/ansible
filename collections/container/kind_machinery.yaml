@@ -122,12 +122,17 @@ playbooks:
               repository_ref_key: secretStore.sopsGit.repositoryRef.name
               extra_set:
                 - configuration.install=false
+            # Same sops-git treatment as vspherevm above. kind1 already ran
+            # 0.4.0 on this backend (installed by hand during the live test)
+            # while this file still said 0.3.0 + sops, so a playbook run used
+            # to downgrade it and revert it to the embedded blob.
             - chart: proxmoxvm
-              version: "0.3.0"
+              version: "0.4.0"
               envs: "{{ proxmox_envs }}"
               credentials_prefix: proxmox-creds
               backend_key: secretStore.backend
-              credentials_key: secretStore.sops.encryptedCredentials
+              backend: sops-git
+              repository_ref_key: secretStore.sopsGit.repositoryRef.name
               extra_set:
                 - configuration.install=false
 
@@ -520,12 +525,17 @@ playbooks:
               repository_ref_key: secretStore.sopsGit.repositoryRef.name
               extra_set:
                 - configuration.install=false
+            # Same sops-git treatment as vspherevm above. kind1 already ran
+            # 0.4.0 on this backend (installed by hand during the live test)
+            # while this file still said 0.3.0 + sops, so a playbook run used
+            # to downgrade it and revert it to the embedded blob.
             - chart: proxmoxvm
-              version: "0.3.0"
+              version: "0.4.0"
               envs: "{{ proxmox_envs }}"
               credentials_prefix: proxmox-creds
               backend_key: secretStore.backend
-              credentials_key: secretStore.sops.encryptedCredentials
+              backend: sops-git
+              repository_ref_key: secretStore.sopsGit.repositoryRef.name
               extra_set:
                 - configuration.install=false
 
