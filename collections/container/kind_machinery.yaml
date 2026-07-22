@@ -105,7 +105,7 @@ playbooks:
           # over the global default. Groundwork — see the PR.
           sops_global_age_key_enabled: true
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
-          ansible_chart_version: "0.3.6"
+          ansible_chart_version: "0.4.0"
           cert_manager_version: v1.21.0
 
           # Per-environment capability charts. One Helm release per entry in
@@ -463,8 +463,8 @@ playbooks:
               helm upgrade --install ansible {{ charts_oci }}/ansible
               --version {{ ansible_chart_version }}
               --set environment={{ vsphere_env }}
-              --set sshCredentials.backend=sops
-              --set-file sshCredentials.sops.encryptedCredentials={{ secrets_dir }}/ansible-credentials.enc.yaml
+              --set sshCredentials.backend=sops-git
+              --set sshCredentials.sopsGit.repositoryRef.name={{ sops_git_repository_name }}
               -n crossplane-system --create-namespace
               --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
@@ -552,7 +552,7 @@ playbooks:
           # over the global default. Groundwork — see the PR.
           sops_global_age_key_enabled: true
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
-          ansible_chart_version: "0.3.6"
+          ansible_chart_version: "0.4.0"
           cert_manager_version: v1.21.0
 
           # Per-environment capability charts. One Helm release per entry in
@@ -845,8 +845,8 @@ playbooks:
             ansible.builtin.command: >
               helm upgrade --install ansible {{ charts_oci }}/ansible
               --version {{ ansible_chart_version }}
-              --set environment={{ vsphere_env }} --set sshCredentials.backend=sops
-              --set-file sshCredentials.sops.encryptedCredentials={{ secrets_dir }}/ansible-credentials.enc.yaml
+              --set environment={{ vsphere_env }} --set sshCredentials.backend=sops-git
+              --set sshCredentials.sopsGit.repositoryRef.name={{ sops_git_repository_name }}
               -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
             when: capabilities_enabled | bool
 
