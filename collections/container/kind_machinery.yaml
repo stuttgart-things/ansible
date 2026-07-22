@@ -74,6 +74,8 @@ playbooks:
           age_key_namespaces:
             - crossplane-system
             - tekton-ci
+            # where --global-age-key-secret points
+            - sops-secrets-operator-system
 
           # --- provider-kubeconfig / Vault-backed RemoteCluster (optional) ---
           # Emits the `vault-kubeconfigs` ClusterProviderConfig that RemoteCluster
@@ -93,6 +95,15 @@ playbooks:
           # ref=v0.9.0 -> image v0.9.0. sops-secrets-operator#86, fixed by #90.
           sops_operator_ref: v0.9.0
           sops_operator_kustomize: "https://github.com/stuttgart-things/sops-secrets-operator/config/default"
+          sops_operator_namespace: sops-secrets-operator-system
+          sops_operator_overlay_dir: "/home/{{ ansible_user }}/.cache/sops-operator-overlay"
+          sops_age_key_data_key: age.agekey
+          # v0.9.0 (sops-secrets-operator#47) lets the operator hold one age key
+          # for resources that omit spec.decryption.keyRef. Enabling it here does
+          # NOT remove the per-namespace copies below: the capability charts
+          # still render an explicit keyRef, and a resource's own reference wins
+          # over the global default. Groundwork — see the PR.
+          sops_global_age_key_enabled: true
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
           ansible_chart_version: "0.3.6"
           cert_manager_version: v1.21.0
@@ -247,9 +258,44 @@ playbooks:
               done
             become_user: "{{ ansible_user }}"
 
+          # Deployed through a thin local overlay rather than `apply -k <remote>`
+          # directly, so the manager's flags are part of the applied desired
+          # state. A `kubectl patch` after the apply would be undone by the next
+          # run — the same post-hoc mutation this playbook just dropped for the
+          # image pin (#1018).
+          - name: Create the sops-secrets-operator overlay dir
+            ansible.builtin.file:
+              path: "{{ sops_operator_overlay_dir }}"
+              state: directory
+              mode: "0755"
+            become_user: "{{ ansible_user }}"
+
+          - name: Render the sops-secrets-operator kustomize overlay
+            ansible.builtin.copy:
+              dest: "{{ sops_operator_overlay_dir }}/kustomization.yaml"
+              mode: "0644"
+              content: |
+                ---
+                resources:
+                  - {{ sops_operator_kustomize }}?ref={{ sops_operator_ref }}
+                {% if sops_global_age_key_enabled | bool %}
+                patches:
+                  - target:
+                      kind: Deployment
+                      name: sops-secrets-operator-controller-manager
+                    patch: |-
+                      - op: add
+                        path: /spec/template/spec/containers/0/args/-
+                        value: --global-age-key-secret={{ sops_operator_namespace }}/sops-age-key
+                      - op: add
+                        path: /spec/template/spec/containers/0/args/-
+                        value: --global-age-key-data-key={{ sops_age_key_data_key }}
+                {% endif %}
+            become_user: "{{ ansible_user }}"
+
           - name: Deploy sops-secrets-operator (kustomize)
             ansible.builtin.command: >
-              kubectl apply -k {{ sops_operator_kustomize }}?ref={{ sops_operator_ref }}
+              kubectl apply -k {{ sops_operator_overlay_dir }}
               --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
 
@@ -482,7 +528,7 @@ playbooks:
           platform_enabled: true                     # false = pure VM builder, no cni/Flux/platform
           sops_age_key: "{{ lookup('env', 'SOPS_AGE_KEY') }}"
           secrets_dir: "/home/{{ ansible_user }}/projects/stuttgart-things/secrets"
-          age_key_namespaces: [crossplane-system, tekton-ci]
+          age_key_namespaces: [crossplane-system, tekton-ci, sops-secrets-operator-system]
 
           # See the profile play above for the full commentary on these.
           vault_kubeconfigs_enabled: false
@@ -496,6 +542,15 @@ playbooks:
           # ref=v0.9.0 -> image v0.9.0. sops-secrets-operator#86, fixed by #90.
           sops_operator_ref: v0.9.0
           sops_operator_kustomize: "https://github.com/stuttgart-things/sops-secrets-operator/config/default"
+          sops_operator_namespace: sops-secrets-operator-system
+          sops_operator_overlay_dir: "/home/{{ ansible_user }}/.cache/sops-operator-overlay"
+          sops_age_key_data_key: age.agekey
+          # v0.9.0 (sops-secrets-operator#47) lets the operator hold one age key
+          # for resources that omit spec.decryption.keyRef. Enabling it here does
+          # NOT remove the per-namespace copies below: the capability charts
+          # still render an explicit keyRef, and a resource's own reference wins
+          # over the global default. Groundwork — see the PR.
+          sops_global_age_key_enabled: true
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
           ansible_chart_version: "0.3.6"
           cert_manager_version: v1.21.0
@@ -621,9 +676,42 @@ playbooks:
                 sleep 5
               done
 
+          # Deployed through a thin local overlay rather than `apply -k <remote>`
+          # directly, so the manager's flags are part of the applied desired
+          # state. A `kubectl patch` after the apply would be undone by the next
+          # run — the same post-hoc mutation this playbook just dropped for the
+          # image pin (#1018).
+          - name: Create the sops-secrets-operator overlay dir
+            ansible.builtin.file:
+              path: "{{ sops_operator_overlay_dir }}"
+              state: directory
+              mode: "0755"
+
+          - name: Render the sops-secrets-operator kustomize overlay
+            ansible.builtin.copy:
+              dest: "{{ sops_operator_overlay_dir }}/kustomization.yaml"
+              mode: "0644"
+              content: |
+                ---
+                resources:
+                  - {{ sops_operator_kustomize }}?ref={{ sops_operator_ref }}
+                {% if sops_global_age_key_enabled | bool %}
+                patches:
+                  - target:
+                      kind: Deployment
+                      name: sops-secrets-operator-controller-manager
+                    patch: |-
+                      - op: add
+                        path: /spec/template/spec/containers/0/args/-
+                        value: --global-age-key-secret={{ sops_operator_namespace }}/sops-age-key
+                      - op: add
+                        path: /spec/template/spec/containers/0/args/-
+                        value: --global-age-key-data-key={{ sops_age_key_data_key }}
+                {% endif %}
+
           - name: Deploy sops-secrets-operator (kustomize)
             ansible.builtin.command: >
-              kubectl apply -k {{ sops_operator_kustomize }}?ref={{ sops_operator_ref }}
+              kubectl apply -k {{ sops_operator_overlay_dir }}
               --kubeconfig {{ kubeconfig }}
 
           - name: Wait for sops-secrets-operator controller rollout
