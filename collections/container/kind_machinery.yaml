@@ -161,6 +161,18 @@ playbooks:
           sops_git_username: stuttgart-things
           # Read-only token with access to stuttgart_things_repo. Never commit.
           sops_git_token: "{{ lookup('env', 'SOPS_GIT_TOKEN') }}"
+          # Encrypted blobs in the secrets repo with no capability chart of
+          # their own — the capability charts each emit their own
+          # SopsSecretManifest, this list covers the rest. Both were applied by
+          # hand before they had an owner (stuttgart-things#2407).
+          # `namespace` is where the SECRET is written; the CR itself always
+          # goes next to the GitRepository, because the operator resolves
+          # sourceRef only within the CR's own namespace.
+          standalone_sops_secrets:
+            - name: vault
+              namespace: tekton-ci
+            - name: dapr-backstage-template-execution-vars
+              namespace: flux-system
 
           stuttgart_things_repo: "https://github.com/stuttgart-things/stuttgart-things.git"
           stuttgart_things_ref: main
@@ -435,6 +447,7 @@ playbooks:
                 --set git.url={{ stuttgart_things_repo }} \
                 --set git.auth.username={{ sops_git_username }} \
                 --set git.auth.password={{ sops_git_token }} \
+                {% for s in standalone_sops_secrets %}--set secrets[{{ loop.index0 }}].name={{ s.name }} --set secrets[{{ loop.index0 }}].namespace={{ s.namespace }} {% endfor %}\
                 -n crossplane-system --create-namespace \
                 --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
@@ -606,6 +619,18 @@ playbooks:
           sops_git_username: stuttgart-things
           # Read-only token with access to stuttgart_things_repo. Never commit.
           sops_git_token: "{{ lookup('env', 'SOPS_GIT_TOKEN') }}"
+          # Encrypted blobs in the secrets repo with no capability chart of
+          # their own — the capability charts each emit their own
+          # SopsSecretManifest, this list covers the rest. Both were applied by
+          # hand before they had an owner (stuttgart-things#2407).
+          # `namespace` is where the SECRET is written; the CR itself always
+          # goes next to the GitRepository, because the operator resolves
+          # sourceRef only within the CR's own namespace.
+          standalone_sops_secrets:
+            - name: vault
+              namespace: tekton-ci
+            - name: dapr-backstage-template-execution-vars
+              namespace: flux-system
 
           stuttgart_things_repo: "https://github.com/stuttgart-things/stuttgart-things.git"
           stuttgart_things_ref: main
@@ -821,6 +846,7 @@ playbooks:
                 --set git.url={{ stuttgart_things_repo }} \
                 --set git.auth.username={{ sops_git_username }} \
                 --set git.auth.password={{ sops_git_token }} \
+                {% for s in standalone_sops_secrets %}--set secrets[{{ loop.index0 }}].name={{ s.name }} --set secrets[{{ loop.index0 }}].namespace={{ s.namespace }} {% endfor %}\
                 -n crossplane-system --create-namespace \
                 --kubeconfig {{ kubeconfig }}
             when: capabilities_enabled | bool and sops_git_secrets_enabled | bool
