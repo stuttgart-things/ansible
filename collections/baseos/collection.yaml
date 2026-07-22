@@ -10,7 +10,7 @@ requirements: |
       version: 2025.01.14
     - src: https://github.com/stuttgart-things/create-os-user.git
       scm: git
-      version: 2025.10.11
+      version: 2026.07.22
     - src: https://github.com/stuttgart-things/install-requirements.git
       scm: git
       version: 2026.04.13
