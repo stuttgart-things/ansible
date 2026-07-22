@@ -106,25 +106,51 @@ playbooks:
           # skipped because `configuration_packages` above installs it.
           # Add a hypervisor by adding an entry — no new task.
           capability_charts:
+            # sops-git: the chart derives the path as secrets/<name>.enc.yaml,
+            # i.e. secrets/vsphere-creds-<env>.enc.yaml — exactly where the
+            # blobs already live in the repo. No credentials_key: the operator
+            # fetches the file, nothing is passed in at deploy time.
             - chart: vspherevm
-              version: "0.10.1"
+              version: "0.11.0"
               envs: "{{ vsphere_envs }}"
               credentials_prefix: vsphere-creds
               backend_key: secretStore.backend
-              credentials_key: secretStore.sops.encryptedCredentials
+              backend: sops-git
+              # Set from the play var on the command line rather than inside
+              # extra_set: a {{ }} nested in a var value is not reliably
+              # re-templated, and it rendered literally when checked.
+              repository_ref_key: secretStore.sopsGit.repositoryRef.name
               extra_set:
                 - configuration.install=false
+            # Same sops-git treatment as vspherevm above. kind1 already ran
+            # 0.4.0 on this backend (installed by hand during the live test)
+            # while this file still said 0.3.0 + sops, so a playbook run used
+            # to downgrade it and revert it to the embedded blob.
             - chart: proxmoxvm
-              version: "0.3.0"
+              version: "0.4.0"
               envs: "{{ proxmox_envs }}"
               credentials_prefix: proxmox-creds
               backend_key: secretStore.backend
-              credentials_key: secretStore.sops.encryptedCredentials
+              backend: sops-git
+              repository_ref_key: secretStore.sopsGit.repositoryRef.name
               extra_set:
                 - configuration.install=false
 
           # The kubeconfig-vault chart is not published to OCI — it is installed
           # from a path in the stuttgart-things monorepo.
+          # --- git-sourced sops credentials (backend=sops-git) ---
+          # Capability charts on this backend read their encrypted credentials
+          # straight from the repo instead of having the blob embedded at deploy
+          # time, so rotating a credential is a git push rather than a playbook
+          # run. Needs one GitRepository + read-only credential per cluster,
+          # from the sops-git-secrets baseline chart. That chart is NOT on OCI,
+          # so it is cloned — same as provider-kubeconfig-vault below.
+          sops_git_secrets_enabled: true
+          sops_git_repository_name: sops-secrets
+          sops_git_username: stuttgart-things
+          # Read-only token with access to stuttgart_things_repo. Never commit.
+          sops_git_token: "{{ lookup('env', 'SOPS_GIT_TOKEN') }}"
+
           stuttgart_things_repo: "https://github.com/stuttgart-things/stuttgart-things.git"
           stuttgart_things_ref: main
 
@@ -183,6 +209,15 @@ playbooks:
               that:
                 - sops_age_key | length > 0
               fail_msg: "export SOPS_AGE_KEY before running (age private key)."
+
+          - name: Preflight — git token present when sops-git credentials are enabled
+            ansible.builtin.assert:
+              that:
+                - sops_git_token | length > 0
+              fail_msg: >-
+                export SOPS_GIT_TOKEN before running (read-only token for
+                stuttgart_things_repo), or set sops_git_secrets_enabled=false.
+            when: capabilities_enabled | bool and sops_git_secrets_enabled | bool
 
           - name: Preflight — vault AppRole role ID present when kubeconfig-vault is enabled
             ansible.builtin.assert:
@@ -338,14 +373,37 @@ playbooks:
           #    because it is a single release with different value paths
           #    (sshCredentials.*) and an un-suffixed credentials file.
           # ================================================================
+          # The GitRepository + read-only credential the sops-git backend reads
+          # through. One per cluster, shared by every capability chart — each
+          # chart emitting its own would collide on Helm ownership and clone the
+          # same repo once per capability. Must exist before the charts below.
+          - name: Deploy sops-git-secrets (GitRepository + read-only credential)
+            ansible.builtin.shell: |
+              set -e
+              rm -rf /tmp/stuttgart-things-baseline
+              git clone --depth 1 --branch {{ stuttgart_things_ref }} \
+                {{ stuttgart_things_repo }} /tmp/stuttgart-things-baseline
+              helm upgrade --install sops-git-secrets \
+                /tmp/stuttgart-things-baseline/crossplane/platform/baseline/sops-git-secrets \
+                --set git.name={{ sops_git_repository_name }} \
+                --set git.url={{ stuttgart_things_repo }} \
+                --set git.auth.username={{ sops_git_username }} \
+                --set git.auth.password={{ sops_git_token }} \
+                -n crossplane-system --create-namespace \
+                --kubeconfig {{ kubeconfig }}
+            become_user: "{{ ansible_user }}"
+            when: capabilities_enabled | bool and sops_git_secrets_enabled | bool
+            no_log: true    # never echo the git token
+
           - name: Deploy per-environment capability charts
             ansible.builtin.command: >
               helm upgrade --install {{ item.0.chart }}-{{ item.1 }} {{ charts_oci }}/{{ item.0.chart }}
               --version {{ item.0.version }}
               --set environment={{ item.1 }}
-              --set {{ item.0.backend_key }}=sops
+              --set {{ item.0.backend_key }}={{ item.0.backend | default('sops') }}
               {{ item.0.extra_set | default([]) | map('regex_replace', '^', '--set ') | join(' ') }}
-              --set-file {{ item.0.credentials_key }}={{ secrets_dir }}/{{ item.0.credentials_prefix }}-{{ item.1 }}.enc.yaml
+              {% if item.0.repository_ref_key is defined %}--set {{ item.0.repository_ref_key }}={{ sops_git_repository_name }}{% endif %}
+              {% if item.0.credentials_key is defined %}--set-file {{ item.0.credentials_key }}={{ secrets_dir }}/{{ item.0.credentials_prefix }}-{{ item.1 }}.enc.yaml{% endif %}
               -n crossplane-system --create-namespace
               --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
@@ -451,22 +509,48 @@ playbooks:
           # skipped because `configuration_packages` above installs it.
           # Add a hypervisor by adding an entry — no new task.
           capability_charts:
+            # sops-git: the chart derives the path as secrets/<name>.enc.yaml,
+            # i.e. secrets/vsphere-creds-<env>.enc.yaml — exactly where the
+            # blobs already live in the repo. No credentials_key: the operator
+            # fetches the file, nothing is passed in at deploy time.
             - chart: vspherevm
-              version: "0.10.1"
+              version: "0.11.0"
               envs: "{{ vsphere_envs }}"
               credentials_prefix: vsphere-creds
               backend_key: secretStore.backend
-              credentials_key: secretStore.sops.encryptedCredentials
+              backend: sops-git
+              # Set from the play var on the command line rather than inside
+              # extra_set: a {{ }} nested in a var value is not reliably
+              # re-templated, and it rendered literally when checked.
+              repository_ref_key: secretStore.sopsGit.repositoryRef.name
               extra_set:
                 - configuration.install=false
+            # Same sops-git treatment as vspherevm above. kind1 already ran
+            # 0.4.0 on this backend (installed by hand during the live test)
+            # while this file still said 0.3.0 + sops, so a playbook run used
+            # to downgrade it and revert it to the embedded blob.
             - chart: proxmoxvm
-              version: "0.3.0"
+              version: "0.4.0"
               envs: "{{ proxmox_envs }}"
               credentials_prefix: proxmox-creds
               backend_key: secretStore.backend
-              credentials_key: secretStore.sops.encryptedCredentials
+              backend: sops-git
+              repository_ref_key: secretStore.sopsGit.repositoryRef.name
               extra_set:
                 - configuration.install=false
+
+          # --- git-sourced sops credentials (backend=sops-git) ---
+          # Capability charts on this backend read their encrypted credentials
+          # straight from the repo instead of having the blob embedded at deploy
+          # time, so rotating a credential is a git push rather than a playbook
+          # run. Needs one GitRepository + read-only credential per cluster,
+          # from the sops-git-secrets baseline chart. That chart is NOT on OCI,
+          # so it is cloned — same as provider-kubeconfig-vault below.
+          sops_git_secrets_enabled: true
+          sops_git_repository_name: sops-secrets
+          sops_git_username: stuttgart-things
+          # Read-only token with access to stuttgart_things_repo. Never commit.
+          sops_git_token: "{{ lookup('env', 'SOPS_GIT_TOKEN') }}"
 
           stuttgart_things_repo: "https://github.com/stuttgart-things/stuttgart-things.git"
           stuttgart_things_ref: main
@@ -505,6 +589,15 @@ playbooks:
               that:
                 - sops_age_key | length > 0
               fail_msg: "export SOPS_AGE_KEY before running (age private key)."
+
+          - name: Preflight — git token present when sops-git credentials are enabled
+            ansible.builtin.assert:
+              that:
+                - sops_git_token | length > 0
+              fail_msg: >-
+                export SOPS_GIT_TOKEN before running (read-only token for
+                stuttgart_things_repo), or set sops_git_secrets_enabled=false.
+            when: capabilities_enabled | bool and sops_git_secrets_enabled | bool
 
           - name: Preflight — vault AppRole role ID present when kubeconfig-vault is enabled
             ansible.builtin.assert:
@@ -624,14 +717,36 @@ playbooks:
               {{ environment_config_manifests
                  + (platform_environment_config_manifests if platform_enabled | bool else []) }}
 
+          # The GitRepository + read-only credential the sops-git backend reads
+          # through. One per cluster, shared by every capability chart — each
+          # chart emitting its own would collide on Helm ownership and clone the
+          # same repo once per capability. Must exist before the charts below.
+          - name: Deploy sops-git-secrets (GitRepository + read-only credential)
+            ansible.builtin.shell: |
+              set -e
+              rm -rf /tmp/stuttgart-things-baseline
+              git clone --depth 1 --branch {{ stuttgart_things_ref }} \
+                {{ stuttgart_things_repo }} /tmp/stuttgart-things-baseline
+              helm upgrade --install sops-git-secrets \
+                /tmp/stuttgart-things-baseline/crossplane/platform/baseline/sops-git-secrets \
+                --set git.name={{ sops_git_repository_name }} \
+                --set git.url={{ stuttgart_things_repo }} \
+                --set git.auth.username={{ sops_git_username }} \
+                --set git.auth.password={{ sops_git_token }} \
+                -n crossplane-system --create-namespace \
+                --kubeconfig {{ kubeconfig }}
+            when: capabilities_enabled | bool and sops_git_secrets_enabled | bool
+            no_log: true    # never echo the git token
+
           - name: Deploy per-environment capability charts
             ansible.builtin.command: >
               helm upgrade --install {{ item.0.chart }}-{{ item.1 }} {{ charts_oci }}/{{ item.0.chart }}
               --version {{ item.0.version }}
               --set environment={{ item.1 }}
-              --set {{ item.0.backend_key }}=sops
+              --set {{ item.0.backend_key }}={{ item.0.backend | default('sops') }}
               {{ item.0.extra_set | default([]) | map('regex_replace', '^', '--set ') | join(' ') }}
-              --set-file {{ item.0.credentials_key }}={{ secrets_dir }}/{{ item.0.credentials_prefix }}-{{ item.1 }}.enc.yaml
+              {% if item.0.repository_ref_key is defined %}--set {{ item.0.repository_ref_key }}={{ sops_git_repository_name }}{% endif %}
+              {% if item.0.credentials_key is defined %}--set-file {{ item.0.credentials_key }}={{ secrets_dir }}/{{ item.0.credentials_prefix }}-{{ item.1 }}.enc.yaml{% endif %}
               -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
             loop: "{{ capability_charts | subelements('envs') }}"
             loop_control:
