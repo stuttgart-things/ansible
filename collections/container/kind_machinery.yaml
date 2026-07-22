@@ -86,14 +86,13 @@ playbooks:
 
           # --- component refs / versions ---
           helm_repo: "git::https://github.com/stuttgart-things/helm.git"
-          sops_operator_ref: v0.8.5
+          # From v0.9.0 the ref alone selects the image: semantic-release now
+          # writes config/manager/kustomization.yaml before it tags, so the
+          # tagged tree pins its own release. Verified by building the bundle:
+          # ref=v0.8.5 -> image v0.8.4 (the old off-by-one),
+          # ref=v0.9.0 -> image v0.9.0. sops-secrets-operator#86, fixed by #90.
+          sops_operator_ref: v0.9.0
           sops_operator_kustomize: "https://github.com/stuttgart-things/sops-secrets-operator/config/default"
-          # Must be set explicitly: the operator's in-repo kustomize base pins the
-          # PREVIOUS release's image, so `apply -k ...?ref=v0.8.5` deploys v0.8.4.
-          # Verified across four tags (v0.8.5->v0.8.4, v0.8.4->v0.8.3, ...) —
-          # stuttgart-things/sops-secrets-operator#86. Drop the pin task below
-          # once that is fixed and the ref alone selects the right image.
-          sops_operator_image: "ghcr.io/stuttgart-things/sops-secrets-operator:v0.8.5"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
           ansible_chart_version: "0.3.6"
           cert_manager_version: v1.21.0
@@ -216,14 +215,6 @@ playbooks:
           - name: Deploy sops-secrets-operator (kustomize)
             ansible.builtin.command: >
               kubectl apply -k {{ sops_operator_kustomize }}?ref={{ sops_operator_ref }}
-              --kubeconfig {{ kubeconfig }}
-            become_user: "{{ ansible_user }}"
-
-          - name: Pin the sops-secrets-operator image (kustomize base lags a release)
-            ansible.builtin.command: >
-              kubectl -n sops-secrets-operator-system set image
-              deploy/sops-secrets-operator-controller-manager
-              manager={{ sops_operator_image }}
               --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
 
@@ -440,14 +431,13 @@ playbooks:
           vault_approle_role_id: ""
 
           helm_repo: "git::https://github.com/stuttgart-things/helm.git"
-          sops_operator_ref: v0.8.5
+          # From v0.9.0 the ref alone selects the image: semantic-release now
+          # writes config/manager/kustomization.yaml before it tags, so the
+          # tagged tree pins its own release. Verified by building the bundle:
+          # ref=v0.8.5 -> image v0.8.4 (the old off-by-one),
+          # ref=v0.9.0 -> image v0.9.0. sops-secrets-operator#86, fixed by #90.
+          sops_operator_ref: v0.9.0
           sops_operator_kustomize: "https://github.com/stuttgart-things/sops-secrets-operator/config/default"
-          # Must be set explicitly: the operator's in-repo kustomize base pins the
-          # PREVIOUS release's image, so `apply -k ...?ref=v0.8.5` deploys v0.8.4.
-          # Verified across four tags (v0.8.5->v0.8.4, v0.8.4->v0.8.3, ...) —
-          # stuttgart-things/sops-secrets-operator#86. Drop the pin task below
-          # once that is fixed and the ref alone selects the right image.
-          sops_operator_image: "ghcr.io/stuttgart-things/sops-secrets-operator:v0.8.5"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
           ansible_chart_version: "0.3.6"
           cert_manager_version: v1.21.0
@@ -541,13 +531,6 @@ playbooks:
           - name: Deploy sops-secrets-operator (kustomize)
             ansible.builtin.command: >
               kubectl apply -k {{ sops_operator_kustomize }}?ref={{ sops_operator_ref }}
-              --kubeconfig {{ kubeconfig }}
-
-          - name: Pin the sops-secrets-operator image (kustomize base lags a release)
-            ansible.builtin.command: >
-              kubectl -n sops-secrets-operator-system set image
-              deploy/sops-secrets-operator-controller-manager
-              manager={{ sops_operator_image }}
               --kubeconfig {{ kubeconfig }}
 
           - name: Wait for sops-secrets-operator controller rollout
