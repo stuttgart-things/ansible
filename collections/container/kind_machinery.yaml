@@ -71,11 +71,9 @@ playbooks:
           platform_enabled: true                                      # false = pure VM builder, no cni/Flux/platform
           sops_age_key: "{{ lookup('env', 'SOPS_AGE_KEY') }}"
           secrets_dir: "/home/{{ ansible_user }}/projects/stuttgart-things/secrets"
-          age_key_namespaces:
-            - crossplane-system
-            - tekton-ci
-            # where --global-age-key-secret points
-            - sops-secrets-operator-system
+          age_key_namespaces: >-
+            {{ ['sops-secrets-operator-system'] if sops_global_age_key_enabled | bool
+               else ['crossplane-system'] }}
 
           # --- provider-kubeconfig / Vault-backed RemoteCluster (optional) ---
           # Emits the `vault-kubeconfigs` ClusterProviderConfig that RemoteCluster
@@ -104,8 +102,18 @@ playbooks:
           # still render an explicit keyRef, and a resource's own reference wins
           # over the global default. Groundwork — see the PR.
           sops_global_age_key_enabled: true
+          # Derived from the toggle above, driving all three coupled changes so
+          # they cannot fall out of sync: the age key ref passed to the charts,
+          # and the namespaces the age-key Secret is installed into.
+          #   enabled  -> ref "" (charts omit spec.decryption; operator uses its
+          #               --global-age-key-secret), key only in the operator ns.
+          #   disabled -> ref "sops-age-key" (charts render an explicit keyRef),
+          #               key in the namespace every sops-git CR resolves in.
+          # Every sops-git SopsSecretManifest is created in crossplane-system
+          # (next to the GitRepository), so that is the only per-CR namespace.
+          sops_age_key_ref_name: "{{ '' if sops_global_age_key_enabled | bool else 'sops-age-key' }}"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
-          ansible_chart_version: "0.4.0"
+          ansible_chart_version: "0.5.0"
           cert_manager_version: v1.21.0
 
           # Per-environment capability charts. One Helm release per entry in
@@ -122,7 +130,7 @@ playbooks:
             # blobs already live in the repo. No credentials_key: the operator
             # fetches the file, nothing is passed in at deploy time.
             - chart: vspherevm
-              version: "0.11.0"
+              version: "0.12.0"
               envs: "{{ vsphere_envs }}"
               credentials_prefix: vsphere-creds
               backend_key: secretStore.backend
@@ -131,6 +139,9 @@ playbooks:
               # extra_set: a {{ }} nested in a var value is not reliably
               # re-templated, and it rendered literally when checked.
               repository_ref_key: secretStore.sopsGit.repositoryRef.name
+              # Emptied to "" when the global age key is on, which omits
+              # spec.decryption so --global-age-key-secret is used instead.
+              age_key_ref_key: secretStore.sopsGit.ageKeySecret.name
               extra_set:
                 - configuration.install=false
             # Same sops-git treatment as vspherevm above. kind1 already ran
@@ -138,12 +149,15 @@ playbooks:
             # while this file still said 0.3.0 + sops, so a playbook run used
             # to downgrade it and revert it to the embedded blob.
             - chart: proxmoxvm
-              version: "0.4.0"
+              version: "0.5.0"
               envs: "{{ proxmox_envs }}"
               credentials_prefix: proxmox-creds
               backend_key: secretStore.backend
               backend: sops-git
               repository_ref_key: secretStore.sopsGit.repositoryRef.name
+              # Emptied to "" when the global age key is on, which omits
+              # spec.decryption so --global-age-key-secret is used instead.
+              age_key_ref_key: secretStore.sopsGit.ageKeySecret.name
               extra_set:
                 - configuration.install=false
 
@@ -448,6 +462,7 @@ playbooks:
                 --set git.auth.username={{ sops_git_username }} \
                 --set git.auth.password={{ sops_git_token }} \
                 {% for s in standalone_sops_secrets %}--set secrets[{{ loop.index0 }}].name={{ s.name }} --set secrets[{{ loop.index0 }}].namespace={{ s.namespace }} {% endfor %}\
+                --set ageKeySecret.name={{ sops_age_key_ref_name }} \
                 -n crossplane-system --create-namespace \
                 --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
@@ -462,6 +477,7 @@ playbooks:
               --set {{ item.0.backend_key }}={{ item.0.backend | default('sops') }}
               {{ item.0.extra_set | default([]) | map('regex_replace', '^', '--set ') | join(' ') }}
               {% if item.0.repository_ref_key is defined %}--set {{ item.0.repository_ref_key }}={{ sops_git_repository_name }}{% endif %}
+              {% if item.0.age_key_ref_key is defined %}--set {{ item.0.age_key_ref_key }}={{ sops_age_key_ref_name }}{% endif %}
               {% if item.0.credentials_key is defined %}--set-file {{ item.0.credentials_key }}={{ secrets_dir }}/{{ item.0.credentials_prefix }}-{{ item.1 }}.enc.yaml{% endif %}
               -n crossplane-system --create-namespace
               --kubeconfig {{ kubeconfig }}
@@ -478,6 +494,7 @@ playbooks:
               --set environment={{ vsphere_env }}
               --set sshCredentials.backend=sops-git
               --set sshCredentials.sopsGit.repositoryRef.name={{ sops_git_repository_name }}
+              --set sshCredentials.sopsGit.ageKeySecret.name={{ sops_age_key_ref_name }}
               -n crossplane-system --create-namespace
               --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
@@ -541,7 +558,8 @@ playbooks:
           platform_enabled: true                     # false = pure VM builder, no cni/Flux/platform
           sops_age_key: "{{ lookup('env', 'SOPS_AGE_KEY') }}"
           secrets_dir: "/home/{{ ansible_user }}/projects/stuttgart-things/secrets"
-          age_key_namespaces: [crossplane-system, tekton-ci, sops-secrets-operator-system]
+          age_key_namespaces: >-
+            {{ ['sops-secrets-operator-system'] if sops_global_age_key_enabled | bool else ['crossplane-system'] }}
 
           # See the profile play above for the full commentary on these.
           vault_kubeconfigs_enabled: false
@@ -564,8 +582,18 @@ playbooks:
           # still render an explicit keyRef, and a resource's own reference wins
           # over the global default. Groundwork — see the PR.
           sops_global_age_key_enabled: true
+          # Derived from the toggle above, driving all three coupled changes so
+          # they cannot fall out of sync: the age key ref passed to the charts,
+          # and the namespaces the age-key Secret is installed into.
+          #   enabled  -> ref "" (charts omit spec.decryption; operator uses its
+          #               --global-age-key-secret), key only in the operator ns.
+          #   disabled -> ref "sops-age-key" (charts render an explicit keyRef),
+          #               key in the namespace every sops-git CR resolves in.
+          # Every sops-git SopsSecretManifest is created in crossplane-system
+          # (next to the GitRepository), so that is the only per-CR namespace.
+          sops_age_key_ref_name: "{{ '' if sops_global_age_key_enabled | bool else 'sops-age-key' }}"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
-          ansible_chart_version: "0.4.0"
+          ansible_chart_version: "0.5.0"
           cert_manager_version: v1.21.0
 
           # Per-environment capability charts. One Helm release per entry in
@@ -582,7 +610,7 @@ playbooks:
             # blobs already live in the repo. No credentials_key: the operator
             # fetches the file, nothing is passed in at deploy time.
             - chart: vspherevm
-              version: "0.11.0"
+              version: "0.12.0"
               envs: "{{ vsphere_envs }}"
               credentials_prefix: vsphere-creds
               backend_key: secretStore.backend
@@ -591,6 +619,9 @@ playbooks:
               # extra_set: a {{ }} nested in a var value is not reliably
               # re-templated, and it rendered literally when checked.
               repository_ref_key: secretStore.sopsGit.repositoryRef.name
+              # Emptied to "" when the global age key is on, which omits
+              # spec.decryption so --global-age-key-secret is used instead.
+              age_key_ref_key: secretStore.sopsGit.ageKeySecret.name
               extra_set:
                 - configuration.install=false
             # Same sops-git treatment as vspherevm above. kind1 already ran
@@ -598,12 +629,15 @@ playbooks:
             # while this file still said 0.3.0 + sops, so a playbook run used
             # to downgrade it and revert it to the embedded blob.
             - chart: proxmoxvm
-              version: "0.4.0"
+              version: "0.5.0"
               envs: "{{ proxmox_envs }}"
               credentials_prefix: proxmox-creds
               backend_key: secretStore.backend
               backend: sops-git
               repository_ref_key: secretStore.sopsGit.repositoryRef.name
+              # Emptied to "" when the global age key is on, which omits
+              # spec.decryption so --global-age-key-secret is used instead.
+              age_key_ref_key: secretStore.sopsGit.ageKeySecret.name
               extra_set:
                 - configuration.install=false
 
@@ -847,6 +881,7 @@ playbooks:
                 --set git.auth.username={{ sops_git_username }} \
                 --set git.auth.password={{ sops_git_token }} \
                 {% for s in standalone_sops_secrets %}--set secrets[{{ loop.index0 }}].name={{ s.name }} --set secrets[{{ loop.index0 }}].namespace={{ s.namespace }} {% endfor %}\
+                --set ageKeySecret.name={{ sops_age_key_ref_name }} \
                 -n crossplane-system --create-namespace \
                 --kubeconfig {{ kubeconfig }}
             when: capabilities_enabled | bool and sops_git_secrets_enabled | bool
@@ -860,6 +895,7 @@ playbooks:
               --set {{ item.0.backend_key }}={{ item.0.backend | default('sops') }}
               {{ item.0.extra_set | default([]) | map('regex_replace', '^', '--set ') | join(' ') }}
               {% if item.0.repository_ref_key is defined %}--set {{ item.0.repository_ref_key }}={{ sops_git_repository_name }}{% endif %}
+              {% if item.0.age_key_ref_key is defined %}--set {{ item.0.age_key_ref_key }}={{ sops_age_key_ref_name }}{% endif %}
               {% if item.0.credentials_key is defined %}--set-file {{ item.0.credentials_key }}={{ secrets_dir }}/{{ item.0.credentials_prefix }}-{{ item.1 }}.enc.yaml{% endif %}
               -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
             loop: "{{ capability_charts | subelements('envs') }}"
@@ -873,6 +909,7 @@ playbooks:
               --version {{ ansible_chart_version }}
               --set environment={{ vsphere_env }} --set sshCredentials.backend=sops-git
               --set sshCredentials.sopsGit.repositoryRef.name={{ sops_git_repository_name }}
+              --set sshCredentials.sopsGit.ageKeySecret.name={{ sops_age_key_ref_name }}
               -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
             when: capabilities_enabled | bool
 
