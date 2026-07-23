@@ -175,6 +175,9 @@ playbooks:
           sops_git_username: stuttgart-things
           # Read-only token with access to stuttgart_things_repo. Never commit.
           sops_git_token: "{{ lookup('env', 'SOPS_GIT_TOKEN') }}"
+          # sops-git-secrets is published to OCI (stuttgart-things#2407/#2408); install
+          # from there rather than cloning the private monorepo for its chart source.
+          sops_git_secrets_chart_version: "0.3.0"
           # Encrypted blobs in the secrets repo with no capability chart of
           # their own — the capability charts each emit their own
           # SopsSecretManifest, this list covers the rest. Both were applied by
@@ -450,21 +453,17 @@ playbooks:
           # chart emitting its own would collide on Helm ownership and clone the
           # same repo once per capability. Must exist before the charts below.
           - name: Deploy sops-git-secrets (GitRepository + read-only credential)
-            ansible.builtin.shell: |
-              set -e
-              rm -rf /tmp/stuttgart-things-baseline
-              git clone --depth 1 --branch {{ stuttgart_things_ref }} \
-                {{ stuttgart_things_repo }} /tmp/stuttgart-things-baseline
-              helm upgrade --install sops-git-secrets \
-                /tmp/stuttgart-things-baseline/crossplane/platform/baseline/sops-git-secrets \
-                --set git.name={{ sops_git_repository_name }} \
-                --set git.url={{ stuttgart_things_repo }} \
-                --set git.auth.username={{ sops_git_username }} \
-                --set git.auth.password={{ sops_git_token }} \
-                {% for s in standalone_sops_secrets %}--set secrets[{{ loop.index0 }}].name={{ s.name }} --set secrets[{{ loop.index0 }}].namespace={{ s.namespace }} {% endfor %}\
-                --set ageKeySecret.name={{ sops_age_key_ref_name }} \
-                -n crossplane-system --create-namespace \
-                --kubeconfig {{ kubeconfig }}
+            ansible.builtin.command: >
+              helm upgrade --install sops-git-secrets {{ charts_oci }}/sops-git-secrets
+              --version {{ sops_git_secrets_chart_version }}
+              --set git.name={{ sops_git_repository_name }}
+              --set git.url={{ stuttgart_things_repo }}
+              --set git.auth.username={{ sops_git_username }}
+              --set git.auth.password={{ sops_git_token }}
+              {% for s in standalone_sops_secrets %}--set secrets[{{ loop.index0 }}].name={{ s.name }} --set secrets[{{ loop.index0 }}].namespace={{ s.namespace }} {% endfor %}
+              --set ageKeySecret.name={{ sops_age_key_ref_name }}
+              -n crossplane-system --create-namespace
+              --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
             when: capabilities_enabled | bool and sops_git_secrets_enabled | bool
             no_log: true    # never echo the git token
@@ -653,6 +652,9 @@ playbooks:
           sops_git_username: stuttgart-things
           # Read-only token with access to stuttgart_things_repo. Never commit.
           sops_git_token: "{{ lookup('env', 'SOPS_GIT_TOKEN') }}"
+          # sops-git-secrets is published to OCI (stuttgart-things#2407/#2408); install
+          # from there rather than cloning the private monorepo for its chart source.
+          sops_git_secrets_chart_version: "0.3.0"
           # Encrypted blobs in the secrets repo with no capability chart of
           # their own — the capability charts each emit their own
           # SopsSecretManifest, this list covers the rest. Both were applied by
@@ -869,21 +871,17 @@ playbooks:
           # chart emitting its own would collide on Helm ownership and clone the
           # same repo once per capability. Must exist before the charts below.
           - name: Deploy sops-git-secrets (GitRepository + read-only credential)
-            ansible.builtin.shell: |
-              set -e
-              rm -rf /tmp/stuttgart-things-baseline
-              git clone --depth 1 --branch {{ stuttgart_things_ref }} \
-                {{ stuttgart_things_repo }} /tmp/stuttgart-things-baseline
-              helm upgrade --install sops-git-secrets \
-                /tmp/stuttgart-things-baseline/crossplane/platform/baseline/sops-git-secrets \
-                --set git.name={{ sops_git_repository_name }} \
-                --set git.url={{ stuttgart_things_repo }} \
-                --set git.auth.username={{ sops_git_username }} \
-                --set git.auth.password={{ sops_git_token }} \
-                {% for s in standalone_sops_secrets %}--set secrets[{{ loop.index0 }}].name={{ s.name }} --set secrets[{{ loop.index0 }}].namespace={{ s.namespace }} {% endfor %}\
-                --set ageKeySecret.name={{ sops_age_key_ref_name }} \
-                -n crossplane-system --create-namespace \
-                --kubeconfig {{ kubeconfig }}
+            ansible.builtin.command: >
+              helm upgrade --install sops-git-secrets {{ charts_oci }}/sops-git-secrets
+              --version {{ sops_git_secrets_chart_version }}
+              --set git.name={{ sops_git_repository_name }}
+              --set git.url={{ stuttgart_things_repo }}
+              --set git.auth.username={{ sops_git_username }}
+              --set git.auth.password={{ sops_git_token }}
+              {% for s in standalone_sops_secrets %}--set secrets[{{ loop.index0 }}].name={{ s.name }} --set secrets[{{ loop.index0 }}].namespace={{ s.namespace }} {% endfor %}
+              --set ageKeySecret.name={{ sops_age_key_ref_name }}
+              -n crossplane-system --create-namespace
+              --kubeconfig {{ kubeconfig }}
             when: capabilities_enabled | bool and sops_git_secrets_enabled | bool
             no_log: true    # never echo the git token
 
