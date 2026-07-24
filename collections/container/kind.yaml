@@ -60,8 +60,17 @@ playbooks:
             - https://github.com/stuttgart-things/helm/infra/crds/cert-manager
             - https://github.com/stuttgart-things/helm/cicd/crds/crossplane
 
-          manifest_urls:
-            - https://github.com/stuttgart-things/helm/cicd/crossplane-config
+          # Plain manifests to `kubectl apply -f`. Empty by default: the entry
+          # that used to live here,
+          #   https://github.com/stuttgart-things/helm/cicd/crossplane-config
+          # is not a directory in the helm repo — only
+          # `cicd/crossplane-config.yaml.gotmpl` exists, and that is a HELMFILE,
+          # which kubectl cannot apply. So the URL 404'd and this play failed
+          # every time it ran. kind_machinery does it correctly with
+          # `helmfile apply -f {{ helm_repo }}@cicd/crossplane-config.yaml.gotmpl`,
+          # so nothing is lost. Kept as an extension point for callers that do
+          # have real manifest URLs; the task below is guarded on length > 0.
+          manifest_urls: []
 
           helmfile_deployments:
             - location: "git::https://github.com/stuttgart-things/helm.git@infra/cilium.yaml.gotmpl"
