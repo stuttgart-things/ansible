@@ -18,7 +18,7 @@ on:
       dagger-version:
         description: DAGGER MODULE VERSION
         type: string
-        default: v0.20.6
+        default: v0.21.7
 
 jobs:
   collection-build:
