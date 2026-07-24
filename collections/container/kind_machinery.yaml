@@ -202,6 +202,7 @@ playbooks:
           crossplane_configurations_ref: main
           environment_config_manifests:
             - cicd/packer-build/examples/environmentconfig.yaml
+            - cicd/packer-release/examples/environmentconfig.yaml
           platform_environment_config_manifests:
             - bootstrap/flux-init/examples/environment-config.yaml
             - bootstrap/flux-apps/examples/environment-config.yaml
@@ -220,7 +221,16 @@ playbooks:
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             # Tekton-backed Packer builder — only provider-kubernetes, already up.
             - name: packer-build
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.2.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.4.1"
+            # Build -> test -> promote. Its dependsOn floor of packer-build
+            # >=v0.3.0 is why the pin above had to move: against v0.2.0 the
+            # promotion gate reads a `template-name` result that older
+            # packer-build does not surface, so the XR sits in phase=Building
+            # behind a successful build with no error. Pulls vm-provision
+            # (-> vsphere-vm, proxmox-vm, ansible-run) transitively; needs no
+            # provider beyond the ones already waited on above.
+            - name: packer-release
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-release:v0.2.2"
 
           # Fleet-manager half. `platform` pulls cni + flux-init via dependsOn.
           # flux-apps is listed explicitly because platform composes FluxApps
@@ -675,6 +685,7 @@ playbooks:
           crossplane_configurations_ref: main
           environment_config_manifests:
             - cicd/packer-build/examples/environmentconfig.yaml
+            - cicd/packer-release/examples/environmentconfig.yaml
           platform_environment_config_manifests:
             - bootstrap/flux-init/examples/environment-config.yaml
             - bootstrap/flux-apps/examples/environment-config.yaml
@@ -687,7 +698,16 @@ playbooks:
               package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.4.0"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             - name: packer-build
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.2.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.4.1"
+            # Build -> test -> promote. Its dependsOn floor of packer-build
+            # >=v0.3.0 is why the pin above had to move: against v0.2.0 the
+            # promotion gate reads a `template-name` result that older
+            # packer-build does not surface, so the XR sits in phase=Building
+            # behind a successful build with no error. Pulls vm-provision
+            # (-> vsphere-vm, proxmox-vm, ansible-run) transitively; needs no
+            # provider beyond the ones already waited on above.
+            - name: packer-release
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-release:v0.2.2"
 
           platform_packages:
             - name: platform
