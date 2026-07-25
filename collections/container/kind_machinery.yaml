@@ -190,6 +190,12 @@ playbooks:
               namespace: tekton-ci
             - name: dapr-backstage-template-execution-vars
               namespace: flux-system
+            # ghcr push credential for the cluster-backup CronJob. Lands in
+            # crossplane-system (cluster-backup's default spec.namespace), as a
+            # kubernetes.io/dockerconfigjson Secret - the type is carried in the
+            # encrypted manifest, so the operator materializes it as-is.
+            - name: backup-registry
+              namespace: crossplane-system
 
           stuttgart_things_repo: "https://github.com/stuttgart-things/stuttgart-things.git"
           stuttgart_things_ref: main
@@ -688,6 +694,12 @@ playbooks:
               namespace: tekton-ci
             - name: dapr-backstage-template-execution-vars
               namespace: flux-system
+            # ghcr push credential for the cluster-backup CronJob. Lands in
+            # crossplane-system (cluster-backup's default spec.namespace), as a
+            # kubernetes.io/dockerconfigjson Secret - the type is carried in the
+            # encrypted manifest, so the operator materializes it as-is.
+            - name: backup-registry
+              namespace: crossplane-system
 
           stuttgart_things_repo: "https://github.com/stuttgart-things/stuttgart-things.git"
           stuttgart_things_ref: main
