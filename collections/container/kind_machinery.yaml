@@ -203,6 +203,7 @@ playbooks:
           environment_config_manifests:
             - cicd/packer-build/examples/environmentconfig.yaml
             - cicd/packer-release/examples/environmentconfig.yaml
+            - cicd/cluster-backup/examples/environmentconfig.yaml
           platform_environment_config_manifests:
             - bootstrap/flux-init/examples/environment-config.yaml
             - bootstrap/flux-apps/examples/environment-config.yaml
@@ -231,6 +232,16 @@ playbooks:
             # provider beyond the ones already waited on above.
             - name: packer-release
               package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-release:v0.2.2"
+            # Scheduled encrypted state export to an OCI registry. Only
+            # provider-kubernetes (already up), like the packer packages, so no
+            # provider_crd wait. Installing the package + its EnvironmentConfig
+            # makes the capability available; a running backup additionally
+            # needs the backup-registry push Secret and, on a scoped provider
+            # SA, the provider-kubernetes RBAC from the Configuration's README
+            # (fleet GitOps, same place as provider-kubernetes-flux) - neither
+            # is required just to install this.
+            - name: cluster-backup
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster-backup:v0.1.0"
 
           # Fleet-manager half. `platform` pulls cni + flux-init via dependsOn.
           # flux-apps is listed explicitly because platform composes FluxApps
@@ -686,6 +697,7 @@ playbooks:
           environment_config_manifests:
             - cicd/packer-build/examples/environmentconfig.yaml
             - cicd/packer-release/examples/environmentconfig.yaml
+            - cicd/cluster-backup/examples/environmentconfig.yaml
           platform_environment_config_manifests:
             - bootstrap/flux-init/examples/environment-config.yaml
             - bootstrap/flux-apps/examples/environment-config.yaml
@@ -708,6 +720,16 @@ playbooks:
             # provider beyond the ones already waited on above.
             - name: packer-release
               package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-release:v0.2.2"
+            # Scheduled encrypted state export to an OCI registry. Only
+            # provider-kubernetes (already up), like the packer packages, so no
+            # provider_crd wait. Installing the package + its EnvironmentConfig
+            # makes the capability available; a running backup additionally
+            # needs the backup-registry push Secret and, on a scoped provider
+            # SA, the provider-kubernetes RBAC from the Configuration's README
+            # (fleet GitOps, same place as provider-kubernetes-flux) - neither
+            # is required just to install this.
+            - name: cluster-backup
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster-backup:v0.1.0"
 
           platform_packages:
             - name: platform
