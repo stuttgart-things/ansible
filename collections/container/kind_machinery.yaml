@@ -114,6 +114,7 @@ playbooks:
           sops_age_key_ref_name: "{{ '' if sops_global_age_key_enabled | bool else 'sops-age-key' }}"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
           ansible_chart_version: "0.5.0"
+          cluster_backup_chart_version: "0.1.0"
           cert_manager_version: v1.21.0
 
           # Per-environment capability charts. One Helm release per entry in
@@ -209,7 +210,8 @@ playbooks:
           environment_config_manifests:
             - cicd/packer-build/examples/environmentconfig.yaml
             - cicd/packer-release/examples/environmentconfig.yaml
-            - cicd/cluster-backup/examples/environmentconfig.yaml
+            # cluster-backup's EnvironmentConfig comes from its capability chart
+            # (deployed below), not applied raw — it also carries the provider RBAC.
           platform_environment_config_manifests:
             - bootstrap/flux-init/examples/environment-config.yaml
             - bootstrap/flux-apps/examples/environment-config.yaml
@@ -526,6 +528,18 @@ playbooks:
             become_user: "{{ ansible_user }}"
             when: capabilities_enabled | bool
 
+          # Provider-kubernetes RBAC (the backup composes CronJobs + RBAC) and
+          # the cluster-backup EnvironmentConfig. The push credential is the
+          # sops-git backup-registry blob, not set here.
+          - name: Deploy cluster-backup capability (single release)
+            ansible.builtin.command: >
+              helm upgrade --install cluster-backup {{ charts_oci }}/cluster-backup
+              --version {{ cluster_backup_chart_version }}
+              -n crossplane-system --create-namespace
+              --kubeconfig {{ kubeconfig }}
+            become_user: "{{ ansible_user }}"
+            when: capabilities_enabled | bool
+
           # ================================================================
           # 6) REMOTE-CLUSTER CREDENTIALS (optional) — the vault-kubeconfigs
           #    ClusterProviderConfig that RemoteCluster CRs reference. Chart
@@ -620,6 +634,7 @@ playbooks:
           sops_age_key_ref_name: "{{ '' if sops_global_age_key_enabled | bool else 'sops-age-key' }}"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
           ansible_chart_version: "0.5.0"
+          cluster_backup_chart_version: "0.1.0"
           cert_manager_version: v1.21.0
 
           # Per-environment capability charts. One Helm release per entry in
@@ -709,7 +724,8 @@ playbooks:
           environment_config_manifests:
             - cicd/packer-build/examples/environmentconfig.yaml
             - cicd/packer-release/examples/environmentconfig.yaml
-            - cicd/cluster-backup/examples/environmentconfig.yaml
+            # cluster-backup's EnvironmentConfig comes from its capability chart
+            # (deployed below), not applied raw — it also carries the provider RBAC.
           platform_environment_config_manifests:
             - bootstrap/flux-init/examples/environment-config.yaml
             - bootstrap/flux-apps/examples/environment-config.yaml
@@ -962,6 +978,13 @@ playbooks:
               --set environment={{ vsphere_env }} --set sshCredentials.backend=sops-git
               --set sshCredentials.sopsGit.repositoryRef.name={{ sops_git_repository_name }}
               --set sshCredentials.sopsGit.ageKeySecret.name={{ sops_age_key_ref_name }}
+              -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
+            when: capabilities_enabled | bool
+
+          - name: Deploy cluster-backup capability (single release)
+            ansible.builtin.command: >
+              helm upgrade --install cluster-backup {{ charts_oci }}/cluster-backup
+              --version {{ cluster_backup_chart_version }}
               -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
             when: capabilities_enabled | bool
 
