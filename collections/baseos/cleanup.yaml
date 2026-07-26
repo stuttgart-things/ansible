@@ -1,0 +1,445 @@
+---
+playbooks:
+  - name: disk_cleanup
+    play: |
+      ---
+      # =============================================================================
+      # Fleet Disk Cleanup
+      # -----------------------------------------------------------------------------
+      # Cleans up /home and /var on the GitHub runner and SOAR hosts.
+      #
+      # SAFE BY DESIGN:
+      #   * removes ONLY caches, logs and disposable build artifacts
+      #   * NEVER touches Docker volumes or bind-mount data directories
+      #     (postgres_data, keycloak-database, vault/raft, opensearch, ...)
+      #   * skips any host that is currently executing a CI job
+      #   * every riskier step sits behind its own toggle, disabled by default
+      #
+      # Usage:
+      #   ansible-playbook -i inventory.ini sthings.baseos.disk_cleanup
+      #   ansible-playbook -i inventory.ini sthings.baseos.disk_cleanup --check
+      #   ansible-playbook -i inventory.ini sthings.baseos.disk_cleanup --limit <host>
+      #   ansible-playbook -i inventory.ini sthings.baseos.disk_cleanup --tags docker,apt
+      #   ansible-playbook -i inventory.ini sthings.baseos.disk_cleanup -e cleanup_force=true
+      #   ansible-playbook -i inventory.ini sthings.baseos.disk_cleanup -e prune_docker_volumes=true
+      #
+      # Tags: journal, trivy, go, runner, snap, vscode, docker, apt, logs, diagnose
+      #       (preflight and the before/after report always run)
+      # =============================================================================
+
+      - name: Fleet disk cleanup
+        hosts: all
+        become: true
+        gather_facts: true
+
+        vars:
+          # --- Which user owns the runner / service? (set per host in inventory) ---
+          cleanup_user: "{{ cleanup_runner_user | default('gh-runner') }}"
+
+          # --- Safety ---
+          cleanup_force: false          # true = clean even while a CI job is running
+
+          # --- Reporting ---
+          monitored_mounts: ['/', '/home', '/var']
+          report_usage_threshold: 80    # du top-N diagnosis for mounts still above this
+          du_top_n: 10
+
+          # --- Retention ---
+          journal_keep: "200M"          # shrink the systemd journal to this size now
+          journal_max_use: "200M"       # ... and cap it persistently in journald.conf
+          diag_log_age_days: 3          # delete actions-runner/_diag/*.log older than X
+          log_archive_age_days: 7       # delete rotated /var/log archives older than X
+          snap_refresh_retain: 2        # keep this many old snap revisions
+
+          # --- Toggles (default = safe) ---
+          clean_journal: true
+          clean_journal_persistent: true  # write SystemMaxUse to journald.conf
+          clean_docker: true            # stopped containers, dangling images, build cache
+          clean_go_cache: true          # go clean -cache -modcache -testcache (as runner user)
+          clean_runner_diag: true       # old _diag logs
+          clean_runner_work_temp: true  # _work/_temp (job scratch, recreated on demand)
+          clean_trivy_cache: true
+          clean_vscode_server: false    # disconnects active remote sessions -> opt-in
+          clean_snap: true
+          clean_apt: true               # apt clean + autoremove --purge (old kernels)
+          clean_old_logs: true          # rotated archives in /var/log (*.gz, *.1, ...)
+          clean_crash_dumps: true       # /var/crash
+          diagnose_top_consumers: true  # du top-N for mounts still above threshold
+
+          # DANGEROUS -> enable explicitly with -e only
+          prune_docker_volumes: false     # removes *unused* volumes (may be real data!)
+          prune_docker_all_images: false  # docker system prune -a (also tagged images)
+
+        handlers:
+          - name: Restart systemd-journald
+            ansible.builtin.systemd_service:
+              name: systemd-journald
+              state: restarted
+
+        tasks:
+
+          # -------------------------------------------------------------- PREFLIGHT
+          - name: Preflight
+            tags: always
+            block:
+
+              - name: Check whether a CI job is currently running
+                ansible.builtin.shell:
+                  cmd: pgrep -f '[R]unner.Worker'
+                  executable: /bin/bash
+                register: runner_job
+                changed_when: false
+                failed_when: false
+                check_mode: false
+
+              - name: Announce skip because a CI job is active
+                ansible.builtin.debug:
+                  msg: >-
+                    {{ inventory_hostname }}: a CI job is running (PID
+                    {{ runner_job.stdout_lines | join(', ') }}) -> skipping.
+                    Override with -e cleanup_force=true
+                when:
+                  - runner_job.rc == 0
+                  - not cleanup_force
+
+              - name: End host while a CI job is active
+                ansible.builtin.meta: end_host
+                when:
+                  - runner_job.rc == 0
+                  - not cleanup_force
+
+              - name: Detect available tooling
+                ansible.builtin.shell:
+                  cmd: |
+                    for t in docker snap journalctl apt-get; do
+                      command -v "$t" >/dev/null 2>&1 && echo "$t"
+                    done
+                    exit 0
+                  executable: /bin/bash
+                register: tool_probe
+                changed_when: false
+                check_mode: false
+
+              - name: Check whether the Docker daemon answers
+                ansible.builtin.command: docker info
+                register: docker_info
+                changed_when: false
+                failed_when: false
+                check_mode: false
+                when: "'docker' in tool_probe.stdout_lines"
+
+              - name: Look up the cleanup user
+                ansible.builtin.getent:
+                  database: passwd
+                  key: "{{ cleanup_user }}"
+                register: cleanup_user_ent
+                failed_when: false
+                check_mode: false
+
+              - name: Set preflight facts
+                ansible.builtin.set_fact:
+                  docker_available: "{{ 'docker' in tool_probe.stdout_lines and docker_info.rc | default(1) == 0 }}"
+                  snap_available: "{{ 'snap' in tool_probe.stdout_lines }}"
+                  journal_available: "{{ 'journalctl' in tool_probe.stdout_lines }}"
+                  apt_available: "{{ 'apt-get' in tool_probe.stdout_lines }}"
+                  cleanup_user_exists: "{{ cleanup_user_ent.ansible_facts.getent_passwd[cleanup_user] is defined }}"
+                  cleanup_home: "{{ cleanup_user_ent.ansible_facts.getent_passwd[cleanup_user][4]
+                                    | default('/home/' ~ cleanup_user, true) }}"
+
+              - name: Record free space BEFORE
+                ansible.builtin.set_fact:
+                  usage_before: "{{ dict(sel | map(attribute='mount') | zip(sel | map(attribute='size_available'))) }}"
+                vars:
+                  sel: "{{ ansible_facts.mounts | selectattr('mount', 'in', monitored_mounts) | list }}"
+
+              - name: Show preflight result
+                ansible.builtin.debug:
+                  msg: >-
+                    user={{ cleanup_user }} (exists={{ cleanup_user_exists }}, home={{ cleanup_home }})
+                    docker={{ docker_available }} snap={{ snap_available }} apt={{ apt_available }}
+                    free={{ usage_before | dict2items | map(attribute='key') | zip(usage_before.values()
+                            | map('human_readable', unit='G')) | map('join', '=') | join(' ') }}
+
+          # ---------------------------------------------------------------- JOURNAL
+          - name: Journal
+            tags: journal
+            when: clean_journal and journal_available
+            block:
+
+              - name: Shrink the systemd journal now
+                ansible.builtin.command: "journalctl --vacuum-size={{ journal_keep }}"
+                register: journal_vacuum
+                changed_when: "'freed' in journal_vacuum.stderr or 'freed' in journal_vacuum.stdout"
+
+              - name: Cap the journal size persistently
+                ansible.builtin.lineinfile:
+                  path: /etc/systemd/journald.conf
+                  regexp: '^#?\s*SystemMaxUse\s*='
+                  line: "SystemMaxUse={{ journal_max_use }}"
+                  insertafter: '^\[Journal\]'
+                  owner: root
+                  group: root
+                  mode: "0644"
+                notify: Restart systemd-journald
+                when: clean_journal_persistent
+
+          # ---------------------------------------------------------------- TRIVY
+          - name: Clear the trivy cache
+            ansible.builtin.file:
+              path: "{{ cleanup_home }}/trivy-cache"
+              state: absent
+            when: clean_trivy_cache and cleanup_user_exists
+            tags: trivy
+
+          # -------------------------------------------------------------- GO CACHE
+          # Run as the runner user so newly created cache dirs get the right owner.
+          - name: Go caches
+            tags: go
+            when: clean_go_cache and cleanup_user_exists
+            become: true
+            become_user: "{{ cleanup_user }}"
+            block:
+
+              - name: Check for the Go binary
+                ansible.builtin.shell:
+                  cmd: command -v go
+                  executable: /bin/bash
+                register: go_bin
+                changed_when: false
+                failed_when: false
+                check_mode: false
+
+              - name: Clear Go caches (go clean)
+                ansible.builtin.command: go clean -cache -modcache -testcache
+                register: go_clean
+                changed_when: true
+                when: go_bin.rc == 0
+
+              # Fallback if go is not in the user's PATH: nuke the cache dirs directly.
+              # modcache is stored read-only -> make it writable first.
+              - name: Remove Go cache dirs directly (fallback without go binary)
+                ansible.builtin.shell:
+                  cmd: |
+                    set -e
+                    h="{{ cleanup_home }}"
+                    rm -rf "$h/.cache/go-build"/* 2>/dev/null || true
+                    if [ -d "$h/go/pkg/mod" ]; then
+                      chmod -R u+w "$h/go/pkg/mod" 2>/dev/null || true
+                      rm -rf "$h/go/pkg/mod"/* 2>/dev/null || true
+                    fi
+                  executable: /bin/bash
+                register: go_fallback
+                changed_when: true
+                when: go_bin.rc != 0
+
+          # ------------------------------------------------------ ACTIONS RUNNER
+          - name: Actions runner
+            tags: runner
+            when: cleanup_user_exists
+            block:
+
+              - name: Find old runner _diag logs
+                ansible.builtin.find:
+                  paths: "{{ cleanup_home }}/actions-runner/_diag"
+                  patterns: "*.log"
+                  age: "{{ diag_log_age_days }}d"
+                  recurse: false
+                register: diag_logs
+                check_mode: false
+                when: clean_runner_diag
+
+              - name: Remove _diag logs
+                ansible.builtin.file:
+                  path: "{{ item.path }}"
+                  state: absent
+                loop: "{{ diag_logs.files | default([]) }}"
+                loop_control:
+                  label: "{{ item.path }}"
+                when: clean_runner_diag
+
+              - name: Clear _work/_temp (job scratch)
+                ansible.builtin.shell:
+                  cmd: |
+                    d="{{ cleanup_home }}/actions-runner/_work/_temp"
+                    [ -d "$d" ] && rm -rf "$d"/* || true
+                  executable: /bin/bash
+                register: work_temp
+                changed_when: true
+                when: clean_runner_work_temp
+
+          # --------------------------------------------------------------- SNAP
+          - name: Snap
+            tags: snap
+            when: clean_snap and snap_available
+            block:
+
+              - name: Set snap refresh.retain
+                ansible.builtin.command: "snap set system refresh.retain={{ snap_refresh_retain }}"
+                changed_when: false
+                failed_when: false
+
+              - name: Find disabled snap revisions
+                ansible.builtin.shell:
+                  cmd: "set -o pipefail; snap list --all | awk '/disabled/{print $1\"@\"$3}'"
+                  executable: /bin/bash
+                register: snap_disabled
+                changed_when: false
+                failed_when: false
+                check_mode: false
+
+              - name: Remove old snap revisions
+                ansible.builtin.command: "snap remove {{ item.split('@')[0] }} --revision={{ item.split('@')[1] }}"
+                loop: "{{ snap_disabled.stdout_lines | default([]) }}"
+                register: snap_removed
+                changed_when: true
+                failed_when: false
+
+              - name: Clear the snapd download cache
+                ansible.builtin.shell:
+                  cmd: rm -rf /var/lib/snapd/cache/* 2>/dev/null || true
+                  executable: /bin/bash
+                changed_when: true
+
+          # ------------------------------------------------------------- APT / VAR
+          - name: APT
+            tags: apt
+            when: clean_apt and apt_available and ansible_facts.os_family == 'Debian'
+            block:
+
+              - name: Remove orphaned packages and old kernels
+                ansible.builtin.apt:
+                  autoremove: true
+                  purge: true
+
+              - name: Empty the apt package cache
+                ansible.builtin.apt:
+                  clean: true
+
+          - name: Logs and crash dumps
+            tags: logs
+            block:
+
+              - name: Find rotated log archives
+                ansible.builtin.find:
+                  paths: /var/log
+                  patterns: ['*.gz', '*.xz', '*.old', '*.[0-9]']
+                  age: "{{ log_archive_age_days }}d"
+                  recurse: true
+                register: old_logs
+                check_mode: false
+                when: clean_old_logs
+
+              - name: Remove rotated log archives
+                ansible.builtin.file:
+                  path: "{{ item.path }}"
+                  state: absent
+                loop: "{{ old_logs.files | default([]) }}"
+                loop_control:
+                  label: "{{ item.path }}"
+                when: clean_old_logs
+
+              - name: Clear crash dumps
+                ansible.builtin.shell:
+                  cmd: rm -rf /var/crash/* 2>/dev/null || true
+                  executable: /bin/bash
+                changed_when: true
+                when: clean_crash_dumps
+
+          # ------------------------------------------------------- VSCODE SERVER
+          - name: Clear vscode-server bin/ (opt-in, disconnects remote sessions)
+            ansible.builtin.shell:
+              cmd: |
+                d="{{ cleanup_home }}/.vscode-server/bin"
+                [ -d "$d" ] && rm -rf "$d"/* || true
+              executable: /bin/bash
+            changed_when: true
+            when: clean_vscode_server and cleanup_user_exists
+            tags: vscode
+
+          # ------------------------------------------------------------- DOCKER
+          # Default: stopped containers + dangling images + build cache.
+          # NO volumes, NO tagged images.
+          - name: Docker
+            tags: docker
+            when: docker_available
+            block:
+
+              - name: Docker safe prune
+                ansible.builtin.command: docker system prune -f
+                register: docker_prune
+                changed_when: "'Total reclaimed space: 0B' not in docker_prune.stdout"
+                when: clean_docker
+
+              - name: Clear Docker build cache
+                ansible.builtin.command: docker builder prune -f
+                register: docker_builder
+                changed_when: "'Total reclaimed space: 0B' not in docker_builder.stdout"
+                when: clean_docker
+
+              - name: "DANGEROUS: docker system prune -a (also tagged images)"
+                ansible.builtin.command: docker system prune -a -f
+                register: docker_prune_all
+                changed_when: "'Total reclaimed space: 0B' not in docker_prune_all.stdout"
+                when: prune_docker_all_images
+
+              - name: "DANGEROUS: prune unused Docker volumes"
+                ansible.builtin.command: docker volume prune -f
+                register: docker_vol_prune
+                changed_when: "'Total reclaimed space: 0B' not in docker_vol_prune.stdout"
+                when: prune_docker_volumes
+
+          # ----------------------------------------------------------------- AFTER
+          - name: Report
+            tags: always
+            block:
+
+              - name: Re-read mount facts
+                ansible.builtin.setup:
+                  gather_subset: ['!all', 'hardware']
+
+              - name: Record free space AFTER
+                ansible.builtin.set_fact:
+                  usage_after: "{{ dict(sel | map(attribute='mount') | zip(sel | map(attribute='size_available'))) }}"
+                  hot_mounts: []
+                vars:
+                  sel: "{{ ansible_facts.mounts | selectattr('mount', 'in', monitored_mounts) | list }}"
+
+              - name: Determine mounts still above the threshold
+                ansible.builtin.set_fact:
+                  hot_mounts: "{{ hot_mounts + [item.mount] }}"
+                loop: "{{ ansible_facts.mounts | selectattr('mount', 'in', monitored_mounts) | list }}"
+                loop_control:
+                  label: "{{ item.mount }}"
+                when:
+                  - item.size_total | int > 0
+                  - (item.size_total - item.size_available) / item.size_total * 100 > report_usage_threshold | float
+
+              - name: Result report
+                ansible.builtin.debug:
+                  msg: |-
+                    ===== {{ inventory_hostname }} =====
+                    {% for mount, before in usage_before.items() %}
+                    {{ "%-6s" | format(mount) }} free {{ before | human_readable(unit='G') }} -> {{ usage_after[mount] | human_readable(unit='G') }}   freed {{ ([usage_after[mount] - before, 0] | max) | human_readable(unit='G') }}
+                    {% endfor %}
+                    docker safe prune: {{ (docker_prune.stdout_lines | default(['-'], true))[-1] }}
+                    docker builder:    {{ (docker_builder.stdout_lines | default(['-'], true))[-1] }}
+                    still above {{ report_usage_threshold }}%: {{ hot_mounts | join(', ') | default('none', true) }}
+
+              - name: Diagnose top consumers on mounts still above the threshold
+                ansible.builtin.shell:
+                  cmd: "set -o pipefail; du -xh --max-depth=2 {{ item | quote }} 2>/dev/null | sort -rh | head -n {{ du_top_n }}"
+                  executable: /bin/bash
+                loop: "{{ hot_mounts }}"
+                register: du_top
+                changed_when: false
+                failed_when: false
+                check_mode: false
+                when: diagnose_top_consumers and hot_mounts | length > 0
+
+              - name: Show top consumers
+                ansible.builtin.debug:
+                  msg: "{{ [item.item ~ ' - top ' ~ du_top_n ~ ' consumers:'] + item.stdout_lines }}"
+                loop: "{{ du_top.results | default([]) }}"
+                loop_control:
+                  label: "{{ item.item }}"
+                when: du_top.results is defined and item.stdout_lines | default([]) | length > 0
