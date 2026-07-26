@@ -72,6 +72,12 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `sthings.baseos.pdns` | Create PowerDNS A records using Vault for API token |
 | `sthings.baseos.gh_runner` | Install and configure self-hosted GitHub Actions runners (repo or org scope) with optional Docker installation |
 
+### Maintenance
+
+| Playbook | Description |
+|----------|-------------|
+| `sthings.baseos.disk_cleanup` | Reclaim disk space on runner/service hosts: journal, Go caches, runner `_diag`/`_work/_temp`, trivy cache, snap revisions, apt cache + old kernels, rotated logs, crash dumps and a safe Docker prune. Skips hosts with an active CI job (`-e cleanup_force=true` overrides), never touches Docker volumes or tagged images unless explicitly enabled (`-e prune_docker_volumes=true`, `-e prune_docker_all_images=true`). Reports freed space and runs a `du` top-N diagnosis for mounts still above `report_usage_threshold`. Tags: `journal, trivy, go, runner, snap, vscode, docker, apt, logs, diagnose` |
+
 ### VM Provisioning
 
 | Playbook | Description |
