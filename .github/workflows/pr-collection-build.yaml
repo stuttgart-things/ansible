@@ -55,4 +55,7 @@ jobs:
       dagger-module-version: v0.120.0
       dagger-version: v0.21.7
       branch-name: ${{ github.event.pull_request.head.ref }}
+      # BUILD ONLY - THE ARTIFACT IS UPLOADED FOR REVIEW BUT NOT PUBLISHED.
+      # RELEASES ARE CUT BY main-collection-build.yaml ON MERGE TO MAIN
+      publish-release: false
     secrets: inherit # pragma: allowlist secret

@@ -1,0 +1,87 @@
+---
+name: Main Collection Build
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'collections/**'
+
+# NEVER CANCEL AN IN-FLIGHT RELEASE - A CANCELLED JOB CAN LEAVE A TAG
+# WITHOUT ITS ASSET. QUEUE INSTEAD SO MERGES RELEASE IN ORDER
+concurrency:
+  group: collection-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  Analyze-Collection-Config:
+    name: Analyze Collection Config
+    runs-on: ubuntu-latest
+    outputs:
+      collection_folders: ${{ steps.changed-files.outputs.collection_folders }}
+      has_changes: ${{ steps.changed-files.outputs.has_changes }}
+    steps:
+      - name: Checkout Project
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: '0'
+
+      - name: Get Collections Changed By Push
+        id: changed-files
+        run: |
+          set -euo pipefail
+
+          BEFORE="${{ github.event.before }}"
+
+          # before IS ZEROED ON A FIRST PUSH AND STALE AFTER A FORCE-PUSH,
+          # SO FALL BACK TO THE PARENT OF THE PUSHED COMMIT
+          if [ -z "${BEFORE}" ] \
+            || [ "${BEFORE}" = "0000000000000000000000000000000000000000" ] \
+            || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            echo "using parent commit as diff base"
+            BEFORE="${{ github.sha }}^"
+          fi
+
+          echo "DIFF RANGE: ${BEFORE}..${{ github.sha }}"
+
+          # KEEP ONLY collections/<name>/... AND REDUCE TO THE COLLECTION ROOT,
+          # SO A NESTED FILE STILL MAPS TO THE COLLECTION THAT OWNS IT
+          CHANGED_FOLDERS=$(git diff --name-only "${BEFORE}" "${{ github.sha }}" -- collections \
+            | awk -F/ 'NF>=3 && $1=="collections" {print $1"/"$2}' \
+            | sort -u)
+
+          echo "CHANGED COLLECTIONS: ${CHANGED_FOLDERS:-<none>}"
+
+          if [ -z "${CHANGED_FOLDERS}" ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "collection_folders={\"collection-directory\":[]}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # SET CHANGED_FOLDERS AS MATRIX JSON
+          JSON_FOLDERS=$(printf '%s\n' "${CHANGED_FOLDERS}" \
+            | jq -R . \
+            | jq -sc '{"collection-directory": .}')
+
+          echo "${JSON_FOLDERS}"
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          echo "collection_folders=${JSON_FOLDERS}" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+  Build-Collections:
+    needs: Analyze-Collection-Config
+    if: ${{ needs.Analyze-Collection-Config.outputs.has_changes == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.Analyze-Collection-Config.outputs.collection_folders) }}
+    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-ansible-collection.yaml@main
+    with:
+      runs-on: ubuntu-latest
+      environment-name: k8s
+      collection-directory: ${{ matrix.collection-directory }}
+      dagger-module-version: v0.120.0
+      dagger-version: v0.21.7
+      branch-name: ${{ github.ref_name }}
+      # THE ONLY PATH THAT PUBLISHES A RELEASE
+      publish-release: true
+    secrets: inherit # pragma: allowlist secret

@@ -11,34 +11,31 @@ on:
         type: string
         description: BRANCH NAME
         default: main
+      publish-release:
+        description: PUBLISH A GITHUB RELEASE FOR THE BUILT COLLECTION
+        type: boolean
+        default: false
       dagger-module-version:
         description: DAGGER MODULE VERSION
         type: string
         default: v0.120.0
       dagger-version:
-        description: DAGGER MODULE VERSION
+        description: DAGGER VERSION
         type: string
         default: v0.21.7
 
+# THE MANUAL RE-RELEASE PATH. SINCE RELEASES ONLY HAPPEN ON MERGE TO MAIN,
+# THIS IS HOW A COLLECTION IS REBUILT AND REPUBLISHED WITHOUT A CODE CHANGE -
+# FOR EXAMPLE AFTER A DAGGER MODULE BUMP CHANGES THE BUILT ARTIFACT
 jobs:
-  collection-build:
-    name: Collection Build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Project
-        uses: actions/checkout@v7.0.1
-        with:
-          fetch-depth: '0'
-          ref: ${{ inputs.branch-name }}
-
-      - name: Build Collection
-        uses: dagger/dagger-for-github@v8.4.0
-        with:
-          version: ${{ inputs.dagger-version }}
-          verb: call
-          args: run-collection-build-pipeline --src collections/${{ inputs.collection }} --progress plain export --path=/tmp/build
-          module: github.com/stuttgart-things/dagger/ansible@${{ inputs.dagger-module-version }}
-
-      - name: List collection build
-        run: |
-          ls -lta /tmp/build
+  Build-Collection:
+    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-ansible-collection.yaml@main
+    with:
+      runs-on: ubuntu-latest
+      environment-name: k8s
+      collection-directory: collections/${{ inputs.collection }}
+      dagger-module-version: ${{ inputs.dagger-module-version }}
+      dagger-version: ${{ inputs.dagger-version }}
+      branch-name: ${{ inputs.branch-name }}
+      publish-release: ${{ inputs.publish-release }}
+    secrets: inherit # pragma: allowlist secret
