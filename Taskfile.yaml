@@ -10,7 +10,7 @@ vars:
   BRANCH:
     sh: if [ $(git rev-parse --abbrev-ref HEAD) != "main" ]; then echo $(git rev-parse --abbrev-ref HEAD); else echo main ; fi
   DAGGER_ANSIBLE_MODULE: github.com/stuttgart-things/dagger/ansible
-  DAGGER_ANSIBLE_MODULE_VERSION: v0.120.0
+  DAGGER_ANSIBLE_MODULE_VERSION: v0.121.0
 
 # PRECONDITION TO CHECK IF THE VIRTUAL ENVIRONMENT IS ACTIVATED
 venv-precondition: &venv
@@ -77,8 +77,19 @@ tasks:
         # CI BUILD PATHS CANNOT DRIFT APART. THE PREVIOUS THREE-STEP FLOW WAS
         # BROKEN: init-collection RETURNS A CollectionResult STRUCT, NOT A
         # DIRECTORY, SO `export` FAILED WITH `unknown command "export"`
+
+        # SAME VERSION SCHEME AS CI - YY.MMDD.<COMMIT COUNT>. WITHOUT THIS THE
+        # MODULE FALLS BACK TO A NON-MONOTONIC CALENDAR VERSION
+        if [ "$(git rev-parse --is-shallow-repository)" != "false" ]; then
+          echo "repository is shallow - the commit count would be wrong"
+          exit 1
+        fi
+
+        COLLECTION_VERSION="$(date -u +%y).$(date -u +%-m%d).$(git rev-list --count HEAD)"
+        echo "COLLECTION VERSION: ${COLLECTION_VERSION}"
+
         rm -rf {{ .OUTPUT_DIR }}/*
-        dagger call -m {{ .DAGGER_ANSIBLE_MODULE }}@{{ .DAGGER_ANSIBLE_MODULE_VERSION }} run-collection-build-pipeline --src {{ .SOURCE_COLLECTION_PATH }}/${COLLECTION} --progress plain export --path {{ .OUTPUT_DIR }}
+        dagger call -m {{ .DAGGER_ANSIBLE_MODULE }}@{{ .DAGGER_ANSIBLE_MODULE_VERSION }} run-collection-build-pipeline --src {{ .SOURCE_COLLECTION_PATH }}/${COLLECTION} --version ${COLLECTION_VERSION} --progress plain export --path {{ .OUTPUT_DIR }}
         echo "BUILT COLLECTION IN: {{ .OUTPUT_DIR }}" && ls -lta {{ .OUTPUT_DIR }}
 
         ARTIFACT_PATH=$(ls {{ .OUTPUT_DIR }}/*tar.gz)
