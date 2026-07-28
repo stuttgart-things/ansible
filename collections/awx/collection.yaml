@@ -1,6 +1,19 @@
 ---
 name: awx
 namespace: sthings
+authors:
+  - patrick.hermann
+description: awx deployment, job templates and surveys
+license:
+  - Apache-2.0
+tags:
+  - awx
+  - ansible
+  - automation
+repository: https://github.com/stuttgart-things/ansible
+documentation: https://github.com/stuttgart-things/ansible
+homepage: https://github.com/stuttgart-things/ansible
+issues: https://github.com/stuttgart-things/ansible/issues
 requirements: |
   roles:
     - src: https://github.com/stuttgart-things/install-configure-docker.git

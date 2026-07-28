@@ -1,6 +1,20 @@
 ---
 name: rke
 namespace: sthings
+authors:
+  - patrick.hermann
+description: rke2 and k3s cluster deployment and node configuration
+license:
+  - Apache-2.0
+tags:
+  - rke
+  - rke2
+  - k3s
+  - kubernetes
+repository: https://github.com/stuttgart-things/ansible
+documentation: https://github.com/stuttgart-things/ansible
+homepage: https://github.com/stuttgart-things/ansible
+issues: https://github.com/stuttgart-things/ansible/issues
 requirements: |
   roles:
     - src: https://github.com/stuttgart-things/deploy-configure-rke.git
