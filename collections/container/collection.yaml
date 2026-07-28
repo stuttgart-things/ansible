@@ -1,6 +1,19 @@
 ---
 name: container
 namespace: sthings
+authors:
+  - patrick.hermann
+description: container runtimes, kubernetes distributions and helm profiles
+license:
+  - Apache-2.0
+tags:
+  - container
+  - kubernetes
+  - helm
+repository: https://github.com/stuttgart-things/ansible
+documentation: https://github.com/stuttgart-things/ansible
+homepage: https://github.com/stuttgart-things/ansible
+issues: https://github.com/stuttgart-things/ansible/issues
 requirements: |
   roles:
     - src: https://github.com/stuttgart-things/install-configure-docker.git
