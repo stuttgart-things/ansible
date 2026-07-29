@@ -180,7 +180,7 @@ jobs:
         shell: bash
 
       - name: Download Built Collection
-        uses: actions/download-artifact@v7.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           # THE ARTIFACT IS NAMED sthings-<collection>-<version>.tar.gz AND THE
           # VERSION IS NOT KNOWN HERE, SO MATCH ON THE PREFIX
