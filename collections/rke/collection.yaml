@@ -28,4 +28,4 @@ requirements: |
       version: 2026.04.13
     - src: https://github.com/stuttgart-things/download-install-binary.git
       scm: git
-      version: 2025.03.27
+      version: 2026.07.15
