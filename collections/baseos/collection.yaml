@@ -18,7 +18,7 @@ requirements: |
   roles:
     - src: https://github.com/stuttgart-things/download-install-binary.git
       scm: git
-      version: 2025.01.14
+      version: 2026.07.15
     - src: https://github.com/stuttgart-things/create-os-user.git
       scm: git
       version: 2026.07.22
