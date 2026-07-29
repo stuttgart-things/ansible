@@ -7,11 +7,36 @@ on:
     paths:
       - 'collections/**'
 
-# NEVER CANCEL AN IN-FLIGHT RELEASE - A CANCELLED JOB CAN LEAVE A TAG
-# WITHOUT ITS ASSET. QUEUE INSTEAD SO MERGES RELEASE IN ORDER
-concurrency:
-  group: collection-release-${{ github.ref }}
-  cancel-in-progress: false
+# NO CONCURRENCY GROUP, DELIBERATELY.
+#
+# THIS USED TO CARRY:
+#   concurrency:
+#     group: collection-release-${{ github.ref }}
+#     cancel-in-progress: false
+#
+# THE INTENT WAS "NEVER CANCEL AN IN-FLIGHT RELEASE, QUEUE INSTEAD". THE EFFECT
+# WAS THE OPPOSITE. cancel-in-progress: false ONLY PROTECTS A *RUNNING* JOB -
+# GITHUB KEEPS AT MOST ONE *PENDING* RUN PER GROUP, SO EACH NEW PUSH CANCELLED
+# THE ONE STILL WAITING. OBSERVED ON A MERGE BURST:
+#
+#   9dc9d4b  success    -> sthings-baseos-26.729.1157
+#   7450423  cancelled
+#   9453030  cancelled
+#   e40f90d  success    -> sthings-container-26.729.1161
+#
+# DETECTION IS A PER-PUSH DIFF, SO A CANCELLED RUN TAKES ITS COLLECTIONS WITH
+# IT. IF A CANCELLED RUN WAS THE ONLY ONE WHOSE DIFF COVERED COLLECTION X, X
+# NEVER RELEASES - AND NOTHING SAYS SO, BECAUSE A CANCELLED RUN READS AS
+# DELIBERATE RATHER THAN FAILED.
+#
+# WITHOUT THE GROUP NO RUN IS EVER CANCELLED FOR CONCURRENCY, SO EVERY PUSH
+# RELEASES WHAT IT CHANGED. TWO RUNS CANNOT COLLIDE ON A TAG EITHER: THE
+# VERSION CARRIES THE COMMIT COUNT, SO DIFFERENT COMMITS PRODUCE DIFFERENT
+# TAGS, AND THE RELEASE JOB STILL REFUSES TO REPUBLISH AN EXISTING ONE.
+#
+# THE COST IS THAT A BURST TOUCHING ONE COLLECTION REPEATEDLY NOW PRODUCES ONE
+# RELEASE PER COMMIT INSTEAD OF ONE FOR THE LAST. THAT IS THE RIGHT TRADE:
+# EXTRA RELEASES ARE VISIBLE, DROPPED ONES ARE NOT.
 
 # LEAST PRIVILEGE BY DEFAULT. INDIVIDUAL JOBS WIDEN THIS WHERE THEY MUST
 permissions:
@@ -59,6 +84,23 @@ jobs:
           echo "CHANGED COLLECTIONS: ${CHANGED_FOLDERS:-<none>}"
 
           if [ -z "${CHANGED_FOLDERS}" ]; then
+            # THE paths FILTER ALREADY MATCHED collections/**, SO REACHING HERE
+            # MEANS EVERY CHANGED PATH WAS FILTERED OUT - collections/README.md
+            # AND THE LIKE. SAY SO LOUDLY. A RELEASE PIPELINE THAT DOES NOTHING
+            # AND REPORTS SUCCESS IS HOW #1048 AND #11 BOTH STAYED HIDDEN
+            {
+              echo "### No collection released"
+              echo ""
+              echo "The push matched \`collections/**\` but no path resolved to"
+              echo "a buildable collection, so **nothing was released**."
+              echo ""
+              echo "Changed paths in \`${BEFORE}..${{ github.sha }}\`:"
+              echo '```'
+              git diff --name-only "${BEFORE}" "${{ github.sha }}" -- collections
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            echo "NO BUILDABLE COLLECTION RESOLVED - NOTHING WILL BE RELEASED"
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
             echo "collection_folders={\"collection-directory\":[]}" >> "$GITHUB_OUTPUT"
             exit 0
