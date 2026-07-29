@@ -22,6 +22,9 @@ concurrency:
   group: nightly-molecule-awx
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   Molecule-AWX:
     name: Molecule AWX

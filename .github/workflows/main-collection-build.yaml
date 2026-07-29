@@ -13,10 +13,16 @@ concurrency:
   group: collection-release-${{ github.ref }}
   cancel-in-progress: false
 
+# LEAST PRIVILEGE BY DEFAULT. INDIVIDUAL JOBS WIDEN THIS WHERE THEY MUST
+permissions:
+  contents: read
+
 jobs:
   Analyze-Collection-Config:
     name: Analyze Collection Config
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       collection_folders: ${{ steps.changed-files.outputs.collection_folders }}
       has_changes: ${{ steps.changed-files.outputs.has_changes }}
@@ -74,7 +80,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.Analyze-Collection-Config.outputs.collection_folders) }}
-    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-ansible-collection.yaml@main
+    # THE RELEASE PATH SIGNS A BUILD PROVENANCE ATTESTATION. A REUSABLE WORKFLOW
+    # CANNOT GRANT ITSELF MORE THAN ITS CALLER DID, SO THE SCOPES HAVE TO BE
+    # HANDED DOWN FROM HERE
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-ansible-collection.yaml@627fa26ea590c7ace7bf173a3660129367baab66 # main
     with:
       runs-on: ubuntu-latest
       environment-name: k8s
