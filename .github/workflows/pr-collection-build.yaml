@@ -124,10 +124,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.Analyze-Collection-Config.outputs.collection_folders) }}
-    # BUILD ONLY. THE RELEASE JOB INSIDE THE REUSABLE WORKFLOW IS SKIPPED HERE
-    # (publish-release: false), SO NO SIGNING SCOPE IS HANDED TO A PR BRANCH
+    # GITHUB VALIDATES A NESTED JOB'S REQUESTED PERMISSIONS EVEN WHEN THAT JOB
+    # IS SKIPPED. Release-Collection NEVER RUNS HERE (publish-release: false),
+    # BUT ITS DECLARATION IS STILL CHECKED AGAINST WHAT THIS CALLER GRANTS, SO
+    # WITHDRAWING THE SIGNING SCOPES MADE THE WHOLE WORKFLOW FILE INVALID.
+    #
+    # GRANTING THEM DOES NOT HAND THEM TO THE BUILD: collection-build DECLARES
+    # contents: read FOR ITSELF, AND A NESTED JOB ONLY EVER GETS WHAT IT ASKS
+    # FOR. THE CAP THAT MATTERS IS THERE, NOT HERE
     permissions:
       contents: read
+      id-token: write
+      attestations: write
     uses: stuttgart-things/github-workflow-templates/.github/workflows/call-ansible-collection.yaml@627fa26ea590c7ace7bf173a3660129367baab66 # main
     with:
       runs-on: ubuntu-latest
