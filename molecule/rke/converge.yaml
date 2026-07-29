@@ -1,0 +1,24 @@
+---
+# NEVER CONVERGED - THIS SCENARIO STOPS AT syntax (SEE molecule.yml). THE
+# IMPORTS EXIST SO ansible-playbook --syntax-check PARSES EVERY rke PLAYBOOK
+# IN THE BUILT COLLECTION AND RESOLVES ITS INCLUDES.
+- name: Syntax check rke2 cluster deployment
+  ansible.builtin.import_playbook: sthings.rke.rke2_cluster
+
+- name: Syntax check rke2 node configuration
+  ansible.builtin.import_playbook: sthings.rke.rke2
+
+- name: Syntax check rke2 workflow
+  ansible.builtin.import_playbook: sthings.rke.rke2_workflow
+
+- name: Syntax check rke2 api token
+  ansible.builtin.import_playbook: sthings.rke.api_token
+
+- name: Syntax check kubeconfig upload
+  ansible.builtin.import_playbook: sthings.rke.upload_kubeconfig_vault
+
+- name: Syntax check k3s cluster deployment
+  ansible.builtin.import_playbook: sthings.rke.k3s_cluster
+
+- name: Syntax check k3s node configuration
+  ansible.builtin.import_playbook: sthings.rke.k3s
