@@ -1,4 +1,13 @@
 ---
+# SYNTAX-ONLY SCENARIO.
+#
+# THE rke PLAYBOOKS DEPLOY REAL CLUSTERS, WHICH IS TOO HEAVY FOR A PR GATE, SO
+# THIS SEQUENCE STOPS AT syntax - NO CONTAINER IS CREATED AND NOTHING CONVERGES.
+# IT STILL CATCHES THE FAILURE MODE THAT USED TO REACH PRODUCTION: A PLAYBOOK
+# THAT DOES NOT PARSE, OR A src:/include: THAT DOES NOT RESOLVE IN THE BUILT
+# COLLECTION.
+#
+# GROWING THIS INTO A REAL CONVERGE NEEDS A CLUSTER-CAPABLE ENVIRONMENT.
 dependency:
   name: galaxy
   enabled: True
@@ -10,33 +19,22 @@ dependency:
 
 driver:
   name: docker
+
 platforms:
   - name: ubuntu24
     image: geerlingguy/docker-ubuntu2404-ansible@sha256:129f93fb11c00d2452f541fc926234a2ecf7957d7348fb07832bd0bf6973f503
-    command: ${MOLECULE_DOCKER_COMMAND:-""} #sudo apt update -y && sudo apt upgrade -y
-    volumes:
-      - /sys/fs/cgroup:/sys/fs/cgroup:rw
-    cgroupns_mode: host
-    privileged: true
     pre_build_image: true
+
 provisioner:
   name: ansible
-  options:
-    vvv: true
   playbooks:
     converge: ${MOLECULE_PLAYBOOK:-converge.yaml}
-  env:
-    config_path: /tmp/awx-molecule.yaml
 
 verifier:
   name: ansible
 
 scenario:
-  name: awx
+  name: rke
   test_sequence:
-    - destroy
     - dependency
     - syntax
-    - create
-    - prepare
-    - converge

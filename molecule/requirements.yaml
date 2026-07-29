@@ -1,0 +1,32 @@
+---
+# UPSTREAM COLLECTIONS ONLY.
+#
+# molecule RESOLVES ITS dependency STEP FROM THIS FILE WITH force: True. THE
+# sthings.* COLLECTIONS ARE DELIBERATELY ABSENT: LISTING THEM HERE WOULD LET
+# THAT STEP OVERWRITE THE FRESHLY BUILT COLLECTION UNDER TEST WITH THE LAST
+# PUBLISHED ONE, WHICH IS EXACTLY THE BUG THIS SPLIT FIXES.
+#
+# THE sthings.* COLLECTIONS ARE INSTALLED BEFORE molecule RUNS:
+#   1. ../requirements.yaml            -> published pins, for dependencies
+#   2. the built .tar.gz, with --force -> the collection actually under test
+#
+# ../requirements.yaml stays the consumer-facing pin file and is not used here.
+collections:
+  - name: ansible.netcommon
+    version: 8.6.1
+  - name: ansible.posix
+    version: 2.2.2
+  - name: awx.awx
+    version: 24.6.1
+  - name: community.crypto
+    version: 3.3.0
+  - name: community.docker
+    version: 5.2.1
+  - name: community.general
+    version: 13.2.0
+  - name: community.hashi_vault
+    version: 7.1.0
+  - name: community.vmware
+    version: 6.2.1
+  - name: kubernetes.core
+    version: 6.5.0

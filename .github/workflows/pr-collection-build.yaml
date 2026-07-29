@@ -17,6 +17,8 @@ jobs:
     outputs:
       collection_folders: ${{ steps.changed-files.outputs.collection_folders }}
       has_changes: ${{ steps.changed-files.outputs.has_changes }}
+      molecule_folders: ${{ steps.changed-files.outputs.molecule_folders }}
+      has_molecule: ${{ steps.changed-files.outputs.has_molecule }}
     runs-on: ghr-ansible-in-cluster
     steps:
       - name: Get Modified Files by PullRequest
@@ -68,7 +70,9 @@ jobs:
 
           if [ -z "${ALL_CHANGED_FOLDERS}" ]; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "has_molecule=false" >> "$GITHUB_OUTPUT"
             echo "collection_folders={\"collection-directory\":[]}" >> "$GITHUB_OUTPUT"
+            echo "molecule_folders={\"collection-directory\":[]}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -80,6 +84,28 @@ jobs:
           echo "${JSON_FOLDERS}"
           echo "has_changes=true" >> "$GITHUB_OUTPUT"
           echo "collection_folders=${JSON_FOLDERS}" >> "$GITHUB_OUTPUT"
+
+          # ONLY THESE SCENARIOS GATE A PR. awx NEEDS A KIND CLUSTER, AN AWX
+          # DEPLOY AND VAULT CREDENTIALS, SO IT RUNS NIGHTLY INSTEAD
+          # (nightly-molecule-awx.yaml). rke IS SYNTAX-ONLY AND RUNS BELOW
+          MOLECULE_FOLDERS=$(printf '%s\n' "${ALL_CHANGED_FOLDERS}" \
+            | grep -E '^collections/(baseos|container|rke)$' || true)
+
+          echo "MOLECULE_FOLDERS=${MOLECULE_FOLDERS:-<none>}"
+
+          if [ -z "${MOLECULE_FOLDERS}" ]; then
+            echo "has_molecule=false" >> "$GITHUB_OUTPUT"
+            echo "molecule_folders={\"collection-directory\":[]}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          JSON_MOLECULE=$(printf '%s\n' "${MOLECULE_FOLDERS}" \
+            | jq -R . \
+            | jq -sc '{"collection-directory": .}')
+
+          echo "${JSON_MOLECULE}"
+          echo "has_molecule=true" >> "$GITHUB_OUTPUT"
+          echo "molecule_folders=${JSON_MOLECULE}" >> "$GITHUB_OUTPUT"
 
   Build-Collections:
     needs: Analyze-Collection-Config
@@ -99,3 +125,89 @@ jobs:
       # RELEASES ARE CUT BY main-collection-build.yaml ON MERGE TO MAIN
       publish-release: false
     secrets: inherit # pragma: allowlist secret
+
+  Molecule-Test:
+    name: Molecule
+    needs:
+      - Analyze-Collection-Config
+      - Build-Collections
+    if: ${{ needs.Analyze-Collection-Config.outputs.has_molecule == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.Analyze-Collection-Config.outputs.molecule_folders) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Project
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Resolve Scenario
+        id: scenario
+        run: |
+          set -eu
+          SCENARIO=$(basename "${{ matrix.collection-directory }}")
+          echo "SCENARIO: ${SCENARIO}"
+          echo "scenario=${SCENARIO}" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: Setup Python
+        uses: actions/setup-python@v6.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Molecule
+        run: |
+          set -eu
+          pip install --upgrade pip setuptools
+          pip install 'molecule' 'molecule-docker' netaddr
+          molecule --version
+        shell: bash
+
+      - name: Download Built Collection
+        uses: actions/download-artifact@v7.0.1
+        with:
+          # THE ARTIFACT IS NAMED sthings-<collection>-<version>.tar.gz AND THE
+          # VERSION IS NOT KNOWN HERE, SO MATCH ON THE PREFIX
+          pattern: sthings-${{ steps.scenario.outputs.scenario }}-*
+          merge-multiple: true
+          path: /tmp/collection
+
+      - name: Install Collections
+        run: |
+          set -eu
+
+          # PUBLISHED PINS FIRST - THEY PROVIDE THE OTHER sthings COLLECTIONS A
+          # SCENARIO IMPORTS. molecule/container/converge.yaml, FOR ONE, PULLS IN
+          # sthings.baseos.users AS WELL AS sthings.container.tools
+          ansible-galaxy collection install -r requirements.yaml
+
+          # THEN THE BUILD UNDER TEST, OVERWRITING ITS PUBLISHED COUNTERPART.
+          # WITHOUT THIS THE SUITE TESTS THE LAST RELEASE, NOT THIS PR
+          ARTIFACT=$(ls /tmp/collection/*.tar.gz | head -n 1)
+          echo "COLLECTION UNDER TEST: ${ARTIFACT}"
+          ansible-galaxy collection install --force "${ARTIFACT}"
+
+          ansible-galaxy collection list | grep sthings
+        shell: bash
+
+      - name: Molecule Test
+        env:
+          MOLECULE_DOCKER_COMMAND: /lib/systemd/systemd
+        run: molecule test -s ${{ steps.scenario.outputs.scenario }}
+        shell: bash
+
+      # INFORMATIONAL. THESE PLAYBOOKS HAVE NEVER BEEN HELD TO IDEMPOTENCE, SO A
+      # FAILURE HERE REPORTS RATHER THAN BLOCKS. rke NEVER CONVERGES, SO IT HAS
+      # NO INSTANCE TO RE-RUN AGAINST
+      - name: Molecule Idempotence (informational)
+        if: ${{ steps.scenario.outputs.scenario != 'rke' }}
+        continue-on-error: true
+        run: molecule idempotence -s ${{ steps.scenario.outputs.scenario }}
+        shell: bash
+
+      - name: Molecule Destroy
+        if: always()
+        continue-on-error: true
+        run: molecule destroy -s ${{ steps.scenario.outputs.scenario }}
+        shell: bash

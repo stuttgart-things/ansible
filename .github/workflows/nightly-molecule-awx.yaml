@@ -1,0 +1,69 @@
+---
+name: Nightly Molecule AWX
+on:
+  schedule:
+    # 02:30 UTC, OFF THE HOUR TO AVOID THE SCHEDULER'S BUSIEST MINUTE
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+    inputs:
+      branch-name:
+        description: BRANCH NAME
+        type: string
+        default: main
+
+# THE awx SCENARIO IS NOT A PR GATE. molecule/awx/prepare.yml CREATES A KIND
+# CLUSTER, DEPLOYS AWX, WAITS FOR IT TO BE READY AND NEEDS VAULT CREDENTIALS -
+# far TOO SLOW AND TOO SECRET-DEPENDENT TO RUN ON EVERY PULL REQUEST, AND ON
+# pull_request IT WOULD EXPOSE THOSE SECRETS THE WAY FINDING #9 DESCRIBES.
+#
+# IT RUNS AGAINST THE PUBLISHED COLLECTIONS PINNED IN requirements.yaml, SO IT
+# TESTS WHAT CONSUMERS ACTUALLY INSTALL RATHER THAN AN UNMERGED BUILD.
+concurrency:
+  group: nightly-molecule-awx
+  cancel-in-progress: false
+
+jobs:
+  Molecule-AWX:
+    name: Molecule AWX
+    runs-on: ubuntu-latest
+    environment: k8s
+    steps:
+      - name: Checkout Project
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.branch-name || 'main' }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v6.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Molecule
+        run: |
+          set -eu
+          pip install --upgrade pip setuptools
+          pip install 'molecule' 'molecule-docker' netaddr
+          molecule --version
+        shell: bash
+
+      - name: Install Collections
+        run: |
+          set -eu
+          ansible-galaxy collection install -r requirements.yaml
+          ansible-galaxy collection list | grep sthings
+        shell: bash
+
+      - name: Molecule Test
+        env:
+          MOLECULE_DOCKER_COMMAND: /lib/systemd/systemd
+          VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
+          VAULT_ROLE_ID: ${{ secrets.VAULT_ROLE_ID }}
+          VAULT_SECRET_ID: ${{ secrets.VAULT_SECRET_ID }}
+        run: molecule test -s awx
+        shell: bash
+
+      - name: Molecule Destroy
+        if: always()
+        continue-on-error: true
+        run: molecule destroy -s awx
+        shell: bash
