@@ -13,8 +13,9 @@ driver:
 platforms:
   - name: ubuntu24
     image: geerlingguy/docker-ubuntu2404-ansible@sha256:129f93fb11c00d2452f541fc926234a2ecf7957d7348fb07832bd0bf6973f503
-    command:
-      - ${MOLECULE_DOCKER_COMMAND:-""}
+    # A STRING, NOT A LIST. THE molecule-plugins DOCKER DRIVER SCHEMA REJECTS
+    # THE LIST FORM molecule-docker ACCEPTED, AND container/awx ALREADY USE THIS
+    command: ${MOLECULE_DOCKER_COMMAND:-""}
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
     cgroupns_mode: host

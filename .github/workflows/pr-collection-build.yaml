@@ -183,7 +183,7 @@ jobs:
         run: |
           set -eu
           pip install --upgrade pip setuptools
-          pip install 'molecule' 'molecule-docker' netaddr
+          pip install 'molecule' 'molecule-plugins[docker]' netaddr
           molecule --version
         shell: bash
 
