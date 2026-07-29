@@ -292,7 +292,18 @@ playbooks:
                 when: domain | length > 0
             when: ansible_facts['distribution'] == "Fedora"
 
-          - name: Fix DNS resolution on Ubuntu 25.04
+          # Sets the search domain (and the matching /etc/hosts + hostnamectl
+          # FQDN) from the lab the host's IP falls into. Deliberately NOT pinned
+          # to one Ubuntu release: it was gated on 25.04 and therefore silently
+          # skipped on 26.04, which is what the whole fleet now builds. The block
+          # is a no-op unless an ip_prefix in lab_dns_map matches, so widening it
+          # cannot touch hosts outside a known lab.
+          #
+          # It matters where DHCP does not hand out a domain: LabUL VLAN 102
+          # (proxmox) does, VLAN 103 (vsphere) does not, so guests there came up
+          # with `search .` and `hostname -f` failing even though the A record
+          # resolved. Do not narrow this back to a version.
+          - name: Fix DNS resolution (search domain + FQDN) on Ubuntu
             block:
               - name: Detect lab environment from IP address
                 ansible.builtin.set_fact:
@@ -353,9 +364,7 @@ playbooks:
                 ansible.builtin.debug:
                   msg: "WARNING: Could not detect lab for IP {{ ansible_default_ipv4.address }}. DNS not configured. Add the IP prefix to lab_dns_map."
                 when: detected_lab | trim | length == 0
-            when:
-              - ansible_facts['distribution'] == "Ubuntu"
-              - ansible_facts['distribution_version'] == "25.04"
+            when: ansible_facts['distribution'] == "Ubuntu"
 
   - name: users
     play: |
