@@ -118,7 +118,7 @@ tasks:
     preconditions: *venv
     cmds:
       - pip install -U setuptools pip 'molecule'
-      - pip install molecule-docker
+      - pip install 'molecule-plugins[docker]'
       - pip install netaddr
       - molecule --version
       - ansible-galaxy collection install community.docker
