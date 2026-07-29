@@ -3,7 +3,32 @@
   "extends": [
     "config:recommended"
   ],
+  "packageRules": [
+    {
+      "description": "ONE PR PER ROLE, COVERING EVERY COLLECTION THAT PINS IT. SHARED ROLES HAD DRIFTED UP TO 4 YEARS APART BECAUSE EACH PIN WAS BUMPED SEPARATELY - GROUPING THEM MAKES THAT REGRESSION IMPOSSIBLE TO REINTRODUCE ONE FILE AT A TIME",
+      "matchFileNames": [
+        "collections/*/collection.yaml"
+      ],
+      "groupName": "ansible role {{{replace '.*/' '' depName}}}",
+      "groupSlug": "ansible-role-{{{replace '.*/' '' depName}}}",
+      "semanticCommitType": "fix",
+      "semanticCommitScope": "roles"
+    }
+  ],
   "customManagers": [
+      {
+          "customType": "regex",
+          "description": "STUTTGART-THINGS ROLE PINS IN THE requirements: | BLOCK OF collections/*/collection.yaml. depName IS DERIVED FROM THE src: URL, SO NO # datasource= COMMENT IS NEEDED - THAT MATTERS BECAUSE THE BLOCK IS COPIED VERBATIM INTO THE BUILT COLLECTION, SO ANY COMMENT ADDED HERE WOULD SHIP IN THE ARTIFACT",
+          "fileMatch": [
+              "^collections/[^/]+/collection\\.yaml$"
+          ],
+          "matchStrings": [
+              "src: https://github\\.com/(?<depName>stuttgart-things/[^.]+)\\.git\\s+scm: git\\s+version: (?<currentValue>\\S+)"
+          ],
+          "datasourceTemplate": "git-tags",
+          "packageNameTemplate": "https://github.com/{{{depName}}}",
+          "versioningTemplate": "regex:^(?<major>\\d{4})\\.(?<minor>\\d{2})\\.(?<patch>\\d{2})(?:-(?<build>\\d+))?$"
+      },
       {
           "customType": "regex",
           "fileMatch": [
