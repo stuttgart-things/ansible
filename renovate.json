@@ -5,14 +5,16 @@
   ],
   "packageRules": [
     {
-      "description": "ONE PR PER ROLE, COVERING EVERY COLLECTION THAT PINS IT. SHARED ROLES HAD DRIFTED UP TO 4 YEARS APART BECAUSE EACH PIN WAS BUMPED SEPARATELY - GROUPING THEM MAKES THAT REGRESSION IMPOSSIBLE TO REINTRODUCE ONE FILE AT A TIME",
+      "description": "ONE PR PER ROLE, COVERING EVERY COLLECTION THAT PINS IT. SHARED ROLES HAD DRIFTED UP TO 4 YEARS APART BECAUSE EACH PIN WAS BUMPED SEPARATELY - GROUPING THEM MAKES THAT REGRESSION IMPOSSIBLE TO REINTRODUCE ONE FILE AT A TIME. separateMajorMinor IS OFF BECAUSE THESE ROLES ARE CALVER: THE 'MAJOR' IS THE YEAR, SO LEAVING IT ON SPLIT ONE ROLE INTO A PER-YEAR PR AND OFFERED POINTLESS INTERMEDIATE HOPS LIKE 2025.01.14 -> 2025.03.27 ALONGSIDE 2025.01.14 -> 2026.07.15",
       "matchFileNames": [
         "collections/*/collection.yaml"
       ],
       "groupName": "ansible role {{{replace '.*/' '' depName}}}",
       "groupSlug": "ansible-role-{{{replace '.*/' '' depName}}}",
       "semanticCommitType": "fix",
-      "semanticCommitScope": "roles"
+      "semanticCommitScope": "roles",
+      "separateMajorMinor": false,
+      "separateMinorPatch": false
     }
   ],
   "customManagers": [
