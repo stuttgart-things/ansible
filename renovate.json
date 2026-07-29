@@ -16,68 +16,100 @@
     }
   ],
   "customManagers": [
-      {
-          "customType": "regex",
-          "description": "STUTTGART-THINGS ROLE PINS IN THE requirements: | BLOCK OF collections/*/collection.yaml. depName IS DERIVED FROM THE src: URL, SO NO # datasource= COMMENT IS NEEDED - THAT MATTERS BECAUSE THE BLOCK IS COPIED VERBATIM INTO THE BUILT COLLECTION, SO ANY COMMENT ADDED HERE WOULD SHIP IN THE ARTIFACT",
-          "fileMatch": [
-              "^collections/[^/]+/collection\\.yaml$"
-          ],
-          "matchStrings": [
-              "src: https://github\\.com/(?<depName>stuttgart-things/[^.]+)\\.git\\s+scm: git\\s+version: (?<currentValue>\\S+)"
-          ],
-          "datasourceTemplate": "git-tags",
-          "packageNameTemplate": "https://github.com/{{{depName}}}",
-          "versioningTemplate": "regex:^(?<major>\\d{4})\\.(?<minor>\\d{2})\\.(?<patch>\\d{2})(?:-(?<build>\\d+))?$"
-      },
-      {
-          "customType": "regex",
-          "fileMatch": [
-              "\\.yaml$"
-          ],
-          "matchStrings": [
-              "\\s*(?<binName>.+)_version:\\s(?<currentValue>v?\\d+\\.\\d+\\.\\d+)\\s*#\\s*(datasource=(?<datasource>[^\\s]*))\\s*(depName=(?<depName>[^\\s]*))?\\s*"
-          ],
-          "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}",
-          "extractVersionTemplate": "^v?(?<version>.*)$",
-          "datasourceTemplate": "{{#if datasource}}{{{datasource}}}{{else}}github-releases{{/if}}",
-          "depNameTemplate": "{{#if depName}}{{{depName}}}{{else}}{{{binName}}}{{/if}}"
-      },
-      {
-        "customType": "regex",
-        "fileMatch": [
-            "\\.yaml$"
-        ],
-        "matchStrings": [
-            "\\s*(?<binName>.+)Version:\\s(?<currentValue>v?\\d+\\.\\d+\\.\\d+)\\s*#\\s*(datasource=(?<datasource>[^\\s]*))\\s*(depName=(?<depName>[^\\s]*))?\\s*"
-        ],
-        "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}",
-        "extractVersionTemplate": "^v?(?<version>.*)$",
-        "datasourceTemplate": "{{#if datasource}}{{{datasource}}}{{else}}github-releases{{/if}}",
-        "depNameTemplate": "{{#if depName}}{{{depName}}}{{else}}{{{binName}}}{{/if}}"
-      },
-      {
-        "customType": "regex",
-        "fileMatch": [
-            "\\.yaml$"
-        ],
-        "matchStrings": [
-            "\\s*version:\\s(?<currentValue>v?\\d+\\.\\d+\\.\\d+)\\s*#\\s*(datasource=(?<datasource>[^\\s]*))\\s*(depName=(?<depName>[^\\s]*))?\\s*"
-        ],
-        "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}",
-        "extractVersionTemplate": "^v?(?<version>.*)$",
-        "datasourceTemplate": "{{#if datasource}}{{{datasource}}}{{else}}github-releases{{/if}}",
-        "depNameTemplate": "{{#if depName}}{{{depName}}}{{else}}{{{binName}}}{{/if}}"
-      },
-      {
-          "customType": "regex",
-          "fileMatch": ["^Dockerfile$"],
-          "matchStrings": [
-              "\\s*(?<binName>.+)_version:\\s(?<currentValue>v?\\d+\\.\\d+\\.\\d+)\\s*#\\s*(datasource=(?<datasource>[^\\s]*))\\s*(depName=(?<depName>[^\\s]*))?\\s*"
-          ],
-          "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}",
-          "extractVersionTemplate": "^v?(?<version>.*)$",
-          "datasourceTemplate": "{{#if datasource}}{{{datasource}}}{{else}}github-releases{{/if}}",
-          "depNameTemplate": "{{#if depName}}{{{depName}}}{{else}}{{{binName}}}{{/if}}"
+    {
+      "customType": "regex",
+      "description": "STUTTGART-THINGS ROLE PINS IN THE requirements: | BLOCK OF collections/*/collection.yaml. depName IS DERIVED FROM THE src: URL, SO NO # datasource= COMMENT IS NEEDED - THAT MATTERS BECAUSE THE BLOCK IS COPIED VERBATIM INTO THE BUILT COLLECTION, SO ANY COMMENT ADDED HERE WOULD SHIP IN THE ARTIFACT",
+      "fileMatch": [
+        "^collections/[^/]+/collection\\.yaml$"
+      ],
+      "matchStrings": [
+        "src: https://github\\.com/(?<depName>stuttgart-things/[^.]+)\\.git\\s+scm: git\\s+version: (?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "git-tags",
+      "packageNameTemplate": "https://github.com/{{{depName}}}",
+      "versioningTemplate": "regex:^(?<major>\\d{4})\\.(?<minor>\\d{2})\\.(?<patch>\\d{2})(?:-(?<build>\\d+))?$"
+    },
+    {
+      "customType": "regex",
+      "description": "STUTTGART-THINGS DAGGER ANSIBLE MODULE PIN. LIVES IN SIX PLACES ACROSS TWO REPOS AND WAS ALIGNED BY HAND THREE TIMES",
+      "fileMatch": [
+        "^Taskfile\\.yaml$",
+        "^\\.github/workflows/[^/]+\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "DAGGER_ANSIBLE_MODULE_VERSION:[ \\t]*(?<currentValue>v\\d+\\.\\d+\\.\\d+)",
+        "dagger-module-version:[ \\t]*(?<currentValue>v\\d+\\.\\d+\\.\\d+)",
+        "dagger-module-version:\\n(?:[ \\t]+[^\\n]*\\n)*?[ \\t]+default:[ \\t]*['\"]?(?<currentValue>v?\\d+\\.\\d+\\.\\d+)['\"]?"
+      ],
+      "depNameTemplate": "stuttgart-things/dagger",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "DAGGER CLI PIN, PASSED TO dagger/dagger-for-github",
+      "fileMatch": [
+        "^\\.github/workflows/[^/]+\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "dagger-version:[ \\t]*(?<currentValue>v\\d+\\.\\d+\\.\\d+)",
+        "dagger-version:\\n(?:[ \\t]+[^\\n]*\\n)*?[ \\t]+default:[ \\t]*['\"]?(?<currentValue>v?\\d+\\.\\d+\\.\\d+)['\"]?"
+      ],
+      "depNameTemplate": "dagger/dagger",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": [
+        "\\.yaml$"
+      ],
+      "matchStrings": [
+        "\\s*(?<binName>.+)_version:\\s(?<currentValue>v?\\d+\\.\\d+\\.\\d+)\\s*#\\s*(datasource=(?<datasource>[^\\s]*))\\s*(depName=(?<depName>[^\\s]*))?\\s*"
+      ],
+      "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}",
+      "extractVersionTemplate": "^v?(?<version>.*)$",
+      "datasourceTemplate": "{{#if datasource}}{{{datasource}}}{{else}}github-releases{{/if}}",
+      "depNameTemplate": "{{#if depName}}{{{depName}}}{{else}}{{{binName}}}{{/if}}"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": [
+        "\\.yaml$"
+      ],
+      "matchStrings": [
+        "\\s*(?<binName>.+)Version:\\s(?<currentValue>v?\\d+\\.\\d+\\.\\d+)\\s*#\\s*(datasource=(?<datasource>[^\\s]*))\\s*(depName=(?<depName>[^\\s]*))?\\s*"
+      ],
+      "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}",
+      "extractVersionTemplate": "^v?(?<version>.*)$",
+      "datasourceTemplate": "{{#if datasource}}{{{datasource}}}{{else}}github-releases{{/if}}",
+      "depNameTemplate": "{{#if depName}}{{{depName}}}{{else}}{{{binName}}}{{/if}}"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": [
+        "\\.yaml$"
+      ],
+      "matchStrings": [
+        "\\s*version:\\s(?<currentValue>v?\\d+\\.\\d+\\.\\d+)\\s*#\\s*(datasource=(?<datasource>[^\\s]*))\\s*(depName=(?<depName>[^\\s]*))?\\s*"
+      ],
+      "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}",
+      "extractVersionTemplate": "^v?(?<version>.*)$",
+      "datasourceTemplate": "{{#if datasource}}{{{datasource}}}{{else}}github-releases{{/if}}",
+      "depNameTemplate": "{{#if depName}}{{{depName}}}{{else}}{{{binName}}}{{/if}}"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": [
+        "^Dockerfile$"
+      ],
+      "matchStrings": [
+        "\\s*(?<binName>.+)_version:\\s(?<currentValue>v?\\d+\\.\\d+\\.\\d+)\\s*#\\s*(datasource=(?<datasource>[^\\s]*))\\s*(depName=(?<depName>[^\\s]*))?\\s*"
+      ],
+      "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}",
+      "extractVersionTemplate": "^v?(?<version>.*)$",
+      "datasourceTemplate": "{{#if datasource}}{{{datasource}}}{{else}}github-releases{{/if}}",
+      "depNameTemplate": "{{#if depName}}{{{depName}}}{{else}}{{{binName}}}{{/if}}"
     }
   ],
   "customDatasources": {
