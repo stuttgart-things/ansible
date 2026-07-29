@@ -135,7 +135,7 @@ jobs:
       environment-name: k8s
       collection-directory: ${{ matrix.collection-directory }}
       dagger-module-version: v0.121.0
-      dagger-version: v0.21.7
+      dagger-version: v0.21.8
       branch-name: ${{ github.ref_name }}
       # THE ONLY PATH THAT PUBLISHES A RELEASE
       publish-release: true
