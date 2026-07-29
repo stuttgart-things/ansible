@@ -9,22 +9,33 @@ on:
     paths:
       - 'collections/**'
 
+# LEAST PRIVILEGE BY DEFAULT. INDIVIDUAL JOBS WIDEN THIS WHERE THEY MUST
+permissions:
+  contents: read
+
 jobs:
   Analyze-Collection-Config:
-    container:
-      image: ghcr.io/stuttgart-things/github.com/stuttgart-things/machineshop:v2.6.13
-    environment: k8s
+    # WAS runs-on: ghr-ansible-in-cluster INSIDE THE machineshop CONTAINER, WITH
+    # environment: k8s AND A PAT. THIS JOB ONLY CURLS THE FILES API AND RUNS jq
+    # AND awk - IT NEVER NEEDED THE IN-CLUSTER RUNNER OR THOSE CREDENTIALS.
+    # EXPOSING A SELF-HOSTED RUNNER ON pull_request IS THE RISK FINDING #9
+    # DESCRIBES, AND THE SAFEST WAY TO RESTRICT IT IS NOT TO USE IT HERE
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       collection_folders: ${{ steps.changed-files.outputs.collection_folders }}
       has_changes: ${{ steps.changed-files.outputs.has_changes }}
       molecule_folders: ${{ steps.changed-files.outputs.molecule_folders }}
       has_molecule: ${{ steps.changed-files.outputs.has_molecule }}
-    runs-on: ghr-ansible-in-cluster
+    runs-on: ubuntu-latest
     steps:
       - name: Get Modified Files by PullRequest
         id: changed-files
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          # THE BUILT-IN TOKEN, NOT A PAT. READING THE FILES API OF A PR IN THIS
+          # PUBLIC REPO NEEDS NOTHING MORE, AND IT EXPIRES WITH THE JOB
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -eu
 
@@ -113,7 +124,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.Analyze-Collection-Config.outputs.collection_folders) }}
-    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-ansible-collection.yaml@main
+    # BUILD ONLY. THE RELEASE JOB INSIDE THE REUSABLE WORKFLOW IS SKIPPED HERE
+    # (publish-release: false), SO NO SIGNING SCOPE IS HANDED TO A PR BRANCH
+    permissions:
+      contents: read
+    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-ansible-collection.yaml@627fa26ea590c7ace7bf173a3660129367baab66 # main
     with:
       runs-on: ubuntu-latest
       environment-name: k8s
