@@ -5,7 +5,7 @@
 <details><summary>INSTALL COLLECTION</summary>
 
 ```bash
-COLLECTION_VERSION=25.4.1257
+COLLECTION_VERSION=26.2.675
 ansible-galaxy collection install https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-${COLLECTION_VERSION}/sthings-baseos-${COLLECTION_VERSION}.tar.gz -f
 ```
 
@@ -16,12 +16,12 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | Role | Version | Description |
 |------|---------|-------------|
 | download-install-binary | 2025.01.14 | Binary download and installation |
-| create-os-user | 2025.10.11 | OS user creation |
-| install-requirements | 2025.12.12 | General requirements installation |
-| manage-filesystem | 2026.03.03 | LVM filesystem management |
-| install-configure-vault | 2025.12.11 | Vault integration and CA certificates |
+| create-os-user | 2026.07.22 | OS user creation |
+| install-requirements | 2026.04.13 | General requirements installation |
+| manage-filesystem | 2026.13.04 | LVM filesystem management |
+| install-configure-vault | 2026.04.23 | Vault integration and CA certificates |
 | create-send-webhook | 2024.09.06 | Webhook creation |
-| install-configure-docker | 2025.04.24 | Docker installation |
+| install-configure-docker | 2026.05.09 | Docker installation |
 
 ## PLAYBOOKS
 
