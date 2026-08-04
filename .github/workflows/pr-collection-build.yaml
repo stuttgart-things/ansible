@@ -142,7 +142,7 @@ jobs:
       environment-name: k8s
       collection-directory: ${{ matrix.collection-directory }}
       dagger-module-version: v0.121.0
-      dagger-version: v0.21.7
+      dagger-version: v0.21.8
       branch-name: ${{ github.event.pull_request.head.ref }}
       # BUILD ONLY - THE ARTIFACT IS UPLOADED FOR REVIEW BUT NOT PUBLISHED.
       # RELEASES ARE CUT BY main-collection-build.yaml ON MERGE TO MAIN
