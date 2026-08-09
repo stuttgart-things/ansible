@@ -18,7 +18,17 @@ collections:
     version: 6.2.1
   - name: kubernetes.core
     version: 6.5.0
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-26.2.675.tar.gz/sthings-awx-26.2.675.tar.gz
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-26.2.675.tar.gz/sthings-container-26.2.675.tar.gz
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-rke-26.2.675.tar.gz/sthings-rke-26.2.675.tar.gz
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-26.2.675.tar.gz/sthings-baseos-26.2.675.tar.gz
+  # THE sthings.* PINS. CONSUMER-FACING, AND ALSO WHAT CI INSTALLS AS THE
+  # DEPENDENCY BASELINE BEFORE OVERWRITING THE COLLECTION UNDER TEST WITH THE
+  # FRESH BUILD (see pr-collection-build.yaml, and the split explained in
+  # molecule/requirements.yaml). A stale pin here does not fail anything - it
+  # quietly tests new code against old siblings, e.g. molecule/container
+  # imports sthings.baseos.users.
+  #
+  # NB the URL shape changed: releases up to sthings-*-26.2.675 were TAGGED
+  # with a trailing `.tar.gz`, so the old links repeated it in the tag segment.
+  # Current tags do not carry it.
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-26.729.1166/sthings-awx-26.729.1166.tar.gz
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-26.809.1194/sthings-container-26.809.1194.tar.gz
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-rke-26.730.1176/sthings-rke-26.730.1176.tar.gz
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-26.804.1193/sthings-baseos-26.804.1193.tar.gz

@@ -67,7 +67,7 @@ tasks:
 
 # PACKAGE=/tmp/ansible/collections/artifacts/sthings-baseos-25.4.1100.tar.gz task create-release
   build-collection:
-    desc: Build ansible collection
+    desc: Build ansible collection (PUBLISH=true also cuts a GitHub release)
     cmds:
       - |
         echo "CHOOSE TO BE BUILD COLLECTION:"
@@ -98,6 +98,24 @@ tasks:
         echo package ${ARTIFACT_PATH} --tag ${RELEASE_TAG}
 
         ansible-galaxy collection install $(ls {{ .OUTPUT_DIR }}/*tar.gz)
+
+        # PUBLISHING IS OPT-IN. THIS TASK USED TO ALWAYS CALL `gh release
+        # create`, SO RUNNING IT TO "JUST CHECK THE BUILD" - WHICH IS WHAT THE
+        # NAME PROMISES - PUBLISHED A REAL RELEASE, AND THE ONLY WAY TO FIND OUT
+        # WAS TO HAVE DONE IT.
+        #
+        # THE NORMAL RELEASE PATH IS main-collection-build.yaml ON MERGE TO
+        # MAIN, AND THE MANUAL RE-RELEASE PATH IS
+        # dispatch-collection-build.yml. CUTTING ONE FROM A WORKING COPY IS RARE
+        # ENOUGH TO BE WORTH TYPING OUT.
+        if [ "${PUBLISH:-false}" != "true" ]; then
+          echo
+          echo "BUILT ONLY - NOTHING PUBLISHED."
+          echo "TO CUT RELEASE ${RELEASE_TAG}: PUBLISH=true task build-collection"
+          exit 0
+        fi
+
+        echo "PUBLISHING RELEASE ${RELEASE_TAG}"
 
         dagger call --progress plain -m github.com/sagikazarmark/daggerverse/gh@main \
         release create --repo {{ .GH_REPO }} \
