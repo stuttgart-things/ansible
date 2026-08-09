@@ -16,10 +16,23 @@
 #   cert-manager -> sops-operator + age key -> openebs -> tekton -> crossplane
 #   (WAITED: core -> providers -> config -> provider-configs) ->
 #   Configuration packages (+ provider-CRD wait) -> EnvironmentConfigs ->
-#   capabilities (backend=sops) -> provider-kubeconfig-vault (optional)
+#   tekton-ci namespace -> capabilities (backend=sops-git) ->
+#   provider-kubeconfig-vault (optional)
 #
 # Scope note: the package set below is kept at parity with the reference
-# machinery cluster (kind1). `machinery_packages` is the VM/image-builder half;
+# machinery cluster (kind1) — reconciled against it on 2026-08-09, which moved
+# vspherevm v0.7.0->v0.9.0, proxmoxvm v0.4.0->v0.9.0, packer-release
+# v0.2.2->v0.4.2, the ansible chart 0.5.0->0.9.2, proxmoxvm 0.5.0->0.9.2,
+# vspherevm 0.12.0->0.12.6 and sops-git-secrets 0.3.0->0.9.0, and added the
+# scheduled-run + tofu-run Configurations and the scheduled-run + packer
+# capability charts. Everything here now matches what kind1 runs, EXCEPT that
+# kind1 carries `platform`, `flux-apps` and `cluster-backup` only as
+# hand-applied XRDs rather than as installed Configuration packages — that is
+# kind1's gap, not this file's, and a run against it will close it.
+#
+# HOWEVER — see the "Pin Helm-owned Configurations" task below before running
+# this against a cluster that was hand-built. `machinery_packages` is the
+# VM/image-builder half;
 # `platform_packages` (platform_enabled, default true) is the fleet-manager half
 # — cni + Flux + apps pushed onto REMOTE clusters via RemoteCluster-derived
 # ClusterProviderConfigs. Set platform_enabled=false for a pure VM builder.
@@ -113,9 +126,19 @@ playbooks:
           # (next to the GitRepository), so that is the only per-CR namespace.
           sops_age_key_ref_name: "{{ '' if sops_global_age_key_enabled | bool else 'sops-age-key' }}"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
-          ansible_chart_version: "0.5.0"
+          ansible_chart_version: "0.9.2"
           cluster_backup_chart_version: "0.1.0"
+          scheduled_run_chart_version: "0.2.1"
           cert_manager_version: v1.21.0
+
+          # The packer capability chart is NOT on OCI — it is installed from a
+          # path in the monorepo, like provider-kubeconfig-vault below. Move it
+          # to `charts_oci` once `task push-platform-charts` has published it.
+          #
+          # NB: it lives on the feat/packer-capability-chart branch as of this
+          # writing, so until that merges a run needs
+          # `-e stuttgart_things_ref=feat/packer-capability-chart`.
+          packer_chart_enabled: true
 
           # Per-environment capability charts. One Helm release per entry in
           # `envs`, named `<chart>-<env>`, credentials read from
@@ -131,7 +154,7 @@ playbooks:
             # blobs already live in the repo. No credentials_key: the operator
             # fetches the file, nothing is passed in at deploy time.
             - chart: vspherevm
-              version: "0.12.0"
+              version: "0.12.6"
               envs: "{{ vsphere_envs }}"
               credentials_prefix: vsphere-creds
               backend_key: secretStore.backend
@@ -150,7 +173,7 @@ playbooks:
             # while this file still said 0.3.0 + sops, so a playbook run used
             # to downgrade it and revert it to the embedded blob.
             - chart: proxmoxvm
-              version: "0.5.0"
+              version: "0.9.2"
               envs: "{{ proxmox_envs }}"
               credentials_prefix: proxmox-creds
               backend_key: secretStore.backend
@@ -178,7 +201,7 @@ playbooks:
           sops_git_token: "{{ lookup('env', 'SOPS_GIT_TOKEN') }}"
           # sops-git-secrets is published to OCI (stuttgart-things#2407/#2408); install
           # from there rather than cloning the private monorepo for its chart source.
-          sops_git_secrets_chart_version: "0.3.0"
+          sops_git_secrets_chart_version: "0.9.0"
           # Encrypted blobs in the secrets repo with no capability chart of
           # their own — the capability charts each emit their own
           # SopsSecretManifest, this list covers the rest. Both were applied by
@@ -200,18 +223,38 @@ playbooks:
 
           stuttgart_things_repo: "https://github.com/stuttgart-things/stuttgart-things.git"
           stuttgart_things_ref: main
+          # Shallow checkout shared by every chart that is not on OCI (packer,
+          # provider-kubeconfig-vault). Cloned once, when either needs it.
+          stuttgart_things_checkout: "/tmp/stuttgart-things-baseline"
+          # The PipelineRun namespace. Both packer pipelines run here, and it is
+          # where the packer CA bundle and the tekton-ci sops Secrets must land —
+          # Tekton resolves them in the namespace the run executes in, not the
+          # XR's. `helm --create-namespace` only ever creates the RELEASE
+          # namespace (crossplane-system), so this one needs creating explicitly.
+          tekton_ci_namespace: tekton-ci
 
-          # EnvironmentConfigs ship as examples/ inside crossplane-configurations
-          # (no chart packages them), so they are applied straight from git.
-          # The vspherevm/proxmoxvm/ansible-run ones come from the capability
+          # EnvironmentConfigs for capabilities that have no chart of their own
+          # ship as examples/ inside crossplane-configurations, so they are
+          # applied straight from git. The vspherevm/proxmoxvm/ansible-run/
+          # packer/scheduled-run/cluster-backup ones come from the capability
           # charts instead and are deliberately absent here.
           crossplane_configurations_raw: "https://raw.githubusercontent.com/stuttgart-things/crossplane-configurations"
           crossplane_configurations_ref: main
           environment_config_manifests:
-            - cicd/packer-build/examples/environmentconfig.yaml
-            - cicd/packer-release/examples/environmentconfig.yaml
+            - machinery/vsphere-vm/examples/environmentconfig.yaml
+            - cicd/tofu-run/examples/environmentconfig.yaml
             # cluster-backup's EnvironmentConfig comes from its capability chart
             # (deployed below), not applied raw — it also carries the provider RBAC.
+            # Same for scheduled-run (scheduled-run-defaults).
+            #
+            # The packer ones USED to be applied from
+            # cicd/packer-{build,release}/examples/ here. They are now emitted by
+            # the packer capability chart, under the same names
+            # (packer-build-defaults, packer-release-defaults) plus
+            # packer-release-labda. Applying the upstream examples as well would
+            # overwrite the chart's values — reverting pipelineRevision to the
+            # example's pin and dropping the Proxmox promotion target — so both
+            # lines are deliberately gone rather than merely commented out.
           platform_environment_config_manifests:
             - bootstrap/flux-init/examples/environment-config.yaml
             - bootstrap/flux-apps/examples/environment-config.yaml
@@ -223,10 +266,10 @@ playbooks:
           # ansible-run is NOT listed: vspherevm and proxmoxvm both pull it.
           machinery_packages:
             - name: vspherevm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.7.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.9.0"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
             - name: proxmoxvm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.4.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.9.0"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             # Tekton-backed Packer builder — only provider-kubernetes, already up.
             - name: packer-build
@@ -238,8 +281,15 @@ playbooks:
             # behind a successful build with no error. Pulls vm-provision
             # (-> vsphere-vm, proxmox-vm, ansible-run) transitively; needs no
             # provider beyond the ones already waited on above.
+            #
+            # v0.4.2 dropped the XRD's `default: vault` on
+            # promote.vaultSecretName. Below that tag the default is
+            # materialized into every new object and beats the
+            # EnvironmentConfig, so the `vaultSecretName: vault-labda` the
+            # packer chart sets for LabDA is dead config and a LabDA promotion
+            # has to restate it on the XR (crossplane-configurations#225).
             - name: packer-release
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-release:v0.2.2"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-release:v0.4.2"
             # Scheduled encrypted state export to an OCI registry. Only
             # provider-kubernetes (already up), like the packer packages, so no
             # provider_crd wait. Installing the package + its EnvironmentConfig
@@ -250,6 +300,17 @@ playbooks:
             # is required just to install this.
             - name: cluster-backup
               package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster-backup:v0.1.0"
+            # Cron-driven re-apply of an arbitrary XR (an AnsibleRun, a
+            # PackerBuild). Only provider-kubernetes, so no provider_crd wait.
+            # Its EnvironmentConfig comes from the scheduled-run capability
+            # chart deployed below, not from the raw examples.
+            - name: scheduled-run
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/scheduled-run:v0.1.1"
+            # Runs a tofu module as a Workspace. Pulls provider-opentofu, which
+            # the packer-release test VM also needs at RUN time — but nothing
+            # installed here consumes its CRD at apply time, so no wait.
+            - name: tofu-run
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/tofu-run:v0.1.0"
 
           # Fleet-manager half. `platform` pulls cni + flux-init via dependsOn.
           # flux-apps is listed explicitly because platform composes FluxApps
@@ -477,6 +538,36 @@ playbooks:
           #    because it is a single release with different value paths
           #    (sshCredentials.*) and an un-suffixed credentials file.
           # ================================================================
+          # A cluster built by hand may have its Configurations owned by the
+          # capability RELEASES rather than kubectl-applied — kind1 does, because
+          # each was installed incrementally with configuration.install left at
+          # its default. This play installs them itself and then deploys those
+          # same charts with the Configuration switched OFF, which drops the
+          # object from the release manifest, and a plain `helm upgrade` DELETES
+          # what a release stops rendering. That would take the XRDs and every XR
+          # under them with it.
+          #
+          # `helm.sh/resource-policy: keep` is read only by Helm, so applying it
+          # to every Configuration is a no-op on the ones this play applied
+          # itself. The tradeoff is that a genuine `helm uninstall` now leaves the
+          # Configuration behind — the right default for a package that owns
+          # XRDs. Must run BEFORE the first capability chart.
+          - name: Pin Configurations against deletion by a capability-chart upgrade
+            ansible.builtin.command: >
+              kubectl annotate configuration.pkg.crossplane.io --all
+              helm.sh/resource-policy=keep --overwrite
+              --kubeconfig {{ kubeconfig }}
+            become_user: "{{ ansible_user }}"
+            when: capabilities_enabled | bool
+
+          - name: Ensure the tekton-ci namespace
+            ansible.builtin.shell: |
+              kubectl create namespace {{ tekton_ci_namespace }} \
+                --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+            become_user: "{{ ansible_user }}"
+            when: capabilities_enabled | bool
+
           # The GitRepository + read-only credential the sops-git backend reads
           # through. One per cluster, shared by every capability chart — each
           # chart emitting its own would collide on Helm ownership and clone the
@@ -540,22 +631,70 @@ playbooks:
             become_user: "{{ ansible_user }}"
             when: capabilities_enabled | bool
 
+          # Env-independent, like ansible and cluster-backup: the schedule
+          # defaults are fleet-wide and every ScheduledRun XR overrides what it
+          # cares about, so the chart has no `environment` selector.
+          #
+          # NB the key is `configuration.enabled`, not `configuration.install` —
+          # this chart spells the toggle differently from vspherevm/proxmoxvm/
+          # packer, and a wrong key is silently accepted by helm, leaving the
+          # Configuration installed twice under two owners.
+          - name: Deploy scheduled-run capability (single release)
+            ansible.builtin.command: >
+              helm upgrade --install scheduled-run {{ charts_oci }}/scheduled-run
+              --version {{ scheduled_run_chart_version }}
+              --set configuration.enabled=false
+              -n crossplane-system --create-namespace
+              --kubeconfig {{ kubeconfig }}
+            become_user: "{{ ansible_user }}"
+            when: capabilities_enabled | bool
+
+          # Shallow checkout for the charts that are not published to OCI. Cloned
+          # once and reused by the packer + provider-kubeconfig-vault tasks below.
+          - name: Clone the monorepo for charts not on OCI
+            ansible.builtin.shell: |
+              set -e
+              rm -rf {{ stuttgart_things_checkout }}
+              git clone --depth 1 --branch {{ stuttgart_things_ref }} \
+                {{ stuttgart_things_repo }} {{ stuttgart_things_checkout }}
+            become_user: "{{ ansible_user }}"
+            when: >-
+              (capabilities_enabled | bool and packer_chart_enabled | bool)
+              or vault_kubeconfigs_enabled | bool
+
+          # The packer runtime: the two Configurations' EnvironmentConfigs
+          # (packer-build-defaults, packer-release-defaults, packer-release-labda)
+          # and the packer-ca-certs bundle in tekton-ci. One release covers every
+          # environment — these EnvironmentConfigs carry no credentials, they only
+          # NAME the Secrets that sops-git-secrets materializes, and a single XR
+          # reads one build-side and one release-side entry anyway.
+          #
+          # This replaces applying cicd/packer-{build,release}/examples/
+          # environmentconfig.yaml raw; see environment_config_manifests above.
+          - name: Deploy packer capability (single release, from the monorepo)
+            ansible.builtin.command: >
+              helm upgrade --install packer
+              {{ stuttgart_things_checkout }}/crossplane/platform/capabilities/packer
+              --set configuration.install=false
+              --set namespace={{ tekton_ci_namespace }}
+              -n crossplane-system --create-namespace
+              --kubeconfig {{ kubeconfig }}
+            become_user: "{{ ansible_user }}"
+            when: capabilities_enabled | bool and packer_chart_enabled | bool
+
           # ================================================================
           # 6) REMOTE-CLUSTER CREDENTIALS (optional) — the vault-kubeconfigs
           #    ClusterProviderConfig that RemoteCluster CRs reference. Chart
           #    lives in the monorepo, not on OCI, so it is cloned first.
           # ================================================================
+          # Chart source comes from the checkout the packer task above shares.
           - name: Deploy provider-kubeconfig-vault
-            ansible.builtin.shell: |
-              set -e
-              rm -rf /tmp/stuttgart-things-baseline
-              git clone --depth 1 --branch {{ stuttgart_things_ref }} \
-                {{ stuttgart_things_repo }} /tmp/stuttgart-things-baseline
-              helm upgrade --install provider-kubeconfig-vault \
-                /tmp/stuttgart-things-baseline/crossplane/platform/baseline/provider-kubeconfig-vault \
-                --set vault.appRole.roleId={{ vault_approle_role_id }} \
-                -n crossplane-system --create-namespace \
-                --kubeconfig {{ kubeconfig }}
+            ansible.builtin.command: >
+              helm upgrade --install provider-kubeconfig-vault
+              {{ stuttgart_things_checkout }}/crossplane/platform/baseline/provider-kubeconfig-vault
+              --set vault.appRole.roleId={{ vault_approle_role_id }}
+              -n crossplane-system --create-namespace
+              --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
             when: vault_kubeconfigs_enabled | bool
             no_log: true    # never echo the AppRole role ID
@@ -633,9 +772,19 @@ playbooks:
           # (next to the GitRepository), so that is the only per-CR namespace.
           sops_age_key_ref_name: "{{ '' if sops_global_age_key_enabled | bool else 'sops-age-key' }}"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
-          ansible_chart_version: "0.5.0"
+          ansible_chart_version: "0.9.2"
           cluster_backup_chart_version: "0.1.0"
+          scheduled_run_chart_version: "0.2.1"
           cert_manager_version: v1.21.0
+
+          # The packer capability chart is NOT on OCI — it is installed from a
+          # path in the monorepo, like provider-kubeconfig-vault below. Move it
+          # to `charts_oci` once `task push-platform-charts` has published it.
+          #
+          # NB: it lives on the feat/packer-capability-chart branch as of this
+          # writing, so until that merges a run needs
+          # `-e stuttgart_things_ref=feat/packer-capability-chart`.
+          packer_chart_enabled: true
 
           # Per-environment capability charts. One Helm release per entry in
           # `envs`, named `<chart>-<env>`, credentials read from
@@ -651,7 +800,7 @@ playbooks:
             # blobs already live in the repo. No credentials_key: the operator
             # fetches the file, nothing is passed in at deploy time.
             - chart: vspherevm
-              version: "0.12.0"
+              version: "0.12.6"
               envs: "{{ vsphere_envs }}"
               credentials_prefix: vsphere-creds
               backend_key: secretStore.backend
@@ -670,7 +819,7 @@ playbooks:
             # while this file still said 0.3.0 + sops, so a playbook run used
             # to downgrade it and revert it to the embedded blob.
             - chart: proxmoxvm
-              version: "0.5.0"
+              version: "0.9.2"
               envs: "{{ proxmox_envs }}"
               credentials_prefix: proxmox-creds
               backend_key: secretStore.backend
@@ -696,7 +845,7 @@ playbooks:
           sops_git_token: "{{ lookup('env', 'SOPS_GIT_TOKEN') }}"
           # sops-git-secrets is published to OCI (stuttgart-things#2407/#2408); install
           # from there rather than cloning the private monorepo for its chart source.
-          sops_git_secrets_chart_version: "0.3.0"
+          sops_git_secrets_chart_version: "0.9.0"
           # Encrypted blobs in the secrets repo with no capability chart of
           # their own — the capability charts each emit their own
           # SopsSecretManifest, this list covers the rest. Both were applied by
@@ -718,24 +867,43 @@ playbooks:
 
           stuttgart_things_repo: "https://github.com/stuttgart-things/stuttgart-things.git"
           stuttgart_things_ref: main
+          # Shallow checkout shared by every chart that is not on OCI (packer,
+          # provider-kubeconfig-vault). Cloned once, when either needs it.
+          stuttgart_things_checkout: "/tmp/stuttgart-things-baseline"
+          # The PipelineRun namespace. Both packer pipelines run here, and it is
+          # where the packer CA bundle and the tekton-ci sops Secrets must land —
+          # Tekton resolves them in the namespace the run executes in, not the
+          # XR's. `helm --create-namespace` only ever creates the RELEASE
+          # namespace (crossplane-system), so this one needs creating explicitly.
+          tekton_ci_namespace: tekton-ci
 
           crossplane_configurations_raw: "https://raw.githubusercontent.com/stuttgart-things/crossplane-configurations"
           crossplane_configurations_ref: main
           environment_config_manifests:
-            - cicd/packer-build/examples/environmentconfig.yaml
-            - cicd/packer-release/examples/environmentconfig.yaml
+            - machinery/vsphere-vm/examples/environmentconfig.yaml
+            - cicd/tofu-run/examples/environmentconfig.yaml
             # cluster-backup's EnvironmentConfig comes from its capability chart
             # (deployed below), not applied raw — it also carries the provider RBAC.
+            # Same for scheduled-run (scheduled-run-defaults).
+            #
+            # The packer ones USED to be applied from
+            # cicd/packer-{build,release}/examples/ here. They are now emitted by
+            # the packer capability chart, under the same names
+            # (packer-build-defaults, packer-release-defaults) plus
+            # packer-release-labda. Applying the upstream examples as well would
+            # overwrite the chart's values — reverting pipelineRevision to the
+            # example's pin and dropping the Proxmox promotion target — so both
+            # lines are deliberately gone rather than merely commented out.
           platform_environment_config_manifests:
             - bootstrap/flux-init/examples/environment-config.yaml
             - bootstrap/flux-apps/examples/environment-config.yaml
 
           machinery_packages:
             - name: vspherevm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.7.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.9.0"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
             - name: proxmoxvm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.4.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.9.0"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             - name: packer-build
               package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.4.1"
@@ -746,8 +914,15 @@ playbooks:
             # behind a successful build with no error. Pulls vm-provision
             # (-> vsphere-vm, proxmox-vm, ansible-run) transitively; needs no
             # provider beyond the ones already waited on above.
+            #
+            # v0.4.2 dropped the XRD's `default: vault` on
+            # promote.vaultSecretName. Below that tag the default is
+            # materialized into every new object and beats the
+            # EnvironmentConfig, so the `vaultSecretName: vault-labda` the
+            # packer chart sets for LabDA is dead config and a LabDA promotion
+            # has to restate it on the XR (crossplane-configurations#225).
             - name: packer-release
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-release:v0.2.2"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-release:v0.4.2"
             # Scheduled encrypted state export to an OCI registry. Only
             # provider-kubernetes (already up), like the packer packages, so no
             # provider_crd wait. Installing the package + its EnvironmentConfig
@@ -758,6 +933,17 @@ playbooks:
             # is required just to install this.
             - name: cluster-backup
               package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster-backup:v0.1.0"
+            # Cron-driven re-apply of an arbitrary XR (an AnsibleRun, a
+            # PackerBuild). Only provider-kubernetes, so no provider_crd wait.
+            # Its EnvironmentConfig comes from the scheduled-run capability
+            # chart deployed below, not from the raw examples.
+            - name: scheduled-run
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/scheduled-run:v0.1.1"
+            # Runs a tofu module as a Workspace. Pulls provider-opentofu, which
+            # the packer-release test VM also needs at RUN time — but nothing
+            # installed here consumes its CRD at apply time, so no wait.
+            - name: tofu-run
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/tofu-run:v0.1.0"
 
           platform_packages:
             - name: platform
@@ -936,6 +1122,25 @@ playbooks:
               {{ environment_config_manifests
                  + (platform_environment_config_manifests if platform_enabled | bool else []) }}
 
+          # See the profile play for the full commentary: this play installs the
+          # Configurations itself and then deploys the capability charts with the
+          # Configuration switched off, and a `helm upgrade` deletes what a
+          # release stops rendering — which on a hand-built cluster would take
+          # the XRDs and every XR under them. Must run BEFORE the first chart.
+          - name: Pin Configurations against deletion by a capability-chart upgrade
+            ansible.builtin.command: >
+              kubectl annotate configuration.pkg.crossplane.io --all
+              helm.sh/resource-policy=keep --overwrite
+              --kubeconfig {{ kubeconfig }}
+            when: capabilities_enabled | bool
+
+          - name: Ensure the tekton-ci namespace
+            ansible.builtin.shell: |
+              kubectl create namespace {{ tekton_ci_namespace }} \
+                --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+            when: capabilities_enabled | bool
+
           # The GitRepository + read-only credential the sops-git backend reads
           # through. One per cluster, shared by every capability chart — each
           # chart emitting its own would collide on Helm ownership and clone the
@@ -988,17 +1193,45 @@ playbooks:
               -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
             when: capabilities_enabled | bool
 
-          - name: Deploy provider-kubeconfig-vault
+          # NB `configuration.enabled`, not `configuration.install` — this chart
+          # spells the toggle differently from vspherevm/proxmoxvm/packer, and a
+          # wrong key is silently accepted by helm.
+          - name: Deploy scheduled-run capability (single release)
+            ansible.builtin.command: >
+              helm upgrade --install scheduled-run {{ charts_oci }}/scheduled-run
+              --version {{ scheduled_run_chart_version }}
+              --set configuration.enabled=false
+              -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
+            when: capabilities_enabled | bool
+
+          - name: Clone the monorepo for charts not on OCI
             ansible.builtin.shell: |
               set -e
-              rm -rf /tmp/stuttgart-things-baseline
+              rm -rf {{ stuttgart_things_checkout }}
               git clone --depth 1 --branch {{ stuttgart_things_ref }} \
-                {{ stuttgart_things_repo }} /tmp/stuttgart-things-baseline
-              helm upgrade --install provider-kubeconfig-vault \
-                /tmp/stuttgart-things-baseline/crossplane/platform/baseline/provider-kubeconfig-vault \
-                --set vault.appRole.roleId={{ vault_approle_role_id }} \
-                -n crossplane-system --create-namespace \
-                --kubeconfig {{ kubeconfig }}
+                {{ stuttgart_things_repo }} {{ stuttgart_things_checkout }}
+            when: >-
+              (capabilities_enabled | bool and packer_chart_enabled | bool)
+              or vault_kubeconfigs_enabled | bool
+
+          # Emits packer-build-defaults, packer-release-defaults,
+          # packer-release-labda and the packer-ca-certs bundle in tekton-ci.
+          # Replaces applying the cicd/packer-*/examples/ EnvironmentConfigs raw.
+          - name: Deploy packer capability (single release, from the monorepo)
+            ansible.builtin.command: >
+              helm upgrade --install packer
+              {{ stuttgart_things_checkout }}/crossplane/platform/capabilities/packer
+              --set configuration.install=false
+              --set namespace={{ tekton_ci_namespace }}
+              -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
+            when: capabilities_enabled | bool and packer_chart_enabled | bool
+
+          - name: Deploy provider-kubeconfig-vault
+            ansible.builtin.command: >
+              helm upgrade --install provider-kubeconfig-vault
+              {{ stuttgart_things_checkout }}/crossplane/platform/baseline/provider-kubeconfig-vault
+              --set vault.appRole.roleId={{ vault_approle_role_id }}
+              -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
             when: vault_kubeconfigs_enabled | bool
             no_log: true
 
