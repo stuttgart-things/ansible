@@ -17,7 +17,7 @@
 #   (WAITED: core -> providers -> config -> provider-configs) ->
 #   Configuration packages (+ provider-CRD wait) -> EnvironmentConfigs ->
 #   tekton-ci namespace -> capabilities (backend=sops-git) ->
-#   provider-kubeconfig-vault (optional)
+#   provider-kubeconfig-vault
 #
 # Scope note: the package set below is kept at parity with the reference
 # machinery cluster (kind1) — reconciled against it on 2026-08-09, which moved
@@ -88,14 +88,41 @@ playbooks:
             {{ ['sops-secrets-operator-system'] if sops_global_age_key_enabled | bool
                else ['crossplane-system'] }}
 
-          # --- provider-kubeconfig / Vault-backed RemoteCluster (optional) ---
+          # --- provider-kubeconfig / Vault-backed RemoteCluster ---
           # Emits the `vault-kubeconfigs` ClusterProviderConfig that RemoteCluster
           # CRs reference, plus the DeploymentRuntimeConfig carrying VAULT_CACERT
-          # and the pinned SA name. Off by default: the AppRole role ID is not
-          # committed, and the matching `vault-approle` Secret (key `secret-id`)
-          # must already exist in crossplane-system.
-          vault_kubeconfigs_enabled: false
+          # and the pinned SA name. Without it a machinery cluster can BUILD VMs
+          # but cannot adopt the clusters on them, which is half a fleet manager —
+          # so it is part of machinery now rather than an opt-in extra.
+          #
+          # It used to be off by default because it looked like it needed two
+          # things supplied by hand: an AppRole role ID (deliberately not
+          # committed) and a matching `vault-approle` Secret in
+          # crossplane-system. Neither is true on a cluster this play has already
+          # set up — `secrets/vault.enc.yaml`, which sops-git materializes into
+          # {{ tekton_ci_namespace }}/vault a few tasks earlier, carries
+          # VAULT_ROLE_ID and VAULT_SECRET_ID for exactly this AppRole, against
+          # exactly the Vault the chart defaults to
+          # (https://vault-vsphere.labul.sva.de:8200). Verified by hash against
+          # kind1's live release and its crossplane-system/vault-approle on
+          # 2026-08-11: both matched.
+          #
+          # So the deploy task below derives both from that Secret. Set
+          # vault_approle_role_id explicitly to override; set
+          # sops_git_secrets_enabled=false and supply both by hand to opt out of
+          # the derivation entirely.
+          vault_kubeconfigs_enabled: true
           vault_approle_role_id: ""
+          # The Secret the AppRole is read out of, and the keys in it. Same
+          # Secret the Tekton ansible pipeline authenticates with.
+          vault_approle_source_secret: vault
+          vault_approle_role_id_key: VAULT_ROLE_ID
+          vault_approle_secret_id_key: VAULT_SECRET_ID
+          # The Provider CR the package manager creates for provider-kubeconfig,
+          # and the DeploymentRuntimeConfig the chart emits for it. They have to
+          # be wired together by hand — see the patch task.
+          kubeconfig_provider_name: provider-kubeconfig
+          kubeconfig_provider_runtime_config: provider-kubeconfig
 
           # --- component refs / versions ---
           helm_repo: "git::https://github.com/stuttgart-things/helm.git"
@@ -127,6 +154,10 @@ playbooks:
           sops_age_key_ref_name: "{{ '' if sops_global_age_key_enabled | bool else 'sops-age-key' }}"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
           ansible_chart_version: "0.9.2"
+          # The name the ansible chart gives its Configuration — which is the
+          # name `crossplane xpkg install` derives from the image ref, NOT the
+          # short `ansible-run`. See the adopt task below for why this matters.
+          ansible_run_configuration_name: stuttgart-things-crossplane-configurations-ansible-run
           cluster_backup_chart_version: "0.1.0"
           scheduled_run_chart_version: "0.2.1"
           cert_manager_version: v1.21.0
@@ -172,6 +203,19 @@ playbooks:
             # 0.4.0 on this backend (installed by hand during the live test)
             # while this file still said 0.3.0 + sops, so a playbook run used
             # to downgrade it and revert it to the embedded blob.
+            # WARNING — 0.9.2 IS TWO DIFFERENT CHARTS. The tag published to
+            # charts_oci predates stuttgart-things#2483, which added
+            # `cloneDatastore: V5010-01-1` to environments.labul WITHOUT bumping
+            # Chart.yaml. So the monorepo's 0.9.2 renders it and the registry's
+            # 0.9.2 does not, and a cluster built from here silently gets an
+            # EnvironmentConfig with no cloneDatastore — which under the
+            # DD-sthings ACL means every LabUL clone 403s unless each XR
+            # restates the field itself. kind1 has it only because it was
+            # upgraded from the local chart path.
+            # Raise this pin as soon as a corrected chart is pushed
+            # (`task push-platform-charts`); until then a run needs a follow-up
+            #   helm upgrade proxmoxvm-<env> <monorepo>/crossplane/platform/capabilities/proxmoxvm
+            # re-feeding the same --set flags. Found on u26-kind3 (2026-08-11).
             - chart: proxmoxvm
               version: "0.9.2"
               envs: "{{ proxmox_envs }}"
@@ -268,8 +312,16 @@ playbooks:
             - name: vspherevm
               package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.9.0"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
+            # v0.10.0 added spec.vm.cloneDatastore, v0.11.0 its `none` opt-out
+            # sentinel. NOT optional for LabUL: both base-OS templates keep their
+            # disk on the NFS store DD-sthings, whose ACL lost
+            # Datastore.AllocateSpace in early 2026-08, so a clone that cannot
+            # name a target datastore 403s. Below v0.10.0 the XRD has no such
+            # field at all — a cluster built on v0.9.0 cannot provision a LabUL
+            # Proxmox VM, which is not obvious because every Configuration still
+            # reports Healthy. Raised from v0.9.0 after u26-kind3 (2026-08-11).
             - name: proxmoxvm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.9.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.11.0"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             # Tekton-backed Packer builder — only provider-kubernetes, already up.
             - name: packer-build
@@ -349,11 +401,17 @@ playbooks:
                 stuttgart_things_repo), or set sops_git_secrets_enabled=false.
             when: capabilities_enabled | bool and sops_git_secrets_enabled | bool
 
-          - name: Preflight — vault AppRole role ID present when kubeconfig-vault is enabled
+          # The role ID may be given explicitly OR derived from the sops-git
+          # `vault` Secret (see the vars block). One of the two must be possible,
+          # so this only fails on the combination that leaves neither.
+          - name: Preflight — an AppRole source exists when kubeconfig-vault is enabled
             ansible.builtin.assert:
               that:
-                - vault_approle_role_id | length > 0
-              fail_msg: "vault_kubeconfigs_enabled=true requires vault_approle_role_id."
+                - vault_approle_role_id | length > 0 or (sops_git_secrets_enabled | bool and capabilities_enabled | bool)
+              fail_msg: >-
+                vault_kubeconfigs_enabled=true needs either an explicit
+                vault_approle_role_id, or sops-git enabled so the AppRole can be
+                read from {{ tekton_ci_namespace }}/{{ vault_approle_source_secret }}.
             when: vault_kubeconfigs_enabled | bool
 
           - name: Preflight — cluster reachable
@@ -572,6 +630,22 @@ playbooks:
           # through. One per cluster, shared by every capability chart — each
           # chart emitting its own would collide on Helm ownership and clone the
           # same repo once per capability. Must exist before the charts below.
+          # The operator writes each standalone secret into the namespace named
+          # below, and creates none of them. `tekton-ci` is handled above and
+          # `crossplane-system` always exists, but `flux-system` does not on a
+          # cluster that has not been Flux-bootstrapped — so that one
+          # SopsSecretManifest sits at Applied=False indefinitely while
+          # everything around it reports healthy. Derived from the list itself
+          # so a new entry cannot reintroduce the gap. Found on u26-kind3.
+          - name: Ensure the namespaces the standalone sops secrets are written into
+            ansible.builtin.shell: |
+              kubectl create namespace {{ item }} \
+                --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+            become_user: "{{ ansible_user }}"
+            loop: "{{ standalone_sops_secrets | map(attribute='namespace') | unique | list }}"
+            when: capabilities_enabled | bool and sops_git_secrets_enabled | bool
+
           - name: Deploy sops-git-secrets (GitRepository + read-only credential)
             ansible.builtin.command: >
               helm upgrade --install sops-git-secrets {{ charts_oci }}/sops-git-secrets
@@ -604,6 +678,41 @@ playbooks:
             loop: "{{ capability_charts | subelements('envs') }}"
             loop_control:
               label: "{{ item.0.chart }}-{{ item.1 }}"
+            when: capabilities_enabled | bool
+
+          # WITHOUT THIS THE NEXT TASK FAILS ON EVERY FRESH CLUSTER.
+          #
+          # `machinery_packages` deliberately does not list ansible-run — but
+          # vspherevm and proxmoxvm both declare it in dependsOn, so installing
+          # THEM makes the package manager create the Configuration anyway,
+          # under the image-derived name. The ansible chart then wants to create
+          # the same object (its configuration.enabled defaults to true) and
+          # Helm refuses an object it did not create:
+          #
+          #   Error: unable to continue with install: Configuration
+          #   "stuttgart-things-...-ansible-run" exists and cannot be imported
+          #   into the current release: invalid ownership metadata
+          #
+          # The sibling vspherevm/proxmoxvm tasks dodge this with
+          # configuration.install=false; here the chart's own pin is the one we
+          # want to keep authoritative, so the object is adopted instead.
+          # Content-wise a no-op — the transitive package and the chart pin are
+          # the same version. `|| exit 0` keeps this a no-op on a cluster where
+          # the dependency has not (yet) materialized the object.
+          #
+          # This never bit kind1 because it was built incrementally by hand, in
+          # an order where the chart got there first. Found on u26-kind3.
+          - name: Adopt the transitive ansible-run Configuration into the ansible release
+            ansible.builtin.shell: |
+              kubectl get configuration.pkg.crossplane.io {{ ansible_run_configuration_name }} \
+                --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 || exit 0
+              kubectl label configuration.pkg.crossplane.io {{ ansible_run_configuration_name }} \
+                app.kubernetes.io/managed-by=Helm --overwrite --kubeconfig {{ kubeconfig }}
+              kubectl annotate configuration.pkg.crossplane.io {{ ansible_run_configuration_name }} \
+                meta.helm.sh/release-name=ansible \
+                meta.helm.sh/release-namespace=crossplane-system \
+                --overwrite --kubeconfig {{ kubeconfig }}
+            become_user: "{{ ansible_user }}"
             when: capabilities_enabled | bool
 
           - name: Deploy ansible capability (single release, tekton-ci creds)
@@ -651,13 +760,29 @@ playbooks:
 
           # Shallow checkout for the charts that are not published to OCI. Cloned
           # once and reused by the packer + provider-kubeconfig-vault tasks below.
+          #
+          # AUTHENTICATED, because stuttgart_things_repo is PRIVATE and the
+          # target host has no git credential of its own — an anonymous clone
+          # here just fails. Reuses SOPS_GIT_TOKEN, which is already a
+          # precondition for the sops-git backend and is read-only.
+          #
+          # Two things keep the token from leaking:
+          #   no_log        so it never reaches the run output, and
+          #   rm -rf .git   because `git clone` writes the credential-bearing URL
+          #                 into .git/config, where it would sit on the host for
+          #                 anyone to read. Nothing below needs git history — the
+          #                 checkout is only a chart source — and the next run
+          #                 re-clones from scratch anyway.
           - name: Clone the monorepo for charts not on OCI
             ansible.builtin.shell: |
               set -e
               rm -rf {{ stuttgart_things_checkout }}
               git clone --depth 1 --branch {{ stuttgart_things_ref }} \
-                {{ stuttgart_things_repo }} {{ stuttgart_things_checkout }}
+                "{{ stuttgart_things_repo | regex_replace('^https://', 'https://' ~ sops_git_username ~ ':' ~ sops_git_token ~ '@') }}" \
+                {{ stuttgart_things_checkout }}
+              rm -rf {{ stuttgart_things_checkout }}/.git
             become_user: "{{ ansible_user }}"
+            no_log: true    # never echo the git token
             when: >-
               (capabilities_enabled | bool and packer_chart_enabled | bool)
               or vault_kubeconfigs_enabled | bool
@@ -683,21 +808,101 @@ playbooks:
             when: capabilities_enabled | bool and packer_chart_enabled | bool
 
           # ================================================================
-          # 6) REMOTE-CLUSTER CREDENTIALS (optional) — the vault-kubeconfigs
+          # 6) REMOTE-CLUSTER CREDENTIALS — the vault-kubeconfigs
           #    ClusterProviderConfig that RemoteCluster CRs reference. Chart
-          #    lives in the monorepo, not on OCI, so it is cloned first.
+          #    lives in the monorepo, not on OCI, so it is cloned above.
           # ================================================================
-          # Chart source comes from the checkout the packer task above shares.
+          # The sops-git backend writes the `vault` Secret asynchronously — the
+          # helm release returns as soon as the SopsSecretManifest is created,
+          # not when the operator has fetched, decrypted and applied it. Without
+          # this wait the two tasks below race it on a cold cluster and read an
+          # empty AppRole, which produces a ClusterProviderConfig that looks
+          # installed and fails on first use.
+          - name: Wait for the sops-git vault Secret to materialize
+            ansible.builtin.shell: |
+              for i in $(seq 1 60); do
+                kubectl -n {{ tekton_ci_namespace }} get secret {{ vault_approle_source_secret }} \
+                  --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && exit 0
+                sleep 5
+              done
+              echo "{{ tekton_ci_namespace }}/{{ vault_approle_source_secret }} never appeared" >&2
+              exit 1
+            become_user: "{{ ansible_user }}"
+            when: vault_kubeconfigs_enabled | bool and vault_approle_role_id | length == 0
+
+          # The chart reads the secret-id from a Secret it does not create, so
+          # this projects it out of the sops-git `vault` Secret into the name and
+          # key the chart's vault.appRole.secretRef expects. Same AppRole, just
+          # reshaped — no second credential to distribute or rotate.
+          - name: Derive the vault-approle Secret from the sops-git vault Secret
+            ansible.builtin.shell: |
+              set -euo pipefail
+              SECRET_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ vault_approle_source_secret }} \
+                -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
+              test -n "$SECRET_ID"
+              kubectl -n crossplane-system create secret generic vault-approle \
+                --from-literal=secret-id="$SECRET_ID" \
+                --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+            become_user: "{{ ansible_user }}"
+            when: vault_kubeconfigs_enabled | bool and vault_approle_role_id | length == 0
+            no_log: true    # never echo the AppRole secret-id
+
+          # Role ID resolution happens INSIDE the shell rather than in Jinja, so
+          # the explicit-override path and the derived path are one code path and
+          # the value never has to become an ansible fact (which `no_log` would
+          # hide from the log but not from a fact dump).
           - name: Deploy provider-kubeconfig-vault
-            ansible.builtin.command: >
-              helm upgrade --install provider-kubeconfig-vault
-              {{ stuttgart_things_checkout }}/crossplane/platform/baseline/provider-kubeconfig-vault
-              --set vault.appRole.roleId={{ vault_approle_role_id }}
-              -n crossplane-system --create-namespace
-              --kubeconfig {{ kubeconfig }}
+            ansible.builtin.shell: |
+              set -euo pipefail
+              ROLE_ID='{{ vault_approle_role_id }}'
+              if [ -z "$ROLE_ID" ]; then
+                ROLE_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ vault_approle_source_secret }} \
+                  -o jsonpath='{.data.{{ vault_approle_role_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
+              fi
+              test -n "$ROLE_ID"
+              helm upgrade --install provider-kubeconfig-vault \
+                {{ stuttgart_things_checkout }}/crossplane/platform/baseline/provider-kubeconfig-vault \
+                --set vault.appRole.roleId="$ROLE_ID" \
+                -n crossplane-system --create-namespace \
+                --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
             when: vault_kubeconfigs_enabled | bool
             no_log: true    # never echo the AppRole role ID
+
+          # THE CHART CANNOT DO THIS ITSELF, AND WITHOUT IT THE CHART IS INERT.
+          #
+          # The Provider CR is created by the package manager from a dependsOn,
+          # so helm will not adopt it — the chart emits the
+          # DeploymentRuntimeConfig and nothing ever points the provider at it.
+          # The provider then keeps the `default` runtime config, never receives
+          # VAULT_CACERT, and every RemoteCluster fails with
+          #
+          #   Vault AppRole auth login failed: ... tls: failed to verify
+          #   certificate: x509: certificate signed by unknown authority
+          #
+          # which reads like a credential problem and is not one — the AppRole is
+          # fine, the provider simply does not trust the Vault CA. The chart's own
+          # DeploymentRuntimeConfig comment predicts exactly this failure.
+          #
+          # kind1 has the reference set; it was patched there by hand and never
+          # written down. Confirmed by diff on 2026-08-11: kind1
+          # runtimeConfigRef=provider-kubeconfig, a fresh cluster =default.
+          #
+          # The same patch also pins the ServiceAccount name (the DRC's
+          # serviceAccountTemplate), without which Crossplane derives it from the
+          # package revision hash and the chart's RBAC silently stops applying
+          # after any provider upgrade.
+          - name: Point the kubeconfig provider at its DeploymentRuntimeConfig
+            ansible.builtin.shell: |
+              set -euo pipefail
+              kubectl patch provider.pkg.crossplane.io {{ kubeconfig_provider_name }} --type=merge \
+                -p '{"spec":{"runtimeConfigRef":{"apiVersion":"pkg.crossplane.io/v1beta1","kind":"DeploymentRuntimeConfig","name":"{{ kubeconfig_provider_runtime_config }}"}}}' \
+                --kubeconfig {{ kubeconfig }}
+              kubectl wait provider.pkg.crossplane.io/{{ kubeconfig_provider_name }} \
+                --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
+            become_user: "{{ ansible_user }}"
+            when: vault_kubeconfigs_enabled | bool
 
           - name: Show machinery readiness
             ansible.builtin.command: >
@@ -740,9 +945,21 @@ playbooks:
           age_key_namespaces: >-
             {{ ['sops-secrets-operator-system'] if sops_global_age_key_enabled | bool else ['crossplane-system'] }}
 
-          # See the profile play above for the full commentary on these.
-          vault_kubeconfigs_enabled: false
+          # See the profile play above for the full commentary on these. Short
+          # version: on by default now, because the AppRole this needs is already
+          # on the cluster in the sops-git `vault` Secret and no longer has to be
+          # supplied by hand. Set vault_approle_role_id to override the
+          # derivation.
+          vault_kubeconfigs_enabled: true
           vault_approle_role_id: ""
+          vault_approle_source_secret: vault
+          vault_approle_role_id_key: VAULT_ROLE_ID
+          vault_approle_secret_id_key: VAULT_SECRET_ID
+          # The Provider CR the package manager creates for provider-kubeconfig,
+          # and the DeploymentRuntimeConfig the chart emits for it. They have to
+          # be wired together by hand — see the patch task.
+          kubeconfig_provider_name: provider-kubeconfig
+          kubeconfig_provider_runtime_config: provider-kubeconfig
 
           helm_repo: "git::https://github.com/stuttgart-things/helm.git"
           # From v0.9.0 the ref alone selects the image: semantic-release now
@@ -773,6 +990,10 @@ playbooks:
           sops_age_key_ref_name: "{{ '' if sops_global_age_key_enabled | bool else 'sops-age-key' }}"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
           ansible_chart_version: "0.9.2"
+          # The name the ansible chart gives its Configuration — which is the
+          # name `crossplane xpkg install` derives from the image ref, NOT the
+          # short `ansible-run`. See the adopt task below for why this matters.
+          ansible_run_configuration_name: stuttgart-things-crossplane-configurations-ansible-run
           cluster_backup_chart_version: "0.1.0"
           scheduled_run_chart_version: "0.2.1"
           cert_manager_version: v1.21.0
@@ -818,6 +1039,19 @@ playbooks:
             # 0.4.0 on this backend (installed by hand during the live test)
             # while this file still said 0.3.0 + sops, so a playbook run used
             # to downgrade it and revert it to the embedded blob.
+            # WARNING — 0.9.2 IS TWO DIFFERENT CHARTS. The tag published to
+            # charts_oci predates stuttgart-things#2483, which added
+            # `cloneDatastore: V5010-01-1` to environments.labul WITHOUT bumping
+            # Chart.yaml. So the monorepo's 0.9.2 renders it and the registry's
+            # 0.9.2 does not, and a cluster built from here silently gets an
+            # EnvironmentConfig with no cloneDatastore — which under the
+            # DD-sthings ACL means every LabUL clone 403s unless each XR
+            # restates the field itself. kind1 has it only because it was
+            # upgraded from the local chart path.
+            # Raise this pin as soon as a corrected chart is pushed
+            # (`task push-platform-charts`); until then a run needs a follow-up
+            #   helm upgrade proxmoxvm-<env> <monorepo>/crossplane/platform/capabilities/proxmoxvm
+            # re-feeding the same --set flags. Found on u26-kind3 (2026-08-11).
             - chart: proxmoxvm
               version: "0.9.2"
               envs: "{{ proxmox_envs }}"
@@ -902,8 +1136,16 @@ playbooks:
             - name: vspherevm
               package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.9.0"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
+            # v0.10.0 added spec.vm.cloneDatastore, v0.11.0 its `none` opt-out
+            # sentinel. NOT optional for LabUL: both base-OS templates keep their
+            # disk on the NFS store DD-sthings, whose ACL lost
+            # Datastore.AllocateSpace in early 2026-08, so a clone that cannot
+            # name a target datastore 403s. Below v0.10.0 the XRD has no such
+            # field at all — a cluster built on v0.9.0 cannot provision a LabUL
+            # Proxmox VM, which is not obvious because every Configuration still
+            # reports Healthy. Raised from v0.9.0 after u26-kind3 (2026-08-11).
             - name: proxmoxvm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.9.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.11.0"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             - name: packer-build
               package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.4.1"
@@ -971,11 +1213,17 @@ playbooks:
                 stuttgart_things_repo), or set sops_git_secrets_enabled=false.
             when: capabilities_enabled | bool and sops_git_secrets_enabled | bool
 
-          - name: Preflight — vault AppRole role ID present when kubeconfig-vault is enabled
+          # The role ID may be given explicitly OR derived from the sops-git
+          # `vault` Secret (see the vars block). One of the two must be possible,
+          # so this only fails on the combination that leaves neither.
+          - name: Preflight — an AppRole source exists when kubeconfig-vault is enabled
             ansible.builtin.assert:
               that:
-                - vault_approle_role_id | length > 0
-              fail_msg: "vault_kubeconfigs_enabled=true requires vault_approle_role_id."
+                - vault_approle_role_id | length > 0 or (sops_git_secrets_enabled | bool and capabilities_enabled | bool)
+              fail_msg: >-
+                vault_kubeconfigs_enabled=true needs either an explicit
+                vault_approle_role_id, or sops-git enabled so the AppRole can be
+                read from {{ tekton_ci_namespace }}/{{ vault_approle_source_secret }}.
             when: vault_kubeconfigs_enabled | bool
 
           - name: Preflight — cluster reachable
@@ -1145,6 +1393,18 @@ playbooks:
           # through. One per cluster, shared by every capability chart — each
           # chart emitting its own would collide on Helm ownership and clone the
           # same repo once per capability. Must exist before the charts below.
+          # See the profile play above: the operator creates none of the target
+          # namespaces, and `flux-system` does not exist on a cluster that was
+          # never Flux-bootstrapped — leaving that SopsSecretManifest at
+          # Applied=False while everything around it looks healthy.
+          - name: Ensure the namespaces the standalone sops secrets are written into
+            ansible.builtin.shell: |
+              kubectl create namespace {{ item }} \
+                --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+            loop: "{{ standalone_sops_secrets | map(attribute='namespace') | unique | list }}"
+            when: capabilities_enabled | bool and sops_git_secrets_enabled | bool
+
           - name: Deploy sops-git-secrets (GitRepository + read-only credential)
             ansible.builtin.command: >
               helm upgrade --install sops-git-secrets {{ charts_oci }}/sops-git-secrets
@@ -1176,6 +1436,23 @@ playbooks:
               label: "{{ item.0.chart }}-{{ item.1 }}"
             when: capabilities_enabled | bool
 
+          # See the profile play above for the full commentary. Short version:
+          # vspherevm/proxmoxvm pull ansible-run in via dependsOn, so the object
+          # already exists un-owned when the ansible chart tries to create it,
+          # and Helm refuses it with "invalid ownership metadata". Adopting is a
+          # content no-op (same version) and keeps the chart's pin authoritative.
+          - name: Adopt the transitive ansible-run Configuration into the ansible release
+            ansible.builtin.shell: |
+              kubectl get configuration.pkg.crossplane.io {{ ansible_run_configuration_name }} \
+                --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 || exit 0
+              kubectl label configuration.pkg.crossplane.io {{ ansible_run_configuration_name }} \
+                app.kubernetes.io/managed-by=Helm --overwrite --kubeconfig {{ kubeconfig }}
+              kubectl annotate configuration.pkg.crossplane.io {{ ansible_run_configuration_name }} \
+                meta.helm.sh/release-name=ansible \
+                meta.helm.sh/release-namespace=crossplane-system \
+                --overwrite --kubeconfig {{ kubeconfig }}
+            when: capabilities_enabled | bool
+
           - name: Deploy ansible capability (single release)
             ansible.builtin.command: >
               helm upgrade --install ansible {{ charts_oci }}/ansible
@@ -1204,12 +1481,19 @@ playbooks:
               -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
             when: capabilities_enabled | bool
 
+          # Authenticated: stuttgart_things_repo is private and the host has no
+          # git credential of its own. `.git` is removed afterwards because the
+          # clone URL — token included — is written into .git/config. See the
+          # profile play for the full note.
           - name: Clone the monorepo for charts not on OCI
             ansible.builtin.shell: |
               set -e
               rm -rf {{ stuttgart_things_checkout }}
               git clone --depth 1 --branch {{ stuttgart_things_ref }} \
-                {{ stuttgart_things_repo }} {{ stuttgart_things_checkout }}
+                "{{ stuttgart_things_repo | regex_replace('^https://', 'https://' ~ sops_git_username ~ ':' ~ sops_git_token ~ '@') }}" \
+                {{ stuttgart_things_checkout }}
+              rm -rf {{ stuttgart_things_checkout }}/.git
+            no_log: true    # never echo the git token
             when: >-
               (capabilities_enabled | bool and packer_chart_enabled | bool)
               or vault_kubeconfigs_enabled | bool
@@ -1226,14 +1510,64 @@ playbooks:
               -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
             when: capabilities_enabled | bool and packer_chart_enabled | bool
 
+          # See the profile play for the full commentary. Short version: the
+          # AppRole this chart needs is already on the cluster, in the sops-git
+          # `vault` Secret — role ID and secret-id both. The wait exists because
+          # that Secret is written asynchronously by the operator.
+          - name: Wait for the sops-git vault Secret to materialize
+            ansible.builtin.shell: |
+              for i in $(seq 1 60); do
+                kubectl -n {{ tekton_ci_namespace }} get secret {{ vault_approle_source_secret }} \
+                  --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && exit 0
+                sleep 5
+              done
+              echo "{{ tekton_ci_namespace }}/{{ vault_approle_source_secret }} never appeared" >&2
+              exit 1
+            when: vault_kubeconfigs_enabled | bool and vault_approle_role_id | length == 0
+
+          - name: Derive the vault-approle Secret from the sops-git vault Secret
+            ansible.builtin.shell: |
+              set -euo pipefail
+              SECRET_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ vault_approle_source_secret }} \
+                -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
+              test -n "$SECRET_ID"
+              kubectl -n crossplane-system create secret generic vault-approle \
+                --from-literal=secret-id="$SECRET_ID" \
+                --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+            when: vault_kubeconfigs_enabled | bool and vault_approle_role_id | length == 0
+            no_log: true    # never echo the AppRole secret-id
+
           - name: Deploy provider-kubeconfig-vault
-            ansible.builtin.command: >
-              helm upgrade --install provider-kubeconfig-vault
-              {{ stuttgart_things_checkout }}/crossplane/platform/baseline/provider-kubeconfig-vault
-              --set vault.appRole.roleId={{ vault_approle_role_id }}
-              -n crossplane-system --create-namespace --kubeconfig {{ kubeconfig }}
+            ansible.builtin.shell: |
+              set -euo pipefail
+              ROLE_ID='{{ vault_approle_role_id }}'
+              if [ -z "$ROLE_ID" ]; then
+                ROLE_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ vault_approle_source_secret }} \
+                  -o jsonpath='{.data.{{ vault_approle_role_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
+              fi
+              test -n "$ROLE_ID"
+              helm upgrade --install provider-kubeconfig-vault \
+                {{ stuttgart_things_checkout }}/crossplane/platform/baseline/provider-kubeconfig-vault \
+                --set vault.appRole.roleId="$ROLE_ID" \
+                -n crossplane-system --create-namespace \
+                --kubeconfig {{ kubeconfig }}
             when: vault_kubeconfigs_enabled | bool
-            no_log: true
+            no_log: true    # never echo the AppRole role ID
+
+          # See the profile play for the full note. Without this the chart is
+          # inert: the provider never gets VAULT_CACERT and every RemoteCluster
+          # dies on `x509: certificate signed by unknown authority`, which looks
+          # like a credential problem and is not one.
+          - name: Point the kubeconfig provider at its DeploymentRuntimeConfig
+            ansible.builtin.shell: |
+              set -euo pipefail
+              kubectl patch provider.pkg.crossplane.io {{ kubeconfig_provider_name }} --type=merge \
+                -p '{"spec":{"runtimeConfigRef":{"apiVersion":"pkg.crossplane.io/v1beta1","kind":"DeploymentRuntimeConfig","name":"{{ kubeconfig_provider_runtime_config }}"}}}' \
+                --kubeconfig {{ kubeconfig }}
+              kubectl wait provider.pkg.crossplane.io/{{ kubeconfig_provider_name }} \
+                --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
+            when: vault_kubeconfigs_enabled | bool
 
           - name: Show machinery readiness
             ansible.builtin.command: >
