@@ -376,9 +376,32 @@ playbooks:
                + (platform_packages if platform_enabled | bool else []) }}
 
           # Storage + CI helmfiles (no strict inter-step waits needed here).
+          # The openebs chart ships an observability stack on by default — a Loki
+          # StatefulSet, the MinIO StatefulSet backing it, an Alloy DaemonSet and
+          # two extra StorageClasses. A machinery cluster is a kind cluster and
+          # wants none of it, and on a 1+2 kind cluster it cannot even run: Loki
+          # asks for three replicas with pod anti-affinity, the two workers take
+          # replicas 1 and 2, the control-plane node is tainted, and replica 0
+          # stays Pending forever. Set either to true to get it back.
+          #
+          # MinIO has no toggle of its own — it is Loki's object store, so
+          # disabling Loki is what removes it. Alloy goes with it because a log
+          # shipper with no Loki ships logs at nothing. openebs-hostpath, the
+          # StorageClass everything here actually uses, is unaffected.
+          #
+          # Needs stuttgart-things/helm#155 for the state values to exist; on an
+          # older helmfile they are simply ignored and the stack stays up.
+          openebs_loki_enabled: false
+          openebs_alloy_enabled: false
+
+          # `location` plus optional `state_values` (a dict rendered into
+          # --state-values-set). A plain string still works.
           pre_crossplane_helmfiles:
-            - "{{ helm_repo }}@infra/openebs.yaml.gotmpl"
-            - "{{ helm_repo }}@cicd/tekton.yaml.gotmpl"
+            - location: "{{ helm_repo }}@infra/openebs.yaml.gotmpl"
+              state_values:
+                openebs_loki_enabled: "{{ openebs_loki_enabled | lower }}"
+                openebs_alloy_enabled: "{{ openebs_alloy_enabled | lower }}"
+            - location: "{{ helm_repo }}@cicd/tekton.yaml.gotmpl"
 
         tasks:
           # ================================================================
@@ -501,12 +524,19 @@ playbooks:
               state: absent
             become_user: "{{ ansible_user }}"
 
+          # `item` may be a plain location string or a dict with an optional
+          # `state_values` map; both shapes are accepted so a caller overriding
+          # this list with strings keeps working.
           - name: Apply openebs + tekton helmfiles
             ansible.builtin.shell: |
               helmfile init --force
-              helmfile apply -f {{ item }} --kubeconfig {{ kubeconfig }}
+              helmfile apply -f {{ item.location | default(item) }} \
+                {% if item.state_values is defined %}--state-values-set {% for k, v in item.state_values.items() %}{{ k }}={{ v }}{{ "," if not loop.last }}{% endfor %} \
+                {% endif %}--kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
             loop: "{{ pre_crossplane_helmfiles }}"
+            loop_control:
+              label: "{{ item.location | default(item) }}"
 
           - name: Wait for TektonPipeline Ready
             ansible.builtin.shell: |
@@ -1061,6 +1091,10 @@ playbooks:
               extra_set:
                 - configuration.install=false
 
+          # openebs observability — off, see the helmfile task below.
+          openebs_loki_enabled: false
+          openebs_alloy_enabled: false
+
           # --- git-sourced sops credentials (backend=sops-git) ---
           # Capability charts on this backend read their encrypted credentials
           # straight from the repo instead of having the blob embedded at deploy
@@ -1297,13 +1331,25 @@ playbooks:
               path: "/home/{{ ansible_user }}/.cache/helmfile/states/https_github_com_stuttgart-things_helm_git"
               state: absent
 
+          # See the profile play: the openebs chart ships Loki + its MinIO object
+          # store + an Alloy DaemonSet on by default, and on a 1+2 kind cluster
+          # Loki's 3-replica anti-affinity leaves replica 0 Pending forever.
+          # openebs-hostpath is unaffected. Needs stuttgart-things/helm#155;
+          # against an older helmfile the state values are ignored.
           - name: Apply openebs + tekton helmfiles
             ansible.builtin.shell: |
               helmfile init --force
-              helmfile apply -f {{ item }} --kubeconfig {{ kubeconfig }}
+              helmfile apply -f {{ item.location }} \
+                {% if item.state_values is defined %}--state-values-set {% for k, v in item.state_values.items() %}{{ k }}={{ v }}{{ "," if not loop.last }}{% endfor %} \
+                {% endif %}--kubeconfig {{ kubeconfig }}
             loop:
-              - "{{ helm_repo }}@infra/openebs.yaml.gotmpl"
-              - "{{ helm_repo }}@cicd/tekton.yaml.gotmpl"
+              - location: "{{ helm_repo }}@infra/openebs.yaml.gotmpl"
+                state_values:
+                  openebs_loki_enabled: "{{ openebs_loki_enabled | lower }}"
+                  openebs_alloy_enabled: "{{ openebs_alloy_enabled | lower }}"
+              - location: "{{ helm_repo }}@cicd/tekton.yaml.gotmpl"
+            loop_control:
+              label: "{{ item.location }}"
 
           - name: Wait for TektonPipeline Ready
             ansible.builtin.shell: |
