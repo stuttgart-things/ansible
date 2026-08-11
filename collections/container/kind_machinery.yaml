@@ -262,6 +262,23 @@ playbooks:
             # encrypted manifest, so the operator materializes it as-is.
             - name: backup-registry
               namespace: crossplane-system
+            # AppRole a TofuRun authenticates to Vault with, as TF_VAR_* keys.
+            # NOT the same credential as the `vault` Secret above — a different
+            # AppRole entirely (verified by hash), which is why it needs its own
+            # blob. It was hand-applied on kind1 and existed nowhere else until
+            # stuttgart-things committed secrets/terraform-credentials.enc.yaml
+            # while retiring that cluster; without this entry a machinery
+            # cluster can render a TofuRun but not authenticate it.
+            - name: terraform-credentials
+              namespace: tekton-ci
+            # git credential the packer pipelines clone the packer repo with
+            # (.git-credentials + .gitconfig). Required now that
+            # packer_chart_enabled is on by default — the capability chart names
+            # this Secret but creates nothing, so without it a PackerBuild fails
+            # at the clone. Same token as sops-git-credentials, but the packer
+            # task consumes it in git's own file format rather than as a value.
+            - name: packer-git-basicauth
+              namespace: tekton-ci
 
           stuttgart_things_repo: "https://github.com/stuttgart-things/stuttgart-things.git"
           stuttgart_things_ref: main
@@ -1128,6 +1145,23 @@ playbooks:
             # encrypted manifest, so the operator materializes it as-is.
             - name: backup-registry
               namespace: crossplane-system
+            # AppRole a TofuRun authenticates to Vault with, as TF_VAR_* keys.
+            # NOT the same credential as the `vault` Secret above — a different
+            # AppRole entirely (verified by hash), which is why it needs its own
+            # blob. It was hand-applied on kind1 and existed nowhere else until
+            # stuttgart-things committed secrets/terraform-credentials.enc.yaml
+            # while retiring that cluster; without this entry a machinery
+            # cluster can render a TofuRun but not authenticate it.
+            - name: terraform-credentials
+              namespace: tekton-ci
+            # git credential the packer pipelines clone the packer repo with
+            # (.git-credentials + .gitconfig). Required now that
+            # packer_chart_enabled is on by default — the capability chart names
+            # this Secret but creates nothing, so without it a PackerBuild fails
+            # at the clone. Same token as sops-git-credentials, but the packer
+            # task consumes it in git's own file format rather than as a value.
+            - name: packer-git-basicauth
+              namespace: tekton-ci
 
           stuttgart_things_repo: "https://github.com/stuttgart-things/stuttgart-things.git"
           stuttgart_things_ref: main
