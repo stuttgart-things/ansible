@@ -7,7 +7,7 @@ playbooks:
         become: true
         vars:
           tmp_dir: "{{ '~' if ansible_user_id == 'nonroot' else '/tmp' }}"
-          local_user: "{{ ansible_user }}"
+          local_user: "{{ ansible_user | default(ansible_user_id) }}"
           become_local_user: true
 
         vars_files:
