@@ -125,7 +125,7 @@ vars:
   - name: awx-operator-kind
     file: | # pragma: allowlist secret
       ---
-      awx_operator_version: 3.0.0
+      awx_operator_version: 3.2.1
       deployment_namespace: awx
       helm_repositories:
         awx-operator:
@@ -134,7 +134,7 @@ vars:
       helm_releases:
         awx-operator:
           ref: awx-operator/awx-operator
-          version: "{{ awx_operator_version | default('3.0.0') }}"
+          version: "{{ awx_operator_version | default('3.2.1') }}"
           namespace: "{{ deployment_namespace }}"
           ignore: false
           wait: true
