@@ -38,7 +38,7 @@
     ansible_user: sthings
     profile: cilium-kind
     state: present
-    target_host: all
+    target_host: localhost
     cluster_name: dev
 
 - name: Deploy AWX
