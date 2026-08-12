@@ -52,7 +52,20 @@ jobs:
       - name: Install Collections
         run: |
           set -eu
-          ansible-galaxy collection install -r requirements.yaml
+          # The sthings.* pins are downloaded from GitHub release assets, which
+          # intermittently return 408/503. ansible-galaxy does not retry, so a
+          # single hiccup fails the whole run - retry with backoff.
+          for attempt in 1 2 3 4 5; do
+            if ansible-galaxy collection install -r requirements.yaml --force; then
+              break
+            fi
+            if [ "$attempt" = 5 ]; then
+              echo "collection install still failing after ${attempt} attempts" >&2
+              exit 1
+            fi
+            echo "collection install attempt ${attempt} failed; retrying in $((attempt * 10))s" >&2
+            sleep "$((attempt * 10))"
+          done
           ansible-galaxy collection list | grep sthings
         shell: bash
 
