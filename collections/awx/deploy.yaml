@@ -6,6 +6,7 @@ playbooks:
       - name: Deploy awx-operator and awx-instance on kind cluster
         import_playbook: sthings.container.deploy_to_k8s
         vars:
+          ansible_user: sthings
           profile: awx-operator-kind
           state: present
           path_to_kubeconfig: /home/{{ ansible_user }}/.kube/{{ kind_cluster_name }}
