@@ -13,7 +13,7 @@
 # ../requirements.yaml stays the consumer-facing pin file and is not used here.
 collections:
   - name: ansible.netcommon
-    version: 8.6.1
+    version: 8.6.2
   - name: ansible.posix
     version: 2.2.2
   - name: awx.awx
