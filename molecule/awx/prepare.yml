@@ -6,57 +6,26 @@
     cluster_name: dev
     kind_cluster_name: dev
 
-- name: DIAGNOSTIC kubeconfig ownership and deploy identity (temporary)
+# The kind cluster is created as ansible_user=sthings, so its kubeconfig lands
+# at /home/sthings/.kube/dev owned sthings:sthings 0600, inside a 0750 home dir.
+# The AWX deploy's kubernetes.core.helm task reads the kubeconfig as the molecule
+# login user (runner), which can neither traverse /home/sthings nor read the 0600
+# file. Stage a world-readable copy and point the deploy at it.
+- name: Stage a deploy-readable copy of the kind kubeconfig
   hosts: localhost
-  gather_facts: true
+  gather_facts: false
+  become: true
   tasks:
-    - name: Login user id (no become)
-      ansible.builtin.command: id
-      changed_when: false
-      register: diag_id_login
+    - name: Copy kubeconfig to a world-readable path
+      ansible.builtin.copy:
+        src: /home/sthings/.kube/dev
+        dest: /tmp/awx-kubeconfig
+        remote_src: true
+        mode: "0644"
 
-    - name: Root id (become, default become_user)
-      ansible.builtin.command: id
-      changed_when: false
-      become: true
-      register: diag_id_root
-
-    - name: Stat kubeconfig
-      ansible.builtin.stat:
-        path: /home/sthings/.kube/dev
-      become: true
-      register: diag_kc
-
-    - name: List /home, /home/sthings, /home/sthings/.kube
-      ansible.builtin.command: ls -la /home /home/sthings /home/sthings/.kube
-      changed_when: false
-      become: true
-      register: diag_ls
-      ignore_errors: true
-
-    - name: Read kubeconfig as sthings (become sthings)
-      ansible.builtin.command: head -c 1 /home/sthings/.kube/dev
-      changed_when: false
-      become: true
-      become_user: sthings
-      register: diag_read_sthings
-      ignore_errors: true
-
-    - name: Read kubeconfig as login user (no become)
-      ansible.builtin.command: head -c 1 /home/sthings/.kube/dev
-      changed_when: false
-      register: diag_read_login
-      ignore_errors: true
-
-    - name: DIAGNOSTIC RESULTS
-      ansible.builtin.debug:
-        msg:
-          - "login_user_id: {{ diag_id_login.stdout }}"
-          - "root_id:       {{ diag_id_root.stdout }}"
-          - "kubeconfig exists={{ diag_kc.stat.exists }} owner={{ diag_kc.stat.pw_name | default('?') }} group={{ diag_kc.stat.gr_name | default('?') }} mode={{ diag_kc.stat.mode | default('?') }}"
-          - "read_as_sthings rc={{ diag_read_sthings.rc | default('n/a') }} err={{ diag_read_sthings.stderr | default('') }}"
-          - "read_as_login   rc={{ diag_read_login.rc | default('n/a') }} err={{ diag_read_login.stderr | default('') }}"
-          - "ls: {{ diag_ls.stdout_lines | default(['<failed>']) }}"
+    - name: Point subsequent plays at the readable kubeconfig
+      ansible.builtin.set_fact:
+        path_to_kubeconfig: /tmp/awx-kubeconfig
 
 - name: Deploy AWX
   ansible.builtin.import_playbook: sthings.awx.deploy
