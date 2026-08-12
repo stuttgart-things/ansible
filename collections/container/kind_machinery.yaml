@@ -37,10 +37,15 @@
 # — cni + Flux + apps pushed onto REMOTE clusters via RemoteCluster-derived
 # ClusterProviderConfigs. Set platform_enabled=false for a pure VM builder.
 #
-# NB: the pins below must stay resolvable against each other — `platform:v0.3.0`
+# NB: the pins below must stay resolvable against each other — `platform:v0.3.1`
 # declares `dependsOn flux-init >=v0.3.0`, so bumping platform without pushing
 # the flux-init tag it wants makes the Configuration Unhealthy and the wait task
 # fails loudly (by design — a silent skip would leave a half-built cluster).
+# The chain now runs one level deeper: `cluster:v0.3.1` declares
+# `dependsOn platform >=v0.3.1`, which is why platform is pinned there and not
+# at v0.3.0. It also pulls `remote-cluster`, which no other entry installs — so
+# that one arrives as a package-manager-named CR rather than a listed pin, and
+# is expected to look "extra" in `kubectl get configuration`.
 #
 # cert-manager is installed by both plays before sops (the sops-secrets-operator
 # webhook needs a cert-manager-issued serving cert). The apply is idempotent, so
@@ -318,6 +323,30 @@ playbooks:
             - bootstrap/flux-init/examples/environment-config.yaml
             - bootstrap/flux-apps/examples/environment-config.yaml
 
+          # Cluster-scoped RBAC that a Configuration documents as a PRECONDITION
+          # but cannot ship — a package installs CRDs and Compositions, never
+          # ClusterRoleBindings. Pulled from the repo rather than inlined so the
+          # rules stay in one place; the file's own header explains each one.
+          #
+          # remote-cluster (via `cluster`) needs two, and both were found by a
+          # wedged live build on u26-kind3, 2026-08-12:
+          #
+          #   create remoteclusters — RemoteClusters were always applied by hand
+          #   before, so provider-kubernetes only ever had to READ them.
+          #
+          #   patch clusterproviderconfigs.helm.m — needed even though the Object
+          #   that touches them is Observe-only. The provider computes desired
+          #   state with a DRY-RUN server-side apply, which the API server
+          #   authorizes exactly like a real write.
+          #
+          # THE SECOND ONE FAILS DECEPTIVELY. status.ready goes true and
+          # status.share fills in with the endpoint and serverVersion (both come
+          # from the RemoteCluster, which is fine) while only Crossplane's own
+          # Ready condition stays False on "Unready resources: observe-helm". A
+          # ClusterStack looks finished and is not.
+          platform_rbac_manifests:
+            - bootstrap/remote-cluster/examples/rbac.yaml
+
           # Machinery half: VM + image builders. Each pulls its provider via
           # dependsOn. `provider_crd` is the CRD that provider registers — waited
           # on so the capability charts can reference it; omit when the package
@@ -383,10 +412,27 @@ playbooks:
           # flux-apps is listed explicitly because platform composes FluxApps
           # children but does not declare the dependency (gap as of v0.3.0).
           platform_packages:
+            # v0.3.1 is a FLOOR, not a preference: `cluster` below declares
+            # dependsOn platform >=v0.3.1, so leaving this at v0.3.0 makes the
+            # cluster Configuration unresolvable and the wait task fails.
             - name: platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.1"
             - name: flux-apps
               package: "ghcr.io/stuttgart-things/crossplane-configurations/flux-apps:v0.1.2"
+            # Builds a WHOLE CLUSTER from one namespaced ClusterStack XR: VM ->
+            # base-OS -> distribution -> kubeconfig upload -> ClusterAccess ->
+            # Platform. Last in the list because it depends on platform above,
+            # and it also pulls remote-cluster, which nothing else installs.
+            #
+            # Proven end to end on u26-kind3 -> Proxmox LabUL, 2026-08-12: a
+            # six-line XR produced u26-rke2-1, v1.35.1+rke2r1 Ready with cilium,
+            # reachable through the ClusterProviderConfigs it emitted.
+            #
+            # NEEDS platform_rbac_manifests, applied below. Without it the build
+            # runs all three ansible stages green and then wedges at the access
+            # stage — see the deceptive-failure note there.
+            - name: cluster
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.3.1"
 
           configuration_packages: >-
             {{ machinery_packages
@@ -633,6 +679,19 @@ playbooks:
             loop: >-
               {{ environment_config_manifests
                  + (platform_environment_config_manifests if platform_enabled | bool else []) }}
+
+          # Same fetch-and-apply shape as the EnvironmentConfigs above, kept a
+          # separate task because it is gated differently: these are cluster-
+          # scoped RBAC objects, so they exist only for the fleet-manager half.
+          # A pure VM builder (platform_enabled=false) installs no Configuration
+          # that composes a RemoteCluster and needs none of it.
+          - name: Apply cluster-scoped RBAC the platform Configurations require
+            ansible.builtin.command: >
+              kubectl apply --kubeconfig {{ kubeconfig }}
+              -f {{ crossplane_configurations_raw }}/{{ crossplane_configurations_ref }}/{{ item }}
+            become_user: "{{ ansible_user }}"
+            loop: "{{ platform_rbac_manifests }}"
+            when: platform_enabled | bool
 
           # ================================================================
           # 5) CAPABILITIES — the per-environment hypervisor charts from
@@ -1196,6 +1255,30 @@ playbooks:
             - bootstrap/flux-init/examples/environment-config.yaml
             - bootstrap/flux-apps/examples/environment-config.yaml
 
+          # Cluster-scoped RBAC that a Configuration documents as a PRECONDITION
+          # but cannot ship — a package installs CRDs and Compositions, never
+          # ClusterRoleBindings. Pulled from the repo rather than inlined so the
+          # rules stay in one place; the file's own header explains each one.
+          #
+          # remote-cluster (via `cluster`) needs two, and both were found by a
+          # wedged live build on u26-kind3, 2026-08-12:
+          #
+          #   create remoteclusters — RemoteClusters were always applied by hand
+          #   before, so provider-kubernetes only ever had to READ them.
+          #
+          #   patch clusterproviderconfigs.helm.m — needed even though the Object
+          #   that touches them is Observe-only. The provider computes desired
+          #   state with a DRY-RUN server-side apply, which the API server
+          #   authorizes exactly like a real write.
+          #
+          # THE SECOND ONE FAILS DECEPTIVELY. status.ready goes true and
+          # status.share fills in with the endpoint and serverVersion (both come
+          # from the RemoteCluster, which is fine) while only Crossplane's own
+          # Ready condition stays False on "Unready resources: observe-helm". A
+          # ClusterStack looks finished and is not.
+          platform_rbac_manifests:
+            - bootstrap/remote-cluster/examples/rbac.yaml
+
           machinery_packages:
             - name: vspherevm
               package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.9.0"
@@ -1252,10 +1335,27 @@ playbooks:
               package: "ghcr.io/stuttgart-things/crossplane-configurations/tofu-run:v0.1.0"
 
           platform_packages:
+            # v0.3.1 is a FLOOR, not a preference: `cluster` below declares
+            # dependsOn platform >=v0.3.1, so leaving this at v0.3.0 makes the
+            # cluster Configuration unresolvable and the wait task fails.
             - name: platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.1"
             - name: flux-apps
               package: "ghcr.io/stuttgart-things/crossplane-configurations/flux-apps:v0.1.2"
+            # Builds a WHOLE CLUSTER from one namespaced ClusterStack XR: VM ->
+            # base-OS -> distribution -> kubeconfig upload -> ClusterAccess ->
+            # Platform. Last in the list because it depends on platform above,
+            # and it also pulls remote-cluster, which nothing else installs.
+            #
+            # Proven end to end on u26-kind3 -> Proxmox LabUL, 2026-08-12: a
+            # six-line XR produced u26-rke2-1, v1.35.1+rke2r1 Ready with cilium,
+            # reachable through the ClusterProviderConfigs it emitted.
+            #
+            # NEEDS platform_rbac_manifests, applied below. Without it the build
+            # runs all three ansible stages green and then wedges at the access
+            # stage — see the deceptive-failure note there.
+            - name: cluster
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.3.1"
 
           configuration_packages: >-
             {{ machinery_packages
@@ -1445,6 +1545,18 @@ playbooks:
             loop: >-
               {{ environment_config_manifests
                  + (platform_environment_config_manifests if platform_enabled | bool else []) }}
+
+          # Same fetch-and-apply shape as the EnvironmentConfigs above, kept a
+          # separate task because it is gated differently: these are cluster-
+          # scoped RBAC objects, so they exist only for the fleet-manager half.
+          # A pure VM builder (platform_enabled=false) installs no Configuration
+          # that composes a RemoteCluster and needs none of it.
+          - name: Apply cluster-scoped RBAC the platform Configurations require
+            ansible.builtin.command: >
+              kubectl apply --kubeconfig {{ kubeconfig }}
+              -f {{ crossplane_configurations_raw }}/{{ crossplane_configurations_ref }}/{{ item }}
+            loop: "{{ platform_rbac_manifests }}"
+            when: platform_enabled | bool
 
           # See the profile play for the full commentary: this play installs the
           # Configurations itself and then deploys the capability charts with the
