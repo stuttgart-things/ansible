@@ -486,8 +486,15 @@ playbooks:
             # NEEDS platform_rbac_manifests, applied below. Without it the build
             # runs all three ansible stages green and then wedges at the access
             # stage — see the deceptive-failure note there.
+            #
+            # v0.3.2, not v0.3.1: u26-kind3 already runs v0.3.2, and `kubectl
+            # apply` walks a Configuration BACKWARDS without complaint. A pin
+            # that trails the fleet is not a no-op on an existing cluster, it is
+            # a silent downgrade — the same failure mode CLAUDE.md records for
+            # examples/functions.yaml, here aimed at the Configuration that
+            # builds whole clusters. Check the fleet before lowering any pin.
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.3.1"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.3.2"
 
           configuration_packages: >-
             {{ machinery_packages
@@ -1488,8 +1495,15 @@ playbooks:
             # NEEDS platform_rbac_manifests, applied below. Without it the build
             # runs all three ansible stages green and then wedges at the access
             # stage — see the deceptive-failure note there.
+            #
+            # v0.3.2, not v0.3.1: u26-kind3 already runs v0.3.2, and `kubectl
+            # apply` walks a Configuration BACKWARDS without complaint. A pin
+            # that trails the fleet is not a no-op on an existing cluster, it is
+            # a silent downgrade — the same failure mode CLAUDE.md records for
+            # examples/functions.yaml, here aimed at the Configuration that
+            # builds whole clusters. Check the fleet before lowering any pin.
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.3.1"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.3.2"
 
           configuration_packages: >-
             {{ machinery_packages
