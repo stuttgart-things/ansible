@@ -353,13 +353,19 @@ playbooks:
           # ClusterStack looks finished and is not.
           platform_rbac_manifests:
             - bootstrap/remote-cluster/examples/rbac.yaml
-            # NOT yet listed: bootstrap/ip-reservation/examples/rbac.yaml.
-            # It binds a ServiceAccount by name with an XXXXXXXXXXXX hash
-            # placeholder, so applying it raw creates a binding to a subject
-            # that does not exist. remote-cluster's binds the group
-            # `system:serviceaccounts:crossplane-system` instead, which is why
-            # that one works unedited. Add it here once it uses a group subject
-            # too (crossplane-configurations).
+            # Lets the provider-kubernetes SA observe RemoteClusters and manage
+            # IPReservations, which is what an ip-reservation child XR (enabled
+            # via spec.ipReservation on a Platform) reconciles through.
+            #
+            # MERGE ORDER: needs crossplane-configurations#251, which changed
+            # this file's binding from a literally-named ServiceAccount (with an
+            # XXXXXXXXXXXX hash placeholder) to the group
+            # `system:serviceaccounts:crossplane-system`. These manifests are
+            # fetched raw from `crossplane_configurations_ref` (main) at run
+            # time, so merging this play first would apply a binding to a
+            # subject that does not exist — and RBAC does not validate subjects,
+            # so it would look like it worked.
+            - bootstrap/ip-reservation/examples/rbac.yaml
 
           # Providers that no Configuration carries. Every other provider on a
           # machinery cluster arrives through some Configuration's dependsOn —
@@ -1359,13 +1365,19 @@ playbooks:
           # ClusterStack looks finished and is not.
           platform_rbac_manifests:
             - bootstrap/remote-cluster/examples/rbac.yaml
-            # NOT yet listed: bootstrap/ip-reservation/examples/rbac.yaml.
-            # It binds a ServiceAccount by name with an XXXXXXXXXXXX hash
-            # placeholder, so applying it raw creates a binding to a subject
-            # that does not exist. remote-cluster's binds the group
-            # `system:serviceaccounts:crossplane-system` instead, which is why
-            # that one works unedited. Add it here once it uses a group subject
-            # too (crossplane-configurations).
+            # Lets the provider-kubernetes SA observe RemoteClusters and manage
+            # IPReservations, which is what an ip-reservation child XR (enabled
+            # via spec.ipReservation on a Platform) reconciles through.
+            #
+            # MERGE ORDER: needs crossplane-configurations#251, which changed
+            # this file's binding from a literally-named ServiceAccount (with an
+            # XXXXXXXXXXXX hash placeholder) to the group
+            # `system:serviceaccounts:crossplane-system`. These manifests are
+            # fetched raw from `crossplane_configurations_ref` (main) at run
+            # time, so merging this play first would apply a binding to a
+            # subject that does not exist — and RBAC does not validate subjects,
+            # so it would look like it worked.
+            - bootstrap/ip-reservation/examples/rbac.yaml
 
           # Providers that no Configuration carries. Every other provider on a
           # machinery cluster arrives through some Configuration's dependsOn —
