@@ -41,12 +41,23 @@
     target_host: localhost
     cluster_name: dev
 
+# The AWX CR's ingress hostname is awx-dev.<control_plane_ip>.nip.io, so the
+# deploy needs a real control_plane_ip. Nothing set it and the import below used
+# to pass control_plane_ip: "{{ control_plane_ip }}" (self-referential), which
+# tripped "Recursive loop detected in template". Resolve the kind control-plane
+# node IP into the control_plane_ip fact first, then let it flow into the deploy.
+- name: Resolve the kind control-plane IP
+  ansible.builtin.import_playbook: sthings.container.get_controlplane_ip
+  vars:
+    target_host: localhost
+    ansible_user: sthings
+    kind_cluster_name: dev
+
 - name: Deploy AWX
   ansible.builtin.import_playbook: sthings.awx.deploy
   vars:
     target_host: localhost
     cluster_name: dev
-    control_plane_ip: "{{ control_plane_ip }}"
 
 - name: Wait for all AWX components to be ready
   ansible.builtin.import_playbook: sthings.awx.check_deployment
