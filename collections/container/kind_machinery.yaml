@@ -37,10 +37,17 @@
 # — cni + Flux + apps pushed onto REMOTE clusters via RemoteCluster-derived
 # ClusterProviderConfigs. Set platform_enabled=false for a pure VM builder.
 #
-# NB: the pins below must stay resolvable against each other — `platform:v0.3.1`
+# NB: the pins below must stay resolvable against each other — `platform:v0.3.3`
 # declares `dependsOn flux-init >=v0.3.0`, so bumping platform without pushing
 # the flux-init tag it wants makes the Configuration Unhealthy and the wait task
 # fails loudly (by design — a silent skip would leave a half-built cluster).
+#
+# The corollary is a rule about what NOT to pin: a package that platform (or
+# cluster) reaches via dependsOn must not ALSO be listed in platform_packages.
+# Both names would resolve to one ghcr path, and upgrading the short-named CR
+# collides the Lock graph — crossplane-configurations#247, which took all 20
+# Configurations on u26-kind3 to Healthy=False on 2026-08-12. Pin entry points
+# only; let the package manager install the rest under its own CR names.
 # The chain now runs one level deeper: `cluster:v0.3.1` declares
 # `dependsOn platform >=v0.3.1`, which is why platform is pinned there and not
 # at v0.3.0. It also pulls `remote-cluster`, which no other entry installs — so
@@ -346,6 +353,34 @@ playbooks:
           # ClusterStack looks finished and is not.
           platform_rbac_manifests:
             - bootstrap/remote-cluster/examples/rbac.yaml
+            # Lets the provider-kubernetes SA observe RemoteClusters and manage
+            # IPReservations, which is what an ip-reservation child XR (enabled
+            # via spec.ipReservation on a Platform) reconciles through.
+            #
+            # MERGE ORDER: needs crossplane-configurations#251, which changed
+            # this file's binding from a literally-named ServiceAccount (with an
+            # XXXXXXXXXXXX hash placeholder) to the group
+            # `system:serviceaccounts:crossplane-system`. These manifests are
+            # fetched raw from `crossplane_configurations_ref` (main) at run
+            # time, so merging this play first would apply a binding to a
+            # subject that does not exist — and RBAC does not validate subjects,
+            # so it would look like it worked.
+            - bootstrap/ip-reservation/examples/rbac.yaml
+
+          # Providers that no Configuration carries. Every other provider on a
+          # machinery cluster arrives through some Configuration's dependsOn —
+          # provider-clusterbook does not, because ip-reservation classes it
+          # (and provider-kubeconfig) as a fleet cluster precondition rather
+          # than a package dep. Without it, `spec.ipReservation.enabled: true`
+          # on a Platform XR has its XRD (platform v0.3.3 pulls ip-reservation)
+          # but no controller to reconcile the IPReservation it composes.
+          #
+          # Gated on platform_enabled with the rest of the fleet-manager half:
+          # a pure VM builder composes no Platform and needs none of it.
+          provider_packages:
+            - name: provider-clusterbook
+              package: "ghcr.io/stuttgart-things/provider-clusterbook-xpkg:v0.4.2"
+              provider_crd: clusterproviderconfigs.clusterbook.stuttgart-things.com
 
           # Machinery half: VM + image builders. Each pulls its provider via
           # dependsOn. `provider_crd` is the CRD that provider registers — waited
@@ -408,17 +443,37 @@ playbooks:
             - name: tofu-run
               package: "ghcr.io/stuttgart-things/crossplane-configurations/tofu-run:v0.1.0"
 
-          # Fleet-manager half. `platform` pulls cni + flux-init via dependsOn.
-          # flux-apps is listed explicitly because platform composes FluxApps
-          # children but does not declare the dependency (gap as of v0.3.0).
+          # Fleet-manager half. `platform` pulls cni, flux-init, flux-apps and
+          # — from v0.3.3 — ip-reservation, vault-auth and vault-pki-secrets
+          # via dependsOn. Only the entry points are pinned here; everything
+          # reachable through dependsOn deliberately is not (see below).
           platform_packages:
             # v0.3.1 is a FLOOR, not a preference: `cluster` below declares
             # dependsOn platform >=v0.3.1, so leaving this at v0.3.0 makes the
             # cluster Configuration unresolvable and the wait task fails.
+            #
+            # v0.3.3 additionally declares ip-reservation, vault-auth and
+            # vault-pki-secrets (crossplane-configurations#250). Those back
+            # `spec.ipReservation` / `spec.vaultIssuer` on a Platform XR, which
+            # before that composed child XRs whose XRDs were on no cluster. They
+            # arrive transitively — do NOT add them here, see below.
             - name: platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.1"
-            - name: flux-apps
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/flux-apps:v0.1.2"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.3"
+            # flux-apps is NOT listed. platform has declared the dependency
+            # since v0.3.1, so an explicit pin would put the same ghcr path
+            # under both a short CR name (this play) and a dependsOn — which is
+            # the Lock collision from crossplane-configurations#247: upgrading
+            # the short-named CR briefly drops its Lock entry, the resolver
+            # auto-installs a long-named duplicate of the identical source, and
+            # every package on the cluster goes Healthy=False. That is exactly
+            # what a flux-apps upgrade did to all 20 Configurations on u26-kind3
+            # on 2026-08-12.
+            #
+            # So it arrives as a package-manager-named CR, same as
+            # remote-cluster below, and is expected to look "extra" in
+            # `kubectl get configuration`. The version follows platform's
+            # `>=v0.1.2` rather than a pin here. Same reasoning for the three
+            # Configurations v0.3.3 added.
             # Builds a WHOLE CLUSTER from one namespaced ClusterStack XR: VM ->
             # base-OS -> distribution -> kubeconfig upload -> ClusterAccess ->
             # Platform. Last in the list because it depends on platform above,
@@ -644,6 +699,38 @@ playbooks:
           #    packages (each pulls its provider via dependsOn) and wait for
           #    the ClusterProviderConfig CRD before capabilities.
           # ================================================================
+          # Providers with no Configuration to carry them (see provider_packages).
+          # Applied before the Configurations so their CRDs are established by
+          # the time a Configuration composes against them.
+          - name: Install standalone Provider packages
+            ansible.builtin.shell: |
+              cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+              apiVersion: pkg.crossplane.io/v1
+              kind: Provider
+              metadata:
+                name: {{ item.name }}
+              spec:
+                package: {{ item.package }}
+              EOF
+            become_user: "{{ ansible_user }}"
+            loop: "{{ provider_packages }}"
+            loop_control:
+              label: "{{ item.name }}"
+            when: platform_enabled | bool
+
+          - name: Wait standalone Providers Healthy + CRD established
+            ansible.builtin.shell: |
+              kubectl wait provider.pkg.crossplane.io/{{ item.name }} --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
+              {% if item.provider_crd is defined %}
+              for i in $(seq 1 60); do kubectl get crd {{ item.provider_crd }} --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && break; sleep 5; done
+              kubectl wait --for=condition=established crd/{{ item.provider_crd }} --timeout=180s --kubeconfig {{ kubeconfig }}
+              {% endif %}
+            become_user: "{{ ansible_user }}"
+            loop: "{{ provider_packages }}"
+            loop_control:
+              label: "{{ item.name }}"
+            when: platform_enabled | bool
+
           - name: Install Configuration packages
             ansible.builtin.shell: |
               cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
@@ -1278,6 +1365,34 @@ playbooks:
           # ClusterStack looks finished and is not.
           platform_rbac_manifests:
             - bootstrap/remote-cluster/examples/rbac.yaml
+            # Lets the provider-kubernetes SA observe RemoteClusters and manage
+            # IPReservations, which is what an ip-reservation child XR (enabled
+            # via spec.ipReservation on a Platform) reconciles through.
+            #
+            # MERGE ORDER: needs crossplane-configurations#251, which changed
+            # this file's binding from a literally-named ServiceAccount (with an
+            # XXXXXXXXXXXX hash placeholder) to the group
+            # `system:serviceaccounts:crossplane-system`. These manifests are
+            # fetched raw from `crossplane_configurations_ref` (main) at run
+            # time, so merging this play first would apply a binding to a
+            # subject that does not exist — and RBAC does not validate subjects,
+            # so it would look like it worked.
+            - bootstrap/ip-reservation/examples/rbac.yaml
+
+          # Providers that no Configuration carries. Every other provider on a
+          # machinery cluster arrives through some Configuration's dependsOn —
+          # provider-clusterbook does not, because ip-reservation classes it
+          # (and provider-kubeconfig) as a fleet cluster precondition rather
+          # than a package dep. Without it, `spec.ipReservation.enabled: true`
+          # on a Platform XR has its XRD (platform v0.3.3 pulls ip-reservation)
+          # but no controller to reconcile the IPReservation it composes.
+          #
+          # Gated on platform_enabled with the rest of the fleet-manager half:
+          # a pure VM builder composes no Platform and needs none of it.
+          provider_packages:
+            - name: provider-clusterbook
+              package: "ghcr.io/stuttgart-things/provider-clusterbook-xpkg:v0.4.2"
+              provider_crd: clusterproviderconfigs.clusterbook.stuttgart-things.com
 
           machinery_packages:
             - name: vspherevm
@@ -1338,10 +1453,29 @@ playbooks:
             # v0.3.1 is a FLOOR, not a preference: `cluster` below declares
             # dependsOn platform >=v0.3.1, so leaving this at v0.3.0 makes the
             # cluster Configuration unresolvable and the wait task fails.
+            #
+            # v0.3.3 additionally declares ip-reservation, vault-auth and
+            # vault-pki-secrets (crossplane-configurations#250). Those back
+            # `spec.ipReservation` / `spec.vaultIssuer` on a Platform XR, which
+            # before that composed child XRs whose XRDs were on no cluster. They
+            # arrive transitively — do NOT add them here, see below.
             - name: platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.1"
-            - name: flux-apps
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/flux-apps:v0.1.2"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.3"
+            # flux-apps is NOT listed. platform has declared the dependency
+            # since v0.3.1, so an explicit pin would put the same ghcr path
+            # under both a short CR name (this play) and a dependsOn — which is
+            # the Lock collision from crossplane-configurations#247: upgrading
+            # the short-named CR briefly drops its Lock entry, the resolver
+            # auto-installs a long-named duplicate of the identical source, and
+            # every package on the cluster goes Healthy=False. That is exactly
+            # what a flux-apps upgrade did to all 20 Configurations on u26-kind3
+            # on 2026-08-12.
+            #
+            # So it arrives as a package-manager-named CR, same as
+            # remote-cluster below, and is expected to look "extra" in
+            # `kubectl get configuration`. The version follows platform's
+            # `>=v0.1.2` rather than a pin here. Same reasoning for the three
+            # Configurations v0.3.3 added.
             # Builds a WHOLE CLUSTER from one namespaced ClusterStack XR: VM ->
             # base-OS -> distribution -> kubeconfig upload -> ClusterAccess ->
             # Platform. Last in the list because it depends on platform above,
@@ -1512,6 +1646,36 @@ playbooks:
             ansible.builtin.shell: |
               for i in $(seq 1 60); do kubectl get crd clusterproviderconfigs.kubernetes.m.crossplane.io --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && break; sleep 5; done
               helmfile apply -f {{ helm_repo }}@cicd/crossplane-provider-configs.yaml.gotmpl --kubeconfig {{ kubeconfig }}
+
+          # Providers with no Configuration to carry them (see provider_packages).
+          # Applied before the Configurations so their CRDs are established by
+          # the time a Configuration composes against them.
+          - name: Install standalone Provider packages
+            ansible.builtin.shell: |
+              cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+              apiVersion: pkg.crossplane.io/v1
+              kind: Provider
+              metadata:
+                name: {{ item.name }}
+              spec:
+                package: {{ item.package }}
+              EOF
+            loop: "{{ provider_packages }}"
+            loop_control:
+              label: "{{ item.name }}"
+            when: platform_enabled | bool
+
+          - name: Wait standalone Providers Healthy + CRD established
+            ansible.builtin.shell: |
+              kubectl wait provider.pkg.crossplane.io/{{ item.name }} --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
+              {% if item.provider_crd is defined %}
+              for i in $(seq 1 60); do kubectl get crd {{ item.provider_crd }} --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && break; sleep 5; done
+              kubectl wait --for=condition=established crd/{{ item.provider_crd }} --timeout=180s --kubeconfig {{ kubeconfig }}
+              {% endif %}
+            loop: "{{ provider_packages }}"
+            loop_control:
+              label: "{{ item.name }}"
+            when: platform_enabled | bool
 
           - name: Install Configuration packages
             ansible.builtin.shell: |
