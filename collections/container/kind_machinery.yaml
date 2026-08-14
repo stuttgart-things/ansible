@@ -89,6 +89,15 @@ playbooks:
             when: path_to_vars_file is defined
 
         vars:
+          # Six tasks below open with `set -euo pipefail`. Ansible's shell
+          # module runs /bin/sh, which on Ubuntu is dash — and dash has no
+          # pipefail, so those tasks die on line 1 with
+          #   /bin/sh: 1: set: Illegal option -o pipefail
+          # before reading a single value. Through Tekton this never showed,
+          # because the pipeline image supplies its own ansible.cfg; run from
+          # the CLI against a plain Ubuntu host it fails every time. Set here
+          # so the play is correct however it is invoked.
+          ansible_shell_executable: /bin/bash
           ansible_user: sthings
           kind_cluster_name: dev2
           kubeconfig_folder: "/home/{{ ansible_user }}/.kube"
@@ -1146,6 +1155,15 @@ playbooks:
         gather_facts: false
 
         vars:
+          # Six tasks below open with `set -euo pipefail`. Ansible's shell
+          # module runs /bin/sh, which on Ubuntu is dash — and dash has no
+          # pipefail, so those tasks die on line 1 with
+          #   /bin/sh: 1: set: Illegal option -o pipefail
+          # before reading a single value. Through Tekton this never showed,
+          # because the pipeline image supplies its own ansible.cfg; run from
+          # the CLI against a plain Ubuntu host it fails every time. Set here
+          # so the play is correct however it is invoked.
+          ansible_shell_executable: /bin/bash
           ansible_user: "{{ lookup('env', 'USER') | default('sthings', true) }}"
           kind_cluster_name: dev2
           kubeconfig: "/home/{{ ansible_user }}/.kube/{{ kind_cluster_name }}"
