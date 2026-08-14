@@ -1027,12 +1027,21 @@ playbooks:
           # installed and fails on first use.
           - name: Wait for the sops-git vault Secret to materialize
             ansible.builtin.shell: |
+              # Wait for the KEY, not just the object. The operator creates the
+              # Secret and populates it a moment later, so `get secret`
+              # succeeding is not the same as the AppRole being readable — and
+              # the derive task below fails its `test -n` when it wins that
+              # race. Observed on a cold machinery build 2026-08-14: this wait
+              # reported changed, the very next task failed, and the identical
+              # commands run by hand minutes later succeeded.
               for i in $(seq 1 60); do
-                kubectl -n {{ tekton_ci_namespace }} get secret {{ vault_approle_source_secret }} \
-                  --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && exit 0
+                V=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ vault_approle_source_secret }} \
+                  -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' \
+                  --kubeconfig {{ kubeconfig }} 2>/dev/null)
+                [ -n "$V" ] && exit 0
                 sleep 5
               done
-              echo "{{ tekton_ci_namespace }}/{{ vault_approle_source_secret }} never appeared" >&2
+              echo "{{ tekton_ci_namespace }}/{{ vault_approle_source_secret }} never carried {{ vault_approle_secret_id_key }}" >&2
               exit 1
             become_user: "{{ ansible_user }}"
             when: vault_kubeconfigs_enabled | bool and vault_approle_role_id | length == 0
@@ -1893,12 +1902,21 @@ playbooks:
           # that Secret is written asynchronously by the operator.
           - name: Wait for the sops-git vault Secret to materialize
             ansible.builtin.shell: |
+              # Wait for the KEY, not just the object. The operator creates the
+              # Secret and populates it a moment later, so `get secret`
+              # succeeding is not the same as the AppRole being readable — and
+              # the derive task below fails its `test -n` when it wins that
+              # race. Observed on a cold machinery build 2026-08-14: this wait
+              # reported changed, the very next task failed, and the identical
+              # commands run by hand minutes later succeeded.
               for i in $(seq 1 60); do
-                kubectl -n {{ tekton_ci_namespace }} get secret {{ vault_approle_source_secret }} \
-                  --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && exit 0
+                V=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ vault_approle_source_secret }} \
+                  -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' \
+                  --kubeconfig {{ kubeconfig }} 2>/dev/null)
+                [ -n "$V" ] && exit 0
                 sleep 5
               done
-              echo "{{ tekton_ci_namespace }}/{{ vault_approle_source_secret }} never appeared" >&2
+              echo "{{ tekton_ci_namespace }}/{{ vault_approle_source_secret }} never carried {{ vault_approle_secret_id_key }}" >&2
               exit 1
             when: vault_kubeconfigs_enabled | bool and vault_approle_role_id | length == 0
 
