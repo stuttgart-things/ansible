@@ -37,10 +37,17 @@
 # — cni + Flux + apps pushed onto REMOTE clusters via RemoteCluster-derived
 # ClusterProviderConfigs. Set platform_enabled=false for a pure VM builder.
 #
-# NB: the pins below must stay resolvable against each other — `platform:v0.3.3`
+# NB: the pins below must stay resolvable against each other — `platform:v0.3.8`
 # declares `dependsOn flux-init >=v0.3.0`, so bumping platform without pushing
 # the flux-init tag it wants makes the Configuration Unhealthy and the wait task
 # fails loudly (by design — a silent skip would leave a half-built cluster).
+#
+# A RAISED FLOOR DOES NOT PULL AN INSTALLED PACKAGE FORWARD. platform v0.3.8
+# requires vault-pki-secrets >=v0.1.5; on a cluster that already has v0.1.4 the
+# resolver reports `incompatible dependencies` and stops, and the dependent CR
+# has to be patched by hand. Fresh clusters never see it — they resolve the
+# newest matching version — so a floor change is only ever felt on existing
+# ones. Verified on u26-kind3, 2026-08-14.
 #
 # The corollary is a rule about what NOT to pin: a package that platform (or
 # cluster) reaches via dependsOn must not ALSO be listed in platform_packages.
@@ -453,12 +460,14 @@ playbooks:
             # cluster Configuration unresolvable and the wait task fails.
             #
             # v0.3.3 additionally declares ip-reservation, vault-auth and
-            # vault-pki-secrets (crossplane-configurations#250). Those back
+            # vault-pki-secrets (crossplane-configurations#250); v0.3.8 adds
+            # substitution discovery, the wildcard certificate, and a
+            # vault-pki-secrets floor of >=v0.1.5 — see the floor note below. Those back
             # `spec.ipReservation` / `spec.vaultIssuer` on a Platform XR, which
             # before that composed child XRs whose XRDs were on no cluster. They
             # arrive transitively — do NOT add them here, see below.
             - name: platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.3"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.8"
             # flux-apps is NOT listed. platform has declared the dependency
             # since v0.3.1, so an explicit pin would put the same ghcr path
             # under both a short CR name (this play) and a dependsOn — which is
@@ -494,7 +503,7 @@ playbooks:
             # examples/functions.yaml, here aimed at the Configuration that
             # builds whole clusters. Check the fleet before lowering any pin.
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.3.2"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.3.3"
 
           configuration_packages: >-
             {{ machinery_packages
@@ -1462,12 +1471,14 @@ playbooks:
             # cluster Configuration unresolvable and the wait task fails.
             #
             # v0.3.3 additionally declares ip-reservation, vault-auth and
-            # vault-pki-secrets (crossplane-configurations#250). Those back
+            # vault-pki-secrets (crossplane-configurations#250); v0.3.8 adds
+            # substitution discovery, the wildcard certificate, and a
+            # vault-pki-secrets floor of >=v0.1.5 — see the floor note below. Those back
             # `spec.ipReservation` / `spec.vaultIssuer` on a Platform XR, which
             # before that composed child XRs whose XRDs were on no cluster. They
             # arrive transitively — do NOT add them here, see below.
             - name: platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.3"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.8"
             # flux-apps is NOT listed. platform has declared the dependency
             # since v0.3.1, so an explicit pin would put the same ghcr path
             # under both a short CR name (this play) and a dependsOn — which is
@@ -1503,7 +1514,7 @@ playbooks:
             # examples/functions.yaml, here aimed at the Configuration that
             # builds whole clusters. Check the fleet before lowering any pin.
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.3.2"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.3.3"
 
           configuration_packages: >-
             {{ machinery_packages
