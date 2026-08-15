@@ -38,6 +38,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `sthings.container.kind` | Create KIND cluster with Cilium, cert-manager and ingress-nginx |
 | `sthings.container.kind_xplane` | Create KIND cluster for Crossplane with helmfile deployments |
 | `sthings.container.kind_machinery_profile` | Extend a cilium KIND cluster into a "machinery" vSphere-VM builder (remote/become form): sops-operator + age key → openebs → tekton → waited crossplane → Configuration packages → capabilities |
+| `sthings.container.kind_secrets` | The secrets layer alone — cert-manager → sops-secrets-operator (+ global age key) → sops-git-secrets. Everything a cluster needs BEFORE there is a Crossplane on it, and therefore the only part of the machinery bootstrap that cannot come from Crossplane. Meant to be driven by an `AnsibleRun` from a seed against a cluster built by the `management-plane` Configuration, where running the full machinery play would re-install the same packages under short names and cause the Lock collision that design avoids. `kubeconfig` is required and has no default |
 | `sthings.container.kind_machinery` | Same machinery bootstrap, flat/local-testable form (hosts=localhost, connection=local, no become) — the copy proven end-to-end |
 | `sthings.container.get_controlplane_ip` | Extract control plane IP from KIND cluster |
 
