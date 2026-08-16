@@ -37,7 +37,7 @@
 # — cni + Flux + apps pushed onto REMOTE clusters via RemoteCluster-derived
 # ClusterProviderConfigs. Set platform_enabled=false for a pure VM builder.
 #
-# NB: the pins below must stay resolvable against each other — `platform:v0.3.8`
+# NB: the pins below must stay resolvable against each other — `platform:v0.3.15`
 # declares `dependsOn flux-init >=v0.3.0`, so bumping platform without pushing
 # the flux-init tag it wants makes the Configuration Unhealthy and the wait task
 # fails loudly (by design — a silent skip would leave a half-built cluster).
@@ -415,8 +415,12 @@ playbooks:
             # field at all — a cluster built on v0.9.0 cannot provision a LabUL
             # Proxmox VM, which is not obvious because every Configuration still
             # reports Healthy. Raised from v0.9.0 after u26-kind3 (2026-08-11).
+            #
+            # v0.12.0 splits the template's node from the VM's: a clone source
+            # living on one Proxmox node no longer forces the new VM onto that
+            # same node (spec.vm.templateNode).
             - name: proxmoxvm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.11.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.12.0"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             # Tekton-backed Packer builder — only provider-kubernetes, already up.
             - name: packer-build
@@ -475,8 +479,20 @@ playbooks:
             # `spec.ipReservation` / `spec.vaultIssuer` on a Platform XR, which
             # before that composed child XRs whose XRDs were on no cluster. They
             # arrive transitively — do NOT add them here, see below.
+            #
+            # v0.3.15 carries seven more, and the floors above are unchanged:
+            #   v0.3.9-.11  headlamp + the machinery service reach the catalog
+            #   v0.3.12     external-secrets, nfs-csi and vault join it
+            #   v0.3.13     a cluster discovers its OWN Vault k8s-auth mount
+            #               instead of being told the name by hand
+            #   v0.3.14     the misleading ESO defaults became required
+            #   v0.3.15     a required substitution variable that the platform
+            #               can still DISCOVER defers its component instead of
+            #               aborting the whole render — enabling an auth and the
+            #               app that reads it in one step used to deadlock
+            #               (crossplane-configurations#277)
             - name: platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.8"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.15"
             # flux-apps is NOT listed. platform has declared the dependency
             # since v0.3.1, so an explicit pin would put the same ghcr path
             # under both a short CR name (this play) and a dependsOn — which is
@@ -505,14 +521,18 @@ playbooks:
             # runs all three ansible stages green and then wedges at the access
             # stage — see the deceptive-failure note there.
             #
-            # v0.3.2, not v0.3.1: u26-kind3 already runs v0.3.2, and `kubectl
-            # apply` walks a Configuration BACKWARDS without complaint. A pin
-            # that trails the fleet is not a no-op on an existing cluster, it is
-            # a silent downgrade — the same failure mode CLAUDE.md records for
-            # examples/functions.yaml, here aimed at the Configuration that
-            # builds whole clusters. Check the fleet before lowering any pin.
+            # NEVER lower this pin. `kubectl apply` walks a Configuration
+            # BACKWARDS without complaint, so a pin that trails the fleet is not
+            # a no-op on an existing cluster, it is a silent downgrade — the same
+            # failure mode CLAUDE.md records for examples/functions.yaml, here
+            # aimed at the Configuration that builds whole clusters. Check the
+            # fleet before touching it.
+            #
+            # v0.4.0 lets a ClusterStack build a control plane of its own and
+            # declares management-plane >=v0.2.0, which therefore arrives
+            # transitively — do NOT add it to this list.
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.3.3"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.4.0"
 
           configuration_packages: >-
             {{ machinery_packages
@@ -1449,8 +1469,12 @@ playbooks:
             # field at all — a cluster built on v0.9.0 cannot provision a LabUL
             # Proxmox VM, which is not obvious because every Configuration still
             # reports Healthy. Raised from v0.9.0 after u26-kind3 (2026-08-11).
+            #
+            # v0.12.0 splits the template's node from the VM's: a clone source
+            # living on one Proxmox node no longer forces the new VM onto that
+            # same node (spec.vm.templateNode).
             - name: proxmoxvm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.11.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.12.0"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             - name: packer-build
               package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.4.1"
@@ -1504,8 +1528,20 @@ playbooks:
             # `spec.ipReservation` / `spec.vaultIssuer` on a Platform XR, which
             # before that composed child XRs whose XRDs were on no cluster. They
             # arrive transitively — do NOT add them here, see below.
+            #
+            # v0.3.15 carries seven more, and the floors above are unchanged:
+            #   v0.3.9-.11  headlamp + the machinery service reach the catalog
+            #   v0.3.12     external-secrets, nfs-csi and vault join it
+            #   v0.3.13     a cluster discovers its OWN Vault k8s-auth mount
+            #               instead of being told the name by hand
+            #   v0.3.14     the misleading ESO defaults became required
+            #   v0.3.15     a required substitution variable that the platform
+            #               can still DISCOVER defers its component instead of
+            #               aborting the whole render — enabling an auth and the
+            #               app that reads it in one step used to deadlock
+            #               (crossplane-configurations#277)
             - name: platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.8"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.15"
             # flux-apps is NOT listed. platform has declared the dependency
             # since v0.3.1, so an explicit pin would put the same ghcr path
             # under both a short CR name (this play) and a dependsOn — which is
@@ -1534,14 +1570,18 @@ playbooks:
             # runs all three ansible stages green and then wedges at the access
             # stage — see the deceptive-failure note there.
             #
-            # v0.3.2, not v0.3.1: u26-kind3 already runs v0.3.2, and `kubectl
-            # apply` walks a Configuration BACKWARDS without complaint. A pin
-            # that trails the fleet is not a no-op on an existing cluster, it is
-            # a silent downgrade — the same failure mode CLAUDE.md records for
-            # examples/functions.yaml, here aimed at the Configuration that
-            # builds whole clusters. Check the fleet before lowering any pin.
+            # NEVER lower this pin. `kubectl apply` walks a Configuration
+            # BACKWARDS without complaint, so a pin that trails the fleet is not
+            # a no-op on an existing cluster, it is a silent downgrade — the same
+            # failure mode CLAUDE.md records for examples/functions.yaml, here
+            # aimed at the Configuration that builds whole clusters. Check the
+            # fleet before touching it.
+            #
+            # v0.4.0 lets a ClusterStack build a control plane of its own and
+            # declares management-plane >=v0.2.0, which therefore arrives
+            # transitively — do NOT add it to this list.
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.3.3"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.4.0"
 
           configuration_packages: >-
             {{ machinery_packages
