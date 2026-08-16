@@ -37,7 +37,7 @@
 # — cni + Flux + apps pushed onto REMOTE clusters via RemoteCluster-derived
 # ClusterProviderConfigs. Set platform_enabled=false for a pure VM builder.
 #
-# NB: the pins below must stay resolvable against each other — `platform:v0.3.15`
+# NB: the pins below must stay resolvable against each other — `platform:v0.4.0`
 # declares `dependsOn flux-init >=v0.3.0`, so bumping platform without pushing
 # the flux-init tag it wants makes the Configuration Unhealthy and the wait task
 # fails loudly (by design — a silent skip would leave a half-built cluster).
@@ -491,8 +491,18 @@ playbooks:
             #               aborting the whole render — enabling an auth and the
             #               app that reads it in one step used to deadlock
             #               (crossplane-configurations#277)
+            #   v0.3.16     declares that deferral's status field in the XRD.
+            #               v0.3.15 shipped it only in the module, and an
+            #               undeclared status field is not pruned — it fails the
+            #               whole status apply and with it every compose, while
+            #               Ready stays True on the last good result. Do not run
+            #               v0.3.15 anywhere.
+            #   v0.4.0      BREAKING: additionalAuths[].policies no longer takes
+            #               free-form HCL (`rules`); the body is built from
+            #               kvMount + read. Nothing here declared rules. Also
+            #               adds the PENDING printer column.
             - name: platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.15"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.4.0"
             # flux-apps is NOT listed. platform has declared the dependency
             # since v0.3.1, so an explicit pin would put the same ghcr path
             # under both a short CR name (this play) and a dependsOn — which is
@@ -1541,7 +1551,7 @@ playbooks:
             #               app that reads it in one step used to deadlock
             #               (crossplane-configurations#277)
             - name: platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.3.15"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.4.0"
             # flux-apps is NOT listed. platform has declared the dependency
             # since v0.3.1, so an explicit pin would put the same ghcr path
             # under both a short CR name (this play) and a dependsOn — which is
