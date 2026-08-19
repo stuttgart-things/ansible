@@ -404,8 +404,11 @@ playbooks:
           # pulls no provider beyond the ones already waited on above.
           # ansible-run is NOT listed: vspherevm and proxmoxvm both pull it.
           machinery_packages:
+            # v0.9.1 reicht den environmentConfig an den Ansible-Teil durch statt
+            # Defaults zu raten — derselbe Fix wie bei proxmoxvm v0.12.1 unten,
+            # beide aus crossplane-configurations#320.
             - name: vspherevm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.9.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.9.1"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
             # v0.10.0 added spec.vm.cloneDatastore, v0.11.0 its `none` opt-out
             # sentinel. NOT optional for LabUL: both base-OS templates keep their
@@ -419,8 +422,16 @@ playbooks:
             # v0.12.0 splits the template's node from the VM's: a clone source
             # living on one Proxmox node no longer forces the new VM onto that
             # same node (spec.vm.templateNode).
+            #
+            # v0.12.1 reicht den environmentConfig an den Ansible-Teil durch,
+            # statt Defaults zu raten: die VM-Configurations lasen ihre gemeinsamen
+            # Ansible-Werte aus einem `ansible`-Unterblock ihres EIGENEN
+            # EnvironmentConfig, den kein Cluster traegt. `_env?.ansible` war also
+            # immer {} und jeder Wert fiel auf einen hartkodierten Fallback durch —
+            # der dann als expliziter Spec-Wert in der komponierten AnsibleRun
+            # landete (crossplane-configurations#317/#320).
             - name: proxmoxvm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.12.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.12.1"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             # Tekton-backed Packer builder — only provider-kubernetes, already up.
             - name: packer-build
@@ -462,6 +473,22 @@ playbooks:
             # installed here consumes its CRD at apply time, so no wait.
             - name: tofu-run
               package: "ghcr.io/stuttgart-things/crossplane-configurations/tofu-run:v0.1.0"
+            # Harvester / KubeVirt VMs. Third hypervisor next to vSphere and
+            # Proxmox — crossplane-configurations#258 Block B wants a ClusterStack
+            # to be able to build on it, and that starts with the Configuration
+            # being on the cluster at all.
+            #
+            # NO provider_crd, and that is not an oversight: harvester-vm renders
+            # a KubeVirt VirtualMachine through provider-kubernetes, which is
+            # already waited on above. It registers no provider of its own.
+            #
+            # volume-claim (root-disk PVC), cloud-config (cloud-init Secret) and
+            # ansible-run arrive through dependsOn and are deliberately NOT listed
+            # here — same reason as flux-apps below: the same ghcr path under both
+            # a short CR name and a dependsOn is the Lock collision from
+            # crossplane-configurations#247.
+            - name: harvester-vm
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/harvester-vm:v0.1.9"
 
           # Fleet-manager half. `platform` pulls cni, flux-init, flux-apps and
           # — from v0.3.3 — ip-reservation, vault-auth and vault-pki-secrets
@@ -1503,8 +1530,11 @@ playbooks:
               provider_crd: clusterproviderconfigs.clusterbook.stuttgart-things.com
 
           machinery_packages:
+            # v0.9.1 reicht den environmentConfig an den Ansible-Teil durch statt
+            # Defaults zu raten — derselbe Fix wie bei proxmoxvm v0.12.1 unten,
+            # beide aus crossplane-configurations#320.
             - name: vspherevm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.9.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.9.1"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
             # v0.10.0 added spec.vm.cloneDatastore, v0.11.0 its `none` opt-out
             # sentinel. NOT optional for LabUL: both base-OS templates keep their
@@ -1518,8 +1548,16 @@ playbooks:
             # v0.12.0 splits the template's node from the VM's: a clone source
             # living on one Proxmox node no longer forces the new VM onto that
             # same node (spec.vm.templateNode).
+            #
+            # v0.12.1 reicht den environmentConfig an den Ansible-Teil durch,
+            # statt Defaults zu raten: die VM-Configurations lasen ihre gemeinsamen
+            # Ansible-Werte aus einem `ansible`-Unterblock ihres EIGENEN
+            # EnvironmentConfig, den kein Cluster traegt. `_env?.ansible` war also
+            # immer {} und jeder Wert fiel auf einen hartkodierten Fallback durch —
+            # der dann als expliziter Spec-Wert in der komponierten AnsibleRun
+            # landete (crossplane-configurations#317/#320).
             - name: proxmoxvm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.12.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.12.1"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             - name: packer-build
               package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.4.1"
@@ -1560,6 +1598,22 @@ playbooks:
             # installed here consumes its CRD at apply time, so no wait.
             - name: tofu-run
               package: "ghcr.io/stuttgart-things/crossplane-configurations/tofu-run:v0.1.0"
+            # Harvester / KubeVirt VMs. Third hypervisor next to vSphere and
+            # Proxmox — crossplane-configurations#258 Block B wants a ClusterStack
+            # to be able to build on it, and that starts with the Configuration
+            # being on the cluster at all.
+            #
+            # NO provider_crd, and that is not an oversight: harvester-vm renders
+            # a KubeVirt VirtualMachine through provider-kubernetes, which is
+            # already waited on above. It registers no provider of its own.
+            #
+            # volume-claim (root-disk PVC), cloud-config (cloud-init Secret) and
+            # ansible-run arrive through dependsOn and are deliberately NOT listed
+            # here — same reason as flux-apps below: the same ghcr path under both
+            # a short CR name and a dependsOn is the Lock collision from
+            # crossplane-configurations#247.
+            - name: harvester-vm
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/harvester-vm:v0.1.9"
 
           platform_packages:
             # v0.3.1 is a FLOOR, not a preference: `cluster` below declares
