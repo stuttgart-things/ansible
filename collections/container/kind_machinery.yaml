@@ -501,8 +501,27 @@ playbooks:
             #               free-form HCL (`rules`); the body is built from
             #               kvMount + read. Nothing here declared rules. Also
             #               adds the PENDING printer column.
+            #   v0.6.0-.2   vaultIssuer WAITS for cert-manager instead of racing
+            #               it. ClusterIssuer, PKI secret and tokenrequest RBAC
+            #               are held back until the cert-manager webhook's
+            #               Endpoints on the TARGET carry an address — which
+            #               happens only once the pod is ready AND the Service
+            #               selects it. Before that the ClusterIssuer was applied
+            #               against a webhook that was not serving yet and stuck.
+            #               On a cluster where ArgoCD installs cert-manager that
+            #               is the NORMAL ordering, not an edge case.
+            #               v0.6.1 declares certManagerReady and
+            #               waitingForCertManager in the XRD — v0.6.0 computed
+            #               them and the API server dropped them silently, so the
+            #               gate was invisible from outside. Same trap as v0.3.15.
+            #               v0.6.2 observes Endpoints instead of a Deployment: a
+            #               metadata-only Deployment fails `kubeconform -strict`
+            #               in the verify pipeline, and Endpoints is the stronger
+            #               signal anyway.
+            #               Floors unchanged (vault-pki-secrets >=v0.1.5), so this
+            #               is NOT the "raised floor" case above.
             - name: platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.4.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.6.2"
             # flux-apps is NOT listed. platform has declared the dependency
             # since v0.3.1, so an explicit pin would put the same ghcr path
             # under both a short CR name (this play) and a dependsOn — which is
@@ -541,8 +560,24 @@ playbooks:
             # v0.4.0 lets a ClusterStack build a control plane of its own and
             # declares management-plane >=v0.2.0, which therefore arrives
             # transitively — do NOT add it to this list.
+            # That management-plane floor is unchanged in v0.5.0, so a fresh
+            # cluster still resolves the newest one (v0.3.1 at time of writing).
+            #
+            # v0.5.0 DERIVES kubeconfig.providerConfigRef from
+            # kubeconfig.vaultSecretName instead of defaulting it separately. The
+            # two name the same Vault — one says where the kubeconfig is uploaded,
+            # the other where it is read back — and nothing enforced that: the old
+            # defaults `vault` / `vault-kubeconfigs` agreed only by accident.
+            # Setting vaultSecretName to vault-infra, which the ArgoCD path
+            # requires, sent the read to the OTHER Vault and the RemoteCluster
+            # failed with `secret not found`. Nothing above it reported an error —
+            # the ClusterStack stayed Ready=True, because without a ready
+            # ClusterAccess the Platform branch is never emitted and there is
+            # nothing left to wait for. Forty minutes to find
+            # (crossplane-configurations#336, argoplatform-test2 2026-08-19).
+            # The XRD now also rejects the two known crossed pairs at apply time.
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.4.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.5.0"
 
           configuration_packages: >-
             {{ machinery_packages
@@ -1550,8 +1585,27 @@ playbooks:
             #               aborting the whole render — enabling an auth and the
             #               app that reads it in one step used to deadlock
             #               (crossplane-configurations#277)
+            #   v0.6.0-.2   vaultIssuer WAITS for cert-manager instead of racing
+            #               it. ClusterIssuer, PKI secret and tokenrequest RBAC
+            #               are held back until the cert-manager webhook's
+            #               Endpoints on the TARGET carry an address — which
+            #               happens only once the pod is ready AND the Service
+            #               selects it. Before that the ClusterIssuer was applied
+            #               against a webhook that was not serving yet and stuck.
+            #               On a cluster where ArgoCD installs cert-manager that
+            #               is the NORMAL ordering, not an edge case.
+            #               v0.6.1 declares certManagerReady and
+            #               waitingForCertManager in the XRD — v0.6.0 computed
+            #               them and the API server dropped them silently, so the
+            #               gate was invisible from outside. Same trap as v0.3.15.
+            #               v0.6.2 observes Endpoints instead of a Deployment: a
+            #               metadata-only Deployment fails `kubeconform -strict`
+            #               in the verify pipeline, and Endpoints is the stronger
+            #               signal anyway.
+            #               Floors unchanged (vault-pki-secrets >=v0.1.5), so this
+            #               is NOT the "raised floor" case above.
             - name: platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.4.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.6.2"
             # flux-apps is NOT listed. platform has declared the dependency
             # since v0.3.1, so an explicit pin would put the same ghcr path
             # under both a short CR name (this play) and a dependsOn — which is
@@ -1590,8 +1644,24 @@ playbooks:
             # v0.4.0 lets a ClusterStack build a control plane of its own and
             # declares management-plane >=v0.2.0, which therefore arrives
             # transitively — do NOT add it to this list.
+            # That management-plane floor is unchanged in v0.5.0, so a fresh
+            # cluster still resolves the newest one (v0.3.1 at time of writing).
+            #
+            # v0.5.0 DERIVES kubeconfig.providerConfigRef from
+            # kubeconfig.vaultSecretName instead of defaulting it separately. The
+            # two name the same Vault — one says where the kubeconfig is uploaded,
+            # the other where it is read back — and nothing enforced that: the old
+            # defaults `vault` / `vault-kubeconfigs` agreed only by accident.
+            # Setting vaultSecretName to vault-infra, which the ArgoCD path
+            # requires, sent the read to the OTHER Vault and the RemoteCluster
+            # failed with `secret not found`. Nothing above it reported an error —
+            # the ClusterStack stayed Ready=True, because without a ready
+            # ClusterAccess the Platform branch is never emitted and there is
+            # nothing left to wait for. Forty minutes to find
+            # (crossplane-configurations#336, argoplatform-test2 2026-08-19).
+            # The XRD now also rejects the two known crossed pairs at apply time.
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.4.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.5.0"
 
           configuration_packages: >-
             {{ machinery_packages
