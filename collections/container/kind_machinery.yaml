@@ -164,6 +164,42 @@ playbooks:
           vault_approle_source_secret: vault
           vault_approle_role_id_key: VAULT_ROLE_ID
           vault_approle_secret_id_key: VAULT_SECRET_ID
+
+          # EIN PROVIDER, MEHRERE VAULTS.
+          #
+          # provider-kubeconfig-vault emittiert eine ClusterProviderConfig je
+          # Eintrag; jede braucht eine eigene AppRole — role ID im Manifest,
+          # secret-id in einem Secret. Diese Liste sagt, aus welchem
+          # tekton-ci-Secret die AppRole abgeleitet wird und wie das dabei
+          # entstehende crossplane-system-Secret heisst.
+          #
+          # Der primaere Vault steht bewusst MIT drin. Bis 2026-08-20 leitete
+          # dieser Play nur ihn ab und uebergab auch nur seine role ID;
+          # vault-kubeconfigs-infra war deshalb von Hand gesetzt (2026-08-18)
+          # und haette den naechsten Lauf nicht ueberlebt. Helm merged Listen
+          # naemlich nicht, es ersetzt sie — der infra-Eintrag waere auf
+          # roleId="" gefallen und jeder RemoteCluster darueber still
+          # kaputtgegangen. Seit Chart 0.2.0 laufen die role IDs ueber die MAP
+          # `roleIds`, die sauber merged.
+          #
+          # Einen Vault dazunehmen = ein Eintrag hier PLUS einer in den
+          # additionalVaults des Charts; das Secret in source_secret muss in
+          # standalone_sops_secrets stehen, sonst existiert es nie.
+          kubeconfig_vaults:
+            - provider_config: vault-kubeconfigs
+              source_secret: vault
+              approle_secret: vault-approle
+            - provider_config: vault-kubeconfigs-infra
+              source_secret: vault-infra
+              approle_secret: vault-approle-infra
+            # LabDA, dazu am 2026-08-20 (crossplane-configurations#258). Eigener
+            # Vault statt eines LabUL-Vaults, weil LabUL-vSphere abgeschaltet
+            # wird und ein LabDA-Cluster seinen kubeconfig nicht in etwas
+            # Sterbendem ablegen soll. Vorab geprueft: AppRole-Login OK (Policy
+            # superuser), Mount kubeconfigs/ vorhanden, 8200 erreichbar.
+            - provider_config: vault-kubeconfigs-labda
+              source_secret: vault-labda
+              approle_secret: vault-approle-labda
           # The Provider CR the package manager creates for provider-kubeconfig,
           # and the DeploymentRuntimeConfig the chart emits for it. They have to
           # be wired together by hand — see the patch task.
@@ -299,6 +335,13 @@ playbooks:
           # sourceRef only within the CR's own namespace.
           standalone_sops_secrets:
             - name: vault
+              namespace: tekton-ci
+            # Quellen fuer die AppRoles der weiteren kubeconfig-Vaults,
+            # siehe kubeconfig_vaults oben. Ohne diese beiden Eintraege
+            # existieren die Secrets nicht und der Derive-Task bricht ab.
+            - name: vault-infra
+              namespace: tekton-ci
+            - name: vault-labda
               namespace: tekton-ci
             - name: dapr-backstage-template-execution-vars
               namespace: flux-system
@@ -1176,17 +1219,28 @@ playbooks:
               # race. Observed on a cold machinery build 2026-08-14: this wait
               # reported changed, the very next task failed, and the identical
               # commands run by hand minutes later succeeded.
+              {% for v in kubeconfig_vaults %}
+              {% if not (v.source_secret == vault_approle_source_secret and vault_approle_role_id | length > 0) %}
               for i in $(seq 1 60); do
-                V=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ vault_approle_source_secret }} \
+                V=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ v.source_secret }} \
                   -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' \
                   --kubeconfig {{ kubeconfig }} 2>/dev/null)
-                [ -n "$V" ] && exit 0
+                [ -n "$V" ] && break
                 sleep 5
               done
-              echo "{{ tekton_ci_namespace }}/{{ vault_approle_source_secret }} never carried {{ vault_approle_secret_id_key }}" >&2
-              exit 1
+              if [ -z "$V" ]; then
+                echo "{{ tekton_ci_namespace }}/{{ v.source_secret }} never carried {{ vault_approle_secret_id_key }}" >&2
+                exit 1
+              fi
+              {% endif %}
+              {% endfor %}
+              exit 0
             become_user: "{{ ansible_user }}"
-            when: vault_kubeconfigs_enabled | bool and vault_approle_role_id | length == 0
+            # Nicht mehr an vault_approle_role_id gekoppelt: der Override gilt nur
+            # fuer den primaeren Vault, die uebrigen Eintraege aus kubeconfig_vaults
+            # muessen trotzdem abgeleitet werden. Der Skip passiert jetzt pro
+            # Eintrag im Shell-Body.
+            when: vault_kubeconfigs_enabled | bool
 
           # The chart reads the secret-id from a Secret it does not create, so
           # this projects it out of the sops-git `vault` Secret into the name and
@@ -1195,15 +1249,23 @@ playbooks:
           - name: Derive the vault-approle Secret from the sops-git vault Secret
             ansible.builtin.shell: |
               set -euo pipefail
-              SECRET_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ vault_approle_source_secret }} \
+              {% for v in kubeconfig_vaults %}
+              {% if not (v.source_secret == vault_approle_source_secret and vault_approle_role_id | length > 0) %}
+              SECRET_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ v.source_secret }} \
                 -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
               test -n "$SECRET_ID"
-              kubectl -n crossplane-system create secret generic vault-approle \
+              kubectl -n crossplane-system create secret generic {{ v.approle_secret }} \
                 --from-literal=secret-id="$SECRET_ID" \
                 --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
                 | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+              {% endif %}
+              {% endfor %}
             become_user: "{{ ansible_user }}"
-            when: vault_kubeconfigs_enabled | bool and vault_approle_role_id | length == 0
+            # Nicht mehr an vault_approle_role_id gekoppelt: der Override gilt nur
+            # fuer den primaeren Vault, die uebrigen Eintraege aus kubeconfig_vaults
+            # muessen trotzdem abgeleitet werden. Der Skip passiert jetzt pro
+            # Eintrag im Shell-Body.
+            when: vault_kubeconfigs_enabled | bool
             no_log: true    # never echo the AppRole secret-id
 
           # Role ID resolution happens INSIDE the shell rather than in Jinja, so
@@ -1213,15 +1275,23 @@ playbooks:
           - name: Deploy provider-kubeconfig-vault
             ansible.builtin.shell: |
               set -euo pipefail
-              ROLE_ID='{{ vault_approle_role_id }}'
+              SETS=()
+              {% for v in kubeconfig_vaults %}
+              ROLE_ID='{% if v.source_secret == vault_approle_source_secret %}{{ vault_approle_role_id }}{% endif %}'
               if [ -z "$ROLE_ID" ]; then
-                ROLE_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ vault_approle_source_secret }} \
+                ROLE_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ v.source_secret }} \
                   -o jsonpath='{.data.{{ vault_approle_role_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
               fi
               test -n "$ROLE_ID"
+              SETS+=(--set "roleIds.{{ v.provider_config }}=$ROLE_ID")
+              {% endfor %}
+              # roleIds ist eine MAP, keine Liste — genau deswegen. Ein
+              # --set additionalVaults[N].appRole.roleId wuerde den ganzen
+              # Listeneintrag ersetzen statt ihn zu ergaenzen; siehe den Kopf von
+              # templates/clusterproviderconfig.yaml im Chart.
               helm upgrade --install provider-kubeconfig-vault \
                 {{ stuttgart_things_checkout }}/crossplane/platform/baseline/provider-kubeconfig-vault \
-                --set vault.appRole.roleId="$ROLE_ID" \
+                "${SETS[@]}" \
                 -n crossplane-system --create-namespace \
                 --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
@@ -1340,6 +1410,42 @@ playbooks:
           vault_approle_source_secret: vault
           vault_approle_role_id_key: VAULT_ROLE_ID
           vault_approle_secret_id_key: VAULT_SECRET_ID
+
+          # EIN PROVIDER, MEHRERE VAULTS.
+          #
+          # provider-kubeconfig-vault emittiert eine ClusterProviderConfig je
+          # Eintrag; jede braucht eine eigene AppRole — role ID im Manifest,
+          # secret-id in einem Secret. Diese Liste sagt, aus welchem
+          # tekton-ci-Secret die AppRole abgeleitet wird und wie das dabei
+          # entstehende crossplane-system-Secret heisst.
+          #
+          # Der primaere Vault steht bewusst MIT drin. Bis 2026-08-20 leitete
+          # dieser Play nur ihn ab und uebergab auch nur seine role ID;
+          # vault-kubeconfigs-infra war deshalb von Hand gesetzt (2026-08-18)
+          # und haette den naechsten Lauf nicht ueberlebt. Helm merged Listen
+          # naemlich nicht, es ersetzt sie — der infra-Eintrag waere auf
+          # roleId="" gefallen und jeder RemoteCluster darueber still
+          # kaputtgegangen. Seit Chart 0.2.0 laufen die role IDs ueber die MAP
+          # `roleIds`, die sauber merged.
+          #
+          # Einen Vault dazunehmen = ein Eintrag hier PLUS einer in den
+          # additionalVaults des Charts; das Secret in source_secret muss in
+          # standalone_sops_secrets stehen, sonst existiert es nie.
+          kubeconfig_vaults:
+            - provider_config: vault-kubeconfigs
+              source_secret: vault
+              approle_secret: vault-approle
+            - provider_config: vault-kubeconfigs-infra
+              source_secret: vault-infra
+              approle_secret: vault-approle-infra
+            # LabDA, dazu am 2026-08-20 (crossplane-configurations#258). Eigener
+            # Vault statt eines LabUL-Vaults, weil LabUL-vSphere abgeschaltet
+            # wird und ein LabDA-Cluster seinen kubeconfig nicht in etwas
+            # Sterbendem ablegen soll. Vorab geprueft: AppRole-Login OK (Policy
+            # superuser), Mount kubeconfigs/ vorhanden, 8200 erreichbar.
+            - provider_config: vault-kubeconfigs-labda
+              source_secret: vault-labda
+              approle_secret: vault-approle-labda
           # The Provider CR the package manager creates for provider-kubeconfig,
           # and the DeploymentRuntimeConfig the chart emits for it. They have to
           # be wired together by hand — see the patch task.
@@ -1476,6 +1582,13 @@ playbooks:
           # sourceRef only within the CR's own namespace.
           standalone_sops_secrets:
             - name: vault
+              namespace: tekton-ci
+            # Quellen fuer die AppRoles der weiteren kubeconfig-Vaults,
+            # siehe kubeconfig_vaults oben. Ohne diese beiden Eintraege
+            # existieren die Secrets nicht und der Derive-Task bricht ab.
+            - name: vault-infra
+              namespace: tekton-ci
+            - name: vault-labda
               namespace: tekton-ci
             - name: dapr-backstage-template-execution-vars
               namespace: flux-system
@@ -2183,42 +2296,69 @@ playbooks:
               # race. Observed on a cold machinery build 2026-08-14: this wait
               # reported changed, the very next task failed, and the identical
               # commands run by hand minutes later succeeded.
+              {% for v in kubeconfig_vaults %}
+              {% if not (v.source_secret == vault_approle_source_secret and vault_approle_role_id | length > 0) %}
               for i in $(seq 1 60); do
-                V=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ vault_approle_source_secret }} \
+                V=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ v.source_secret }} \
                   -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' \
                   --kubeconfig {{ kubeconfig }} 2>/dev/null)
-                [ -n "$V" ] && exit 0
+                [ -n "$V" ] && break
                 sleep 5
               done
-              echo "{{ tekton_ci_namespace }}/{{ vault_approle_source_secret }} never carried {{ vault_approle_secret_id_key }}" >&2
-              exit 1
-            when: vault_kubeconfigs_enabled | bool and vault_approle_role_id | length == 0
+              if [ -z "$V" ]; then
+                echo "{{ tekton_ci_namespace }}/{{ v.source_secret }} never carried {{ vault_approle_secret_id_key }}" >&2
+                exit 1
+              fi
+              {% endif %}
+              {% endfor %}
+              exit 0
+            # Nicht mehr an vault_approle_role_id gekoppelt: der Override gilt nur
+            # fuer den primaeren Vault, die uebrigen Eintraege aus kubeconfig_vaults
+            # muessen trotzdem abgeleitet werden. Der Skip passiert jetzt pro
+            # Eintrag im Shell-Body.
+            when: vault_kubeconfigs_enabled | bool
 
           - name: Derive the vault-approle Secret from the sops-git vault Secret
             ansible.builtin.shell: |
               set -euo pipefail
-              SECRET_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ vault_approle_source_secret }} \
+              {% for v in kubeconfig_vaults %}
+              {% if not (v.source_secret == vault_approle_source_secret and vault_approle_role_id | length > 0) %}
+              SECRET_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ v.source_secret }} \
                 -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
               test -n "$SECRET_ID"
-              kubectl -n crossplane-system create secret generic vault-approle \
+              kubectl -n crossplane-system create secret generic {{ v.approle_secret }} \
                 --from-literal=secret-id="$SECRET_ID" \
                 --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
                 | kubectl apply --kubeconfig {{ kubeconfig }} -f -
-            when: vault_kubeconfigs_enabled | bool and vault_approle_role_id | length == 0
+              {% endif %}
+              {% endfor %}
+            # Nicht mehr an vault_approle_role_id gekoppelt: der Override gilt nur
+            # fuer den primaeren Vault, die uebrigen Eintraege aus kubeconfig_vaults
+            # muessen trotzdem abgeleitet werden. Der Skip passiert jetzt pro
+            # Eintrag im Shell-Body.
+            when: vault_kubeconfigs_enabled | bool
             no_log: true    # never echo the AppRole secret-id
 
           - name: Deploy provider-kubeconfig-vault
             ansible.builtin.shell: |
               set -euo pipefail
-              ROLE_ID='{{ vault_approle_role_id }}'
+              SETS=()
+              {% for v in kubeconfig_vaults %}
+              ROLE_ID='{% if v.source_secret == vault_approle_source_secret %}{{ vault_approle_role_id }}{% endif %}'
               if [ -z "$ROLE_ID" ]; then
-                ROLE_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ vault_approle_source_secret }} \
+                ROLE_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ v.source_secret }} \
                   -o jsonpath='{.data.{{ vault_approle_role_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
               fi
               test -n "$ROLE_ID"
+              SETS+=(--set "roleIds.{{ v.provider_config }}=$ROLE_ID")
+              {% endfor %}
+              # roleIds ist eine MAP, keine Liste — genau deswegen. Ein
+              # --set additionalVaults[N].appRole.roleId wuerde den ganzen
+              # Listeneintrag ersetzen statt ihn zu ergaenzen; siehe den Kopf von
+              # templates/clusterproviderconfig.yaml im Chart.
               helm upgrade --install provider-kubeconfig-vault \
                 {{ stuttgart_things_checkout }}/crossplane/platform/baseline/provider-kubeconfig-vault \
-                --set vault.appRole.roleId="$ROLE_ID" \
+                "${SETS[@]}" \
                 -n crossplane-system --create-namespace \
                 --kubeconfig {{ kubeconfig }}
             when: vault_kubeconfigs_enabled | bool
