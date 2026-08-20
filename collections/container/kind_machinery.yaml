@@ -104,8 +104,26 @@ playbooks:
           kubeconfig: "{{ kubeconfig_folder }}/{{ kind_cluster_name }}"
 
           # --- environment + secrets ---
+          # vsphere_envs ist bewusst eine EXPLIZITE Liste und leitet sich nicht
+          # mehr aus vsphere_env ab: auf einem Cluster laufen beide vSphere-Envs
+          # nebeneinander (je eine vspherevm-Release, Namen vspherevm-<env>).
+          # vsphere_env bleibt der "primaere" Env und steuert weiterhin die
+          # ansible-Capability (eine Release) und den secrets_dir-Pfad.
+          #
+          # labda kam am 2026-08-20 dazu. Alles dafuer war schon da — das Chart
+          # 0.12.6 traegt den environments.labda-Block, und
+          # secrets/vsphere-creds-labda.enc.yaml liegt im secrets-Repo, also
+          # genau dort, wo der sops-git-Backend den Pfad ohnehin ableitet. Es
+          # fehlte nur die Release. Verifiziert auf kind3 mit einem echten
+          # Clone (10.100.136.67, moid vm-45964).
+          #
+          # labul BLEIBT DRIN, wird aber NICHT MEHR GEPFLEGT: LabUL-vSphere wird
+          # in den naechsten Wochen abgeschaltet, der Hypervisor-Fokus im LabUL
+          # ist Proxmox. Den labul-Block im Chart (u.a. der Stopgap-Pin auf
+          # sthings-u26-previous, cloud-init deaktiviert, stuttgart-things#2432)
+          # also nicht mehr reparieren — neue vSphere-Arbeit geht nach labda.
           vsphere_env: labul                                          # labul | labda — primary env (ansible chart, secrets dir)
-          vsphere_envs: ["{{ vsphere_env }}"]                         # one vspherevm capability release per entry
+          vsphere_envs: ["labul", "labda"]                            # one vspherevm capability release per entry
           proxmox_env: labul                                          # only labul creds exist today
           proxmox_envs: ["{{ proxmox_env }}"]                         # one proxmoxvm capability release per entry
           capabilities_enabled: true                                  # false = stop after crossplane
@@ -407,8 +425,27 @@ playbooks:
             # v0.9.1 reicht den environmentConfig an den Ansible-Teil durch statt
             # Defaults zu raten — derselbe Fix wie bei proxmoxvm v0.12.1 unten,
             # beide aus crossplane-configurations#320.
+            #
+            # v0.9.2 NIMMT GENAU DAS WIEDER ZURUECK, und zwar absichtlich. Der
+            # Durchreicher aus #317/#320 war ein Fehlschluss: spec.environmentConfig
+            # benennt eine HYPERVISOR-Env (labul, labda) und wird gegen das
+            # vspherevm-Label aufgeloest — ansible-run loest sein EIGENES Label auf,
+            # und dort existiert im Fleet nur `default` (ansible-run-defaults).
+            # Der Forward matchte also nichts und liess JEDEN ansible-run-Default
+            # still fallen, ansibleExtraCollections eingeschlossen; das Playbook
+            # lief dann gegen die Collection, die zufaellig im Working-Image steckt.
+            #
+            # Gefunden auf kind3 (2026-08-20) beim ersten LabDA-Build:
+            # sthings.baseos.setup starb nach ok=70 in install_configure_vault mit
+            # "dict object has no element 26" — obwohl das gepinnte Release
+            # sthings-baseos-26.730.1176 den Ubuntu-26-Key laengst hat. Der echte
+            # Hinweis stand im Step-Log: "No collections directory found".
+            #
+            # Ab v0.9.2 bleibt der Default `default` stehen; wer eine
+            # ansible-run-<env> hat, waehlt sie ueber spec.ansible.environmentConfig.
+            # crossplane-configurations#347.
             - name: vspherevm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.9.1"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.9.2"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
             # v0.10.0 added spec.vm.cloneDatastore, v0.11.0 its `none` opt-out
             # sentinel. NOT optional for LabUL: both base-OS templates keep their
@@ -430,8 +467,12 @@ playbooks:
             # immer {} und jeder Wert fiel auf einen hartkodierten Fallback durch —
             # der dann als expliziter Spec-Wert in der komponierten AnsibleRun
             # landete (crossplane-configurations#317/#320).
+            #
+            # v0.12.2 nimmt den environmentConfig-Durchreicher wieder heraus —
+            # dieselbe Korrektur wie vspherevm v0.9.2 oben, gleiche Begruendung.
+            # crossplane-configurations#347.
             - name: proxmoxvm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.12.1"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.12.2"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             # Tekton-backed Packer builder — only provider-kubernetes, already up.
             - name: packer-build
@@ -1260,8 +1301,26 @@ playbooks:
           kind_cluster_name: dev2
           kubeconfig: "/home/{{ ansible_user }}/.kube/{{ kind_cluster_name }}"
 
+          # vsphere_envs ist bewusst eine EXPLIZITE Liste und leitet sich nicht
+          # mehr aus vsphere_env ab: auf einem Cluster laufen beide vSphere-Envs
+          # nebeneinander (je eine vspherevm-Release, Namen vspherevm-<env>).
+          # vsphere_env bleibt der "primaere" Env und steuert weiterhin die
+          # ansible-Capability (eine Release) und den secrets_dir-Pfad.
+          #
+          # labda kam am 2026-08-20 dazu. Alles dafuer war schon da — das Chart
+          # 0.12.6 traegt den environments.labda-Block, und
+          # secrets/vsphere-creds-labda.enc.yaml liegt im secrets-Repo, also
+          # genau dort, wo der sops-git-Backend den Pfad ohnehin ableitet. Es
+          # fehlte nur die Release. Verifiziert auf kind3 mit einem echten
+          # Clone (10.100.136.67, moid vm-45964).
+          #
+          # labul BLEIBT DRIN, wird aber NICHT MEHR GEPFLEGT: LabUL-vSphere wird
+          # in den naechsten Wochen abgeschaltet, der Hypervisor-Fokus im LabUL
+          # ist Proxmox. Den labul-Block im Chart (u.a. der Stopgap-Pin auf
+          # sthings-u26-previous, cloud-init deaktiviert, stuttgart-things#2432)
+          # also nicht mehr reparieren — neue vSphere-Arbeit geht nach labda.
           vsphere_env: labul                         # labul | labda — primary env
-          vsphere_envs: ["{{ vsphere_env }}"]        # one vspherevm release per entry
+          vsphere_envs: ["labul", "labda"]           # one vspherevm release per entry
           proxmox_env: labul                         # only labul creds exist today
           proxmox_envs: ["{{ proxmox_env }}"]        # one proxmoxvm release per entry
           capabilities_enabled: true                 # false = stop after crossplane
@@ -1533,8 +1592,27 @@ playbooks:
             # v0.9.1 reicht den environmentConfig an den Ansible-Teil durch statt
             # Defaults zu raten — derselbe Fix wie bei proxmoxvm v0.12.1 unten,
             # beide aus crossplane-configurations#320.
+            #
+            # v0.9.2 NIMMT GENAU DAS WIEDER ZURUECK, und zwar absichtlich. Der
+            # Durchreicher aus #317/#320 war ein Fehlschluss: spec.environmentConfig
+            # benennt eine HYPERVISOR-Env (labul, labda) und wird gegen das
+            # vspherevm-Label aufgeloest — ansible-run loest sein EIGENES Label auf,
+            # und dort existiert im Fleet nur `default` (ansible-run-defaults).
+            # Der Forward matchte also nichts und liess JEDEN ansible-run-Default
+            # still fallen, ansibleExtraCollections eingeschlossen; das Playbook
+            # lief dann gegen die Collection, die zufaellig im Working-Image steckt.
+            #
+            # Gefunden auf kind3 (2026-08-20) beim ersten LabDA-Build:
+            # sthings.baseos.setup starb nach ok=70 in install_configure_vault mit
+            # "dict object has no element 26" — obwohl das gepinnte Release
+            # sthings-baseos-26.730.1176 den Ubuntu-26-Key laengst hat. Der echte
+            # Hinweis stand im Step-Log: "No collections directory found".
+            #
+            # Ab v0.9.2 bleibt der Default `default` stehen; wer eine
+            # ansible-run-<env> hat, waehlt sie ueber spec.ansible.environmentConfig.
+            # crossplane-configurations#347.
             - name: vspherevm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.9.1"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.9.2"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
             # v0.10.0 added spec.vm.cloneDatastore, v0.11.0 its `none` opt-out
             # sentinel. NOT optional for LabUL: both base-OS templates keep their
@@ -1556,8 +1634,12 @@ playbooks:
             # immer {} und jeder Wert fiel auf einen hartkodierten Fallback durch —
             # der dann als expliziter Spec-Wert in der komponierten AnsibleRun
             # landete (crossplane-configurations#317/#320).
+            #
+            # v0.12.2 nimmt den environmentConfig-Durchreicher wieder heraus —
+            # dieselbe Korrektur wie vspherevm v0.9.2 oben, gleiche Begruendung.
+            # crossplane-configurations#347.
             - name: proxmoxvm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.12.1"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.12.2"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             - name: packer-build
               package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.4.1"
