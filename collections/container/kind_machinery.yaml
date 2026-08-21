@@ -1332,6 +1332,48 @@ playbooks:
             become_user: "{{ ansible_user }}"
             when: vault_kubeconfigs_enabled | bool
 
+          # Installing ~24 Configuration packages registers a large number of CRDs.
+          # Each burst forces the apiserver to rebuild discovery and OpenAPI, etcd
+          # applies queue behind it, and kube-controller-manager / kube-scheduler miss
+          # their lease deadline and exit. That is self-healing, but the play used to
+          # finish mid-storm and report failed=0 while the control plane was still
+          # flapping -- which reads as "machinery ready" and is not.
+          #
+          # Gate on a QUIET PERIOD, never a single sample: a lone check lands in the
+          # gap between two crashes and looks healthy. Require three consecutive
+          # samples with no pod outside Running/Completed AND no new control-plane
+          # restart.
+          - name: Wait for the cluster to settle
+            ansible.builtin.shell: |
+              set -uo pipefail
+              stable=0
+              prev=""
+              for i in $(seq 1 {{ settle_max_samples | default(60) }}); do
+                busy=$(kubectl get pods -A --no-headers --kubeconfig {{ kubeconfig }} 2>/dev/null \
+                       | awk '$4 != "Running" && $4 != "Completed"' | wc -l)
+                now=$(kubectl -n kube-system get pod -l tier=control-plane \
+                        -o jsonpath='{range .items[*]}{.status.containerStatuses[0].restartCount},{end}' \
+                        --kubeconfig {{ kubeconfig }} 2>/dev/null)
+                if [ "$busy" -eq 0 ] && [ -n "$now" ] && [ "$now" = "$prev" ]; then
+                  stable=$((stable + 1))
+                  [ "$stable" -ge 3 ] && exit 0
+                else
+                  stable=0
+                fi
+                prev="$now"
+                sleep {{ settle_interval | default(10) }}
+              done
+              echo "cluster did not settle: still restarting or with unhealthy pods" >&2
+              kubectl get pods -A --no-headers --kubeconfig {{ kubeconfig }} \
+                | awk '$4 != "Running" && $4 != "Completed"' >&2
+              exit 1
+            become_user: "{{ ansible_user }}"
+            changed_when: false
+            # Set settle_enabled=false to finish without the gate -- the play then
+            # reports success on a cluster that may still be settling.
+            when: settle_enabled | default(true) | bool
+
+
           - name: Show machinery readiness
             ansible.builtin.command: >
               kubectl get provider.pkg.crossplane.io,configuration.pkg.crossplane.io,environmentconfig
@@ -2377,6 +2419,47 @@ playbooks:
               kubectl wait provider.pkg.crossplane.io/{{ kubeconfig_provider_name }} \
                 --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
             when: vault_kubeconfigs_enabled | bool
+
+          # Installing ~24 Configuration packages registers a large number of CRDs.
+          # Each burst forces the apiserver to rebuild discovery and OpenAPI, etcd
+          # applies queue behind it, and kube-controller-manager / kube-scheduler miss
+          # their lease deadline and exit. That is self-healing, but the play used to
+          # finish mid-storm and report failed=0 while the control plane was still
+          # flapping -- which reads as "machinery ready" and is not.
+          #
+          # Gate on a QUIET PERIOD, never a single sample: a lone check lands in the
+          # gap between two crashes and looks healthy. Require three consecutive
+          # samples with no pod outside Running/Completed AND no new control-plane
+          # restart.
+          - name: Wait for the cluster to settle
+            ansible.builtin.shell: |
+              set -uo pipefail
+              stable=0
+              prev=""
+              for i in $(seq 1 {{ settle_max_samples | default(60) }}); do
+                busy=$(kubectl get pods -A --no-headers --kubeconfig {{ kubeconfig }} 2>/dev/null \
+                       | awk '$4 != "Running" && $4 != "Completed"' | wc -l)
+                now=$(kubectl -n kube-system get pod -l tier=control-plane \
+                        -o jsonpath='{range .items[*]}{.status.containerStatuses[0].restartCount},{end}' \
+                        --kubeconfig {{ kubeconfig }} 2>/dev/null)
+                if [ "$busy" -eq 0 ] && [ -n "$now" ] && [ "$now" = "$prev" ]; then
+                  stable=$((stable + 1))
+                  [ "$stable" -ge 3 ] && exit 0
+                else
+                  stable=0
+                fi
+                prev="$now"
+                sleep {{ settle_interval | default(10) }}
+              done
+              echo "cluster did not settle: still restarting or with unhealthy pods" >&2
+              kubectl get pods -A --no-headers --kubeconfig {{ kubeconfig }} \
+                | awk '$4 != "Running" && $4 != "Completed"' >&2
+              exit 1
+            changed_when: false
+            # Set settle_enabled=false to finish without the gate -- the play then
+            # reports success on a cluster that may still be settling.
+            when: settle_enabled | default(true) | bool
+
 
           - name: Show machinery readiness
             ansible.builtin.command: >
