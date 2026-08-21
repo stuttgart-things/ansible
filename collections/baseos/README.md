@@ -41,7 +41,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 |----------|-------------|
 | `sthings.baseos.dev` | Full dev machine setup (setup + binaries + ansible + golang + pre-commit + semantic-release + docker + container tools + nerdctl + podman + vhs + claude-code + starship + kind cluster) |
 | `sthings.baseos.dev_config` | Post-dev configuration: restart containerd, create .kube dir, install KCL |
-| `sthings.baseos.ansible` | Install Python3, virtualenv, Ansible (v10.4.0) and Python packages (kubernetes, openshift, hvac, pyvmomi) |
+| `sthings.baseos.ansible` | Install Python3, virtualenv, Ansible (v12.3.0) and Python packages (kubernetes, openshift, hvac, pyvmomi) |
 | `sthings.baseos.golang` | Install Go (v1.25.1) with golangci-lint, goreleaser (v2.14.3), ko (v0.18.0), cobra-cli, protobuf |
 | `sthings.baseos.pre_commit` | Install pre-commit package |
 | `sthings.baseos.semantic_release` | Install NVM, Node.js 20, semantic-release and plugins |
