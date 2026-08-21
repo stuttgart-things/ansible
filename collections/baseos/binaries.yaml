@@ -143,7 +143,7 @@ vars:
           source_url: "https://github.com/getsops/sops/releases/download/v{{ sops_version }}/sops-v{{ sops_version }}.linux.amd64"
           bin_to_copy: "sops-v{{ sops_version }}.linux.amd64"
           to_remove: ""
-          bin_dir: "/usr/bin"
+          bin_dir: "/usr/bin/sops"
           version_cmd: " --version"
           target_version: "{{ sops_version }}"
         crossplane:
@@ -229,7 +229,7 @@ vars:
           source_url: "https://github.com/jqlang/jq/releases/download/jq-{{ jq_version }}/jq-linux-amd64"
           bin_to_copy: jq-linux-amd64
           to_remove: ""
-          bin_dir: "/usr/bin"
+          bin_dir: "/usr/bin/jq"
           version_cmd: " --version"
           target_version: "v{{ jq_version }}"
         yq:
@@ -239,7 +239,7 @@ vars:
           source_url: "https://github.com/mikefarah/yq/releases/download/v{{ yq_version }}/yq_linux_amd64.tar.gz"
           bin_to_copy: yq_linux_amd64
           to_remove: ""
-          bin_dir: "/usr/bin"
+          bin_dir: "/usr/bin/yq"
           version_cmd: " --version"
           target_version: "v{{ yq_version }}"
         machineshop:
@@ -259,6 +259,6 @@ vars:
           source_url: https://github.com/minio/mc/archive/refs/tags/{{ mc_version }}.zip
           bin_to_copy: mc-{{ mc_version }}
           to_remove: ""
-          bin_dir: "/usr/bin"
+          bin_dir: "/usr/bin/mc"
           version_cmd: " version"
           target_version: "{{ mc_version }}"

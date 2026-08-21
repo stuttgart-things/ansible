@@ -70,7 +70,12 @@ playbooks:
                   source_url: "https://github.com/getsops/sops/releases/download/v{{ sops_version }}/sops-v{{ sops_version }}.linux.amd64"
                   bin_to_copy: "sops-v{{ sops_version }}.linux.amd64"
                   to_remove: ""
-                  bin_dir: "/usr/bin"
+                  # bin_to_copy's basename != bin_name, so bin_dir must be the full
+                  # target FILE path -- that is what makes `copy` rename the artifact.
+                  # With a directory here the binary lands as
+                  # /usr/bin/sops-v<version>.linux.amd64 and `sops` is simply absent,
+                  # silently: the play still reports ok.
+                  bin_dir: "/usr/bin/sops"
                   version_cmd: " --version"
                   target_version: "{{ sops_version }}"
 
