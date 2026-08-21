@@ -29,10 +29,51 @@ playbooks:
           fetch_kubeconfig: true
           fetched_kubeconfig_path: "/tmp/{{ kind_cluster_name }}"
 
+          # CLIs that kind_machinery shells out to but the docker/kind role does not
+          # carry. Versions and URL shapes mirror collections/baseos/binaries.yaml --
+          # keep them in step.
+          install_machinery_bins: true
+          crossplane_version: 2.5.0 # datasource=github-tags depName=crossplane/cli
+          sops_version: 3.13.3 # datasource=github-tags depName=getsops/sops
+
         roles:
           - role: sthings.container.install_configure_docker
 
         post_tasks:
+          # install_configure_docker brings kubectl, kind, helm, helmfile, k9s and yq.
+          # kind_machinery additionally shells out to crossplane and sops, so without
+          # these two a machinery run fails on the first crossplane call. `bin` is set
+          # as task vars, not play vars, so the docker role's own defaults are left
+          # alone.
+          - name: Install the machinery CLIs the docker/kind role does not carry
+            ansible.builtin.include_role:
+              name: sthings.container.download_install_binary
+            when: install_machinery_bins | default(true) | bool
+            vars:
+              bin:
+                crossplane:
+                  bin_name: crossplane
+                  bin_version: "{{ crossplane_version }}"
+                  check_bin_version_before_installing: true
+                  # Bucket AND binary name both switch at v2.3.0, see
+                  # collections/baseos/binaries.yaml -- a bare version bump 404s.
+                  source_url: "https://cli.crossplane.io/stable/v{{ crossplane_version }}/bin/linux_amd64/crossplane"
+                  bin_to_copy: crossplane
+                  to_remove: ""
+                  bin_dir: "/usr/bin"
+                  version_cmd: "version"
+                  target_version: "{{ crossplane_version }}"
+                sops:
+                  bin_name: sops
+                  bin_version: "{{ sops_version }}"
+                  check_bin_version_before_installing: true
+                  source_url: "https://github.com/getsops/sops/releases/download/v{{ sops_version }}/sops-v{{ sops_version }}.linux.amd64"
+                  bin_to_copy: "sops-v{{ sops_version }}.linux.amd64"
+                  to_remove: ""
+                  bin_dir: "/usr/bin"
+                  version_cmd: " --version"
+                  target_version: "{{ sops_version }}"
+
           - name: Set stats for deployment
             set_fact:
               path_to_kubeconfig: "{{ path_to_kubeconfig }}"

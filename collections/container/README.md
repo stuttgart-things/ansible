@@ -35,7 +35,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 | Playbook | Description |
 |----------|-------------|
-| `sthings.container.kind` | Create KIND cluster with Cilium, cert-manager and ingress-nginx |
+| `sthings.container.kind` | Create KIND cluster with Cilium, cert-manager and ingress-nginx. Installs docker plus the CLI set: kubectl, kind, helm, helmfile, k9s, yq (from the docker role) and crossplane + sops (added here), which together cover what `kind_machinery` shells out to. Set `install_machinery_bins=false` to skip the latter two |
 | `sthings.container.kind_xplane` | Create KIND cluster for Crossplane with helmfile deployments |
 | `sthings.container.kind_machinery_profile` | Extend a cilium KIND cluster into a "machinery" vSphere-VM builder (remote/become form): sops-operator + age key → openebs → tekton → waited crossplane → Configuration packages → capabilities |
 | `sthings.container.kind_secrets` | Places the ONE secret that cannot come from git: the sops age key, on a cluster the caller names. Uses `kubernetes.core` only, so it runs on the stock `sthings-ansible` image, which carries no kubectl, helm or kustomize. Meant to be driven by an `AnsibleRun` from a seed — the key then travels Secret → envFrom → process environment and never lands in a CR. cert-manager, sops-secrets-operator and sops-git-secrets are deliberately NOT here: they are ordinary cluster software and belong to the platform |
