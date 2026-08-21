@@ -29,6 +29,6 @@ collections:
   # with a trailing `.tar.gz`, so the old links repeated it in the tag segment.
   # Current tags do not carry it.
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-26.812.1209/sthings-awx-26.812.1209.tar.gz
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-26.820.1251/sthings-container-26.820.1251.tar.gz
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-26.821.1257/sthings-container-26.821.1257.tar.gz
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-rke-26.730.1176/sthings-rke-26.730.1176.tar.gz
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-26.821.1252/sthings-baseos-26.821.1252.tar.gz
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-26.821.1259/sthings-baseos-26.821.1259.tar.gz
