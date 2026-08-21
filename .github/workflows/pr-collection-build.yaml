@@ -141,7 +141,7 @@ jobs:
       runs-on: ubuntu-latest
       environment-name: k8s
       collection-directory: ${{ matrix.collection-directory }}
-      dagger-module-version: v0.122.0
+      dagger-module-version: v0.124.0
       dagger-version: v0.21.8
       branch-name: ${{ github.event.pull_request.head.ref }}
       # BUILD ONLY - THE ARTIFACT IS UPLOADED FOR REVIEW BUT NOT PUBLISHED.
