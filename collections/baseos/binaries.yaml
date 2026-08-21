@@ -118,7 +118,7 @@ vars:
     file: |
       ---
       gum_version: 2.0.0 # datasource=github-tags depName=charmbracelet/gum
-      gh_version: 2.97.0 # datasource=github-tags depName=cli/cli
+      gh_version: 2.98.0 # datasource=github-tags depName=cli/cli
       task_version: 3.53.1 # datasource=github-tags depName=go-task/task
       hugo_version: 0.165.0 # datasource=github-tags depName=gohugoio/hugo
       terraform_version: 1.15.9 # datasource=custom.hashicorp
