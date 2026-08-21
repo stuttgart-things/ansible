@@ -132,7 +132,7 @@ vars:
       # seit dem Split etwas anderes ist — ein Pin darauf folgt der falschen
       # Quelle. Deshalb hing das hier auf der v1-Linie fest (1.20.6 -> .11),
       # waehrend die CLI bei v2.4.x stand.
-      crossplane_version: 2.4.1 # datasource=github-tags depName=crossplane/cli
+      crossplane_version: 2.5.0 # datasource=github-tags depName=crossplane/cli
       sops_version: 3.13.3 # datasource=github-tags depName=getsops/sops
 
       bin:
