@@ -235,15 +235,14 @@ playbooks:
           # (next to the GitRepository), so that is the only per-CR namespace.
           sops_age_key_ref_name: "{{ '' if sops_global_age_key_enabled | bool else 'sops-age-key' }}"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
-          ansible_chart_version: "0.9.2"
+          ansible_chart_version: "0.9.2" # datasource=docker depName=ghcr.io/stuttgart-things/charts/ansible
           # The name the ansible chart gives its Configuration — which is the
           # name `crossplane xpkg install` derives from the image ref, NOT the
           # short `ansible-run`. See the adopt task below for why this matters.
           ansible_run_configuration_name: stuttgart-things-crossplane-configurations-ansible-run
-          cluster_backup_chart_version: "0.1.0"
-          scheduled_run_chart_version: "0.2.1"
-          cert_manager_version: v1.21.0
-
+          cluster_backup_chart_version: "0.1.0" # datasource=docker depName=ghcr.io/stuttgart-things/charts/cluster-backup
+          scheduled_run_chart_version: "0.2.1" # datasource=docker depName=ghcr.io/stuttgart-things/charts/scheduled-run
+          cert_manager_version: v1.21.0 # datasource=github-releases depName=cert-manager/cert-manager
           # The packer capability chart is NOT on OCI — it is installed from a
           # path in the monorepo, like provider-kubeconfig-vault below. Move it
           # to `charts_oci` once `task push-platform-charts` has published it.
@@ -325,7 +324,7 @@ playbooks:
           sops_git_token: "{{ lookup('env', 'SOPS_GIT_TOKEN') }}"
           # sops-git-secrets is published to OCI (stuttgart-things#2407/#2408); install
           # from there rather than cloning the private monorepo for its chart source.
-          sops_git_secrets_chart_version: "0.9.0"
+          sops_git_secrets_chart_version: "0.9.0" # datasource=docker depName=ghcr.io/stuttgart-things/charts/sops-git-secrets
           # Encrypted blobs in the secrets repo with no capability chart of
           # their own — the capability charts each emit their own
           # SopsSecretManifest, this list covers the rest. Both were applied by
@@ -1522,15 +1521,14 @@ playbooks:
           # (next to the GitRepository), so that is the only per-CR namespace.
           sops_age_key_ref_name: "{{ '' if sops_global_age_key_enabled | bool else 'sops-age-key' }}"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
-          ansible_chart_version: "0.9.2"
+          ansible_chart_version: "0.9.2" # datasource=docker depName=ghcr.io/stuttgart-things/charts/ansible
           # The name the ansible chart gives its Configuration — which is the
           # name `crossplane xpkg install` derives from the image ref, NOT the
           # short `ansible-run`. See the adopt task below for why this matters.
           ansible_run_configuration_name: stuttgart-things-crossplane-configurations-ansible-run
-          cluster_backup_chart_version: "0.1.0"
-          scheduled_run_chart_version: "0.2.1"
-          cert_manager_version: v1.21.0
-
+          cluster_backup_chart_version: "0.1.0" # datasource=docker depName=ghcr.io/stuttgart-things/charts/cluster-backup
+          scheduled_run_chart_version: "0.2.1" # datasource=docker depName=ghcr.io/stuttgart-things/charts/scheduled-run
+          cert_manager_version: v1.21.0 # datasource=github-releases depName=cert-manager/cert-manager
           # The packer capability chart is NOT on OCI — it is installed from a
           # path in the monorepo, like provider-kubeconfig-vault below. Move it
           # to `charts_oci` once `task push-platform-charts` has published it.
@@ -1614,7 +1612,7 @@ playbooks:
           sops_git_token: "{{ lookup('env', 'SOPS_GIT_TOKEN') }}"
           # sops-git-secrets is published to OCI (stuttgart-things#2407/#2408); install
           # from there rather than cloning the private monorepo for its chart source.
-          sops_git_secrets_chart_version: "0.9.0"
+          sops_git_secrets_chart_version: "0.9.0" # datasource=docker depName=ghcr.io/stuttgart-things/charts/sops-git-secrets
           # Encrypted blobs in the secrets repo with no capability chart of
           # their own — the capability charts each emit their own
           # SopsSecretManifest, this list covers the rest. Both were applied by
