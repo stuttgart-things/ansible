@@ -687,7 +687,7 @@ playbooks:
             # (crossplane-configurations#336, argoplatform-test2 2026-08-19).
             # The XRD now also rejects the two known crossed pairs at apply time.
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.5.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.6.1"
 
           configuration_packages: >-
             {{ machinery_packages
@@ -1950,7 +1950,7 @@ playbooks:
             # (crossplane-configurations#336, argoplatform-test2 2026-08-19).
             # The XRD now also rejects the two known crossed pairs at apply time.
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.5.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.6.1"
 
           configuration_packages: >-
             {{ machinery_packages
