@@ -67,7 +67,7 @@
         "\\.yaml$"
       ],
       "matchStrings": [
-        "\\s*(?<binName>.+)_version:\\s(?<currentValue>v?\\d+\\.\\d+\\.\\d+)\\s*#\\s*(datasource=(?<datasource>[^\\s]*))\\s*(depName=(?<depName>[^\\s]*))?\\s*"
+        "\\s*(?<binName>.+)_version:\\s[\"']?(?<currentValue>v?\\d+\\.\\d+\\.\\d+)[\"']?\\s*#\\s*(datasource=(?<datasource>[^\\s]*))\\s*(depName=(?<depName>[^\\s]*))?\\s*"
       ],
       "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}",
       "extractVersionTemplate": "^v?(?<version>.*)$",
@@ -80,7 +80,7 @@
         "\\.yaml$"
       ],
       "matchStrings": [
-        "\\s*(?<binName>.+)Version:\\s(?<currentValue>v?\\d+\\.\\d+\\.\\d+)\\s*#\\s*(datasource=(?<datasource>[^\\s]*))\\s*(depName=(?<depName>[^\\s]*))?\\s*"
+        "\\s*(?<binName>.+)Version:\\s[\"']?(?<currentValue>v?\\d+\\.\\d+\\.\\d+)[\"']?\\s*#\\s*(datasource=(?<datasource>[^\\s]*))\\s*(depName=(?<depName>[^\\s]*))?\\s*"
       ],
       "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}",
       "extractVersionTemplate": "^v?(?<version>.*)$",
@@ -93,7 +93,7 @@
         "\\.yaml$"
       ],
       "matchStrings": [
-        "\\s*version:\\s(?<currentValue>v?\\d+\\.\\d+\\.\\d+)\\s*#\\s*(datasource=(?<datasource>[^\\s]*))\\s*(depName=(?<depName>[^\\s]*))?\\s*"
+        "\\s*version:\\s[\"']?(?<currentValue>v?\\d+\\.\\d+\\.\\d+)[\"']?\\s*#\\s*(datasource=(?<datasource>[^\\s]*))\\s*(depName=(?<depName>[^\\s]*))?\\s*"
       ],
       "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}",
       "extractVersionTemplate": "^v?(?<version>.*)$",
@@ -106,12 +106,25 @@
         "^Dockerfile$"
       ],
       "matchStrings": [
-        "\\s*(?<binName>.+)_version:\\s(?<currentValue>v?\\d+\\.\\d+\\.\\d+)\\s*#\\s*(datasource=(?<datasource>[^\\s]*))\\s*(depName=(?<depName>[^\\s]*))?\\s*"
+        "\\s*(?<binName>.+)_version:\\s[\"']?(?<currentValue>v?\\d+\\.\\d+\\.\\d+)[\"']?\\s*#\\s*(datasource=(?<datasource>[^\\s]*))\\s*(depName=(?<depName>[^\\s]*))?\\s*"
       ],
       "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}",
       "extractVersionTemplate": "^v?(?<version>.*)$",
       "datasourceTemplate": "{{#if datasource}}{{{datasource}}}{{else}}github-releases{{/if}}",
       "depNameTemplate": "{{#if depName}}{{{depName}}}{{else}}{{{binName}}}{{/if}}"
+    },
+    {
+      "customType": "regex",
+      "description": "CROSSPLANE CONFIGURATION PACKAGES PINNED INLINE IN THE MACHINERY PLAYS. THESE ARE OCI ARTEFACTS, NOT GITHUB RELEASES, SO THE GENERIC *_version MANAGERS CANNOT SEE THEM - THE VERSION IS PART OF THE IMAGE REF AND CARRIES NO SEPARATE VARIABLE TO ANNOTATE. ELEVEN PACKAGES, EACH APPEARING IN BOTH kind_machinery VARIANTS, WHICH IS WHY THEY DRIFT APART BY HAND",
+      "fileMatch": [
+        "^collections/[^/]+/[^/]+\\.yaml$"
+      ],
+      "matchStrings": [
+        "ghcr\\.io/stuttgart-things/crossplane-configurations/(?<depName>[a-z0-9-]+):(?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "docker",
+      "packageNameTemplate": "ghcr.io/stuttgart-things/crossplane-configurations/{{{depName}}}",
+      "versioningTemplate": "semver"
     }
   ],
   "customDatasources": {
