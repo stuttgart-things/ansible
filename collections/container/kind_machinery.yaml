@@ -544,7 +544,7 @@ playbooks:
             # (fleet GitOps, same place as provider-kubernetes-flux) - neither
             # is required just to install this.
             - name: cluster-backup
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster-backup:v0.1.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster-backup:v0.2.0"
             # Cron-driven re-apply of an arbitrary XR (an AnsibleRun, a
             # PackerBuild). Only provider-kubernetes, so no provider_crd wait.
             # Its EnvironmentConfig comes from the scheduled-run capability
@@ -1821,7 +1821,7 @@ playbooks:
             # (fleet GitOps, same place as provider-kubernetes-flux) - neither
             # is required just to install this.
             - name: cluster-backup
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster-backup:v0.1.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster-backup:v0.2.0"
             # Cron-driven re-apply of an arbitrary XR (an AnsibleRun, a
             # PackerBuild). Only provider-kubernetes, so no provider_crd wait.
             # Its EnvironmentConfig comes from the scheduled-run capability
