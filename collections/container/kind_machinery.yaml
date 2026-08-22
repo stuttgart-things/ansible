@@ -514,7 +514,7 @@ playbooks:
             # dieselbe Korrektur wie vspherevm v0.9.2 oben, gleiche Begruendung.
             # crossplane-configurations#347.
             - name: proxmoxvm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.12.2"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.13.0"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             # Tekton-backed Packer builder — only provider-kubernetes, already up.
             - name: packer-build
@@ -1792,7 +1792,7 @@ playbooks:
             # dieselbe Korrektur wie vspherevm v0.9.2 oben, gleiche Begruendung.
             # crossplane-configurations#347.
             - name: proxmoxvm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.12.2"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.13.0"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             - name: packer-build
               package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.4.1"
