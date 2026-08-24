@@ -30,4 +30,11 @@ playbooks:
           pdns_token: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=apps/data/powerdns:token validate_certs=false auth_method=approle role_id={{ vault_approle_id }} secret_id={{ vault_approle_secret }} url={{ vault_url }}') }}" # pragma: allowlist secret
 
         roles:
-          - install-configure-powerdns
+          # Fully qualified, with underscores. The role repo is named with
+          # hyphens (install-configure-powerdns) but the collection build
+          # vendors it under a valid identifier, which is why every other
+          # playbook here says sthings.baseos.create_os_user and not
+          # create-os-user. The bare hyphenated form is a leftover from when
+          # this play lived outside a collection, with a local roles/ path --
+          # inside one it resolves to nothing.
+          - sthings.baseos.install_configure_powerdns

@@ -37,3 +37,9 @@ requirements: |
     - src: https://github.com/stuttgart-things/install-configure-docker.git
       scm: git
       version: 2026.07.19
+    # PINNED BY COMMIT, not by a dated tag like its siblings: the role repo has
+    # never been tagged, and its main branch has not moved since 2023-05-10.
+    # A SHA is at least as reproducible; swap it for a tag once the repo has one.
+    - src: https://github.com/stuttgart-things/install-configure-powerdns.git
+      scm: git
+      version: 6c4267160f4cd6f5a678d84034655ca05c395c92
