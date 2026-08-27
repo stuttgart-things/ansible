@@ -1,0 +1,159 @@
+---
+playbooks:
+  - name: dns_zones
+    play: |
+      ---
+      # Point this machine at the lab PowerDNS for the lab's own zones.
+      #
+      # WHY THIS IS NEEDED. The lab zones (4sthings.tiab.ssc.sva.de in LabDA,
+      # sthings-vsphere.labul.sva.de in LabUL) carry NO NS RECORDS and their
+      # PowerDNS is purely authoritative -- it is not a recursor and nothing
+      # delegates to it. So a name in those zones resolves ONLY on a machine
+      # that has been told to ask that server directly. Everywhere else the
+      # answer is SERVFAIL, including inside Kubernetes: CoreDNS forwards to the
+      # node's resolver, so a node that cannot resolve the zone means no pod on
+      # it can either.
+      #
+      # That is why every consumer so far has carried a workaround -- curl
+      # --resolve in the VM pipeline, an /etc/hosts line, a hardcoded IP. Each
+      # one pins an address that changes when a cluster is rebuilt.
+      #
+      # WHAT IT DOES. Writes a systemd-resolved drop-in that adds the PowerDNS
+      # server as a ROUTE-ONLY domain (the ~ prefix): queries for that zone go
+      # there, everything else keeps taking the path it already took.
+      #
+      # WHAT IT DOES NOT FIX: PODS. Measured on sthings-infra, not assumed.
+      # The node resolves the zone afterwards, and CoreDNS still does not,
+      # because kubelet points CoreDNS at /run/systemd/resolve/resolv.conf --
+      # the FLAT file, which lists every known server and carries no routing at
+      # all. resolvectl honours the ~ routing; that file cannot express it, and
+      # says so in its own header. So a Kubernetes node needs a CoreDNS forward
+      # stanza for the zone on top of this; running only this play and checking
+      # with resolvectl on the node looks like a complete fix and is not.
+      #
+      # AND IT PUTS AN AUTHORITATIVE-ONLY SERVER IN THAT FLAT FILE, which every
+      # consumer of it treats as a general resolver. PowerDNS answers REFUSED
+      # for anything outside its zone; CoreDNS reads that as an error and tries
+      # the next upstream, so nothing breaks -- 20 of 20 public lookups from a
+      # pod succeeded -- but roughly half of them pay for a wasted round trip
+      # first. On a plain VM this is free; on a busy cluster node it is a real,
+      # if small, tax, and it is the reason to prefer fixing CoreDNS directly
+      # there rather than adding a second half-measure.
+      #
+      # AND THEN PROVES IT. The route-only semantics are the whole point and
+      # they are easy to get subtly wrong -- a drop-in that captures more than
+      # its zone turns an authoritative-only server into this machine's resolver
+      # for everything, and the box keeps working until the first name outside
+      # the zone is looked up. So the play resolves the zone's SOA (which always
+      # exists) AND a public name afterwards, and fails if either is broken.
+      # Better to fail here than to hand back a machine that resolves half the
+      # internet.
+      - name: Forward lab zones to their authoritative PowerDNS
+        hosts: all
+        become: true
+
+        vars:
+          # [{zone: example.lab, server: 10.0.0.1}, ...]
+          dns_forward_zones: []
+          # Must resolve BEFORE and AFTER. If this breaks, the drop-in captured
+          # more than it should have.
+          dns_verify_public_name: github.com
+          dns_dropin_path: /etc/systemd/resolved.conf.d/lab-zones.conf
+
+        tasks:
+          - name: Fail when no zones were given
+            ansible.builtin.assert:
+              that:
+                - dns_forward_zones | length > 0
+                - dns_forward_zones | map(attribute='zone') | list | length == dns_forward_zones | length
+                - dns_forward_zones | map(attribute='server') | list | length == dns_forward_zones | length
+              fail_msg: >-
+                dns_forward_zones must be a non-empty list of {zone, server}.
+                Nothing is written on an empty list rather than an empty
+                drop-in, which would silently do nothing.
+
+          # Not a nicety: on a machine without systemd-resolved the drop-in is
+          # written, nothing reads it, every task reports changed, and the zone
+          # still does not resolve. Say so instead.
+          - name: Check that systemd-resolved is the resolver here
+            ansible.builtin.command: systemctl is-active systemd-resolved
+            register: dns_resolved_active
+            changed_when: false
+            failed_when: false
+
+          - name: Fail when systemd-resolved is not running
+            ansible.builtin.fail:
+              msg: >-
+                systemd-resolved is not active on this host
+                ({{ dns_resolved_active.stdout | default('unknown') }}), so a
+                resolved drop-in would be written and never read. Configure this
+                host's actual resolver instead.
+            when: dns_resolved_active.stdout != "active"
+
+          - name: Resolve the control name before changing anything
+            ansible.builtin.command: "resolvectl query {{ dns_verify_public_name }}"
+            register: dns_control_before
+            changed_when: false
+            failed_when: false
+
+          - name: Ensure the drop-in directory exists
+            ansible.builtin.file:
+              path: "{{ dns_dropin_path | dirname }}"
+              state: directory
+              mode: "0755"
+
+          # The ~ on every domain is load-bearing. Without it these become
+          # SEARCH domains: an unqualified lookup would get the zone appended
+          # and a wildcard record answers everything, so a typo resolves to a
+          # cluster gateway instead of failing.
+          - name: Write the resolved drop-in
+            ansible.builtin.copy:
+              dest: "{{ dns_dropin_path }}"
+              mode: "0644"
+              content: |
+                # Managed by sthings.baseos.dns_zones -- do not edit by hand.
+                #
+                # Route-only domains (~): queries for these zones go to the
+                # servers below, everything else is unaffected. The servers are
+                # authoritative-only PowerDNS instances and cannot answer for
+                # anything but their own zone, which is exactly why the ~ must
+                # not be dropped.
+                [Resolve]
+                DNS={{ dns_forward_zones | map(attribute='server') | unique | join(' ') }}
+                Domains={{ dns_forward_zones | map(attribute='zone') | map('regex_replace', '^', '~') | join(' ') }}
+            notify: Restart systemd-resolved
+
+          - name: Apply the drop-in now
+            ansible.builtin.meta: flush_handlers
+
+          - name: Resolve each zone's SOA
+            # SOA rather than a host name: every zone has one, so this proves
+            # the route works without depending on a record that may be gone.
+            ansible.builtin.command: "resolvectl query --type=SOA {{ item.zone }}"
+            loop: "{{ dns_forward_zones }}"
+            register: dns_zone_check
+            changed_when: false
+            failed_when: dns_zone_check.rc != 0
+
+          - name: Resolve the control name again
+            ansible.builtin.command: "resolvectl query {{ dns_verify_public_name }}"
+            register: dns_control_after
+            changed_when: false
+            failed_when: false
+
+          - name: Fail when the drop-in broke resolution outside the lab zones
+            ansible.builtin.fail:
+              msg: >-
+                {{ dns_verify_public_name }} resolved before this change and does
+                not now. The drop-in is capturing more than its zones -- check
+                that every entry in Domains= keeps its ~ prefix, which is what
+                makes it route-only instead of the resolver for everything.
+            when:
+              - dns_control_before.rc == 0
+              - dns_control_after.rc != 0
+
+        handlers:
+          - name: Restart systemd-resolved
+            ansible.builtin.systemd:
+              name: systemd-resolved
+              state: restarted
