@@ -30,7 +30,27 @@ requirements: |
       version: 2026.13.04
     - src: https://github.com/stuttgart-things/install-configure-vault.git
       scm: git
-      version: 2026.04.23
+      # 2026.09.01 -- install-ca-auth now derives the CA FILENAME from the Vault
+      # instance instead of `999 | random`:
+      #
+      #   https://vault.infra.sthings.lab -> vault-ca-vault-infra-sthings-lab.crt
+      #
+      # Why the bump matters here specifically: sthings.baseos.setup probes
+      # `vault_instances` and installs the CA from every reachable one, in a
+      # LOOP. With random names that loop was write-only -- every run added
+      # another copy of the same CA, and removing an instance from the list left
+      # its CA trusted forever under a name nobody could identify. Trust could be
+      # added and never retired.
+      #
+      # That is precisely the last step of the harvester lab's move off
+      # vault.infra.sthings.lab onto the OpenBao on platform: add the new
+      # instance, let both CAs be trusted, move issuance, then DROP THE OLD ONE.
+      # The drop is what did not work before.
+      #
+      # `vault_ca_cleanup_legacy: true` (opt-in, default false) clears the
+      # vault-ca-<digits>.crt files the old versions left behind. Not set
+      # anywhere yet -- it removes trust, so it wants a deliberate run.
+      version: 2026.09.01
     - src: https://github.com/stuttgart-things/create-send-webhook.git
       scm: git
       version: 2024.09.06
