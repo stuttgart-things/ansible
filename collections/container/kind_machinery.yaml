@@ -571,7 +571,7 @@ playbooks:
             # a short CR name and a dependsOn is the Lock collision from
             # crossplane-configurations#247.
             - name: harvester-vm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/harvester-vm:v0.1.9"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/harvester-vm:v0.1.10"
 
           # Fleet-manager half. `platform` pulls cni, flux-init, flux-apps and
           # — from v0.3.3 — ip-reservation, vault-auth and vault-pki-secrets
@@ -1848,7 +1848,7 @@ playbooks:
             # a short CR name and a dependsOn is the Lock collision from
             # crossplane-configurations#247.
             - name: harvester-vm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/harvester-vm:v0.1.9"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/harvester-vm:v0.1.10"
 
           platform_packages:
             # v0.3.1 is a FLOOR, not a preference: `cluster` below declares
