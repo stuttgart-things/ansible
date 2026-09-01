@@ -24,7 +24,10 @@ requirements: |
       version: 2026.07.30
     - src: https://github.com/stuttgart-things/install-configure-vault.git
       scm: git
-      version: 2026.04.23
+      # 2026.09.01 -- install-ca-auth derives the CA filename from the Vault
+      # instance instead of `999 | random`, so the file is idempotent and can be
+      # removed again. See collections/baseos/collection.yaml for the full why.
+      version: 2026.09.01
     - src: https://github.com/stuttgart-things/create-send-webhook.git
       scm: git
       version: 2024.09.06

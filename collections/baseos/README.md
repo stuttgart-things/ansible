@@ -19,7 +19,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | create-os-user | 2026.07.22 | OS user creation |
 | install-requirements | 2026.04.13 | General requirements installation |
 | manage-filesystem | 2026.13.04 | LVM filesystem management |
-| install-configure-vault | 2026.04.23 | Vault integration and CA certificates |
+| install-configure-vault | 2026.09.01 | Vault integration and CA certificates |
 | create-send-webhook | 2024.09.06 | Webhook creation |
 | install-configure-docker | 2026.05.09 | Docker installation |
 
