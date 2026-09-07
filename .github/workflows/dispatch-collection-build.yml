@@ -22,7 +22,7 @@ on:
       dagger-version:
         description: DAGGER VERSION
         type: string
-        default: v0.21.8
+        default: v0.21.9
 
 # THE MANUAL RE-RELEASE PATH. SINCE RELEASES ONLY HAPPEN ON MERGE TO MAIN,
 # THIS IS HOW A COLLECTION IS REBUILT AND REPUBLISHED WITHOUT A CODE CHANGE -
