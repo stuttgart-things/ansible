@@ -67,10 +67,31 @@ playbooks:
             22: "rancher answered the install script request with an http error - the registration token may be wrong or expired"
             60: "the node does not trust rancher's certificate - set insecure=true to use insecureNodeCommand, or install the CA on the node"
 
+          # THE DISK IS GROWN BEFORE THE NODE JOINS. THE VM TEMPLATES SHIP A SMALL
+          # LVM LAYOUT (vg0 ON A 15.5G PARTITION: root 5.5G, var 6G) AND A CLONE
+          # WITH A BIGGER DISK LEAVES THE REST UNPARTITIONED. sthings.baseos.setup
+          # GROWS IT - BUT A CALLER THAT LISTS ONLY THIS PLAYBOOK REPLACES THAT
+          # DEFAULT, AND RANCHER PULLS ITS IMAGES INTO /var: THE FIRST JOIN ON A
+          # 50G PROXMOX VM WENT INTO DiskPressure AND EVICTED cattle-cluster-agent
+          # 29 TIMES. SAME ROLE AND SIZING AS sthings.baseos.setup; var TAKES WHAT
+          # IS LEFT. THE ROLE ONLY ACTS WHEN THE PARTITION OR THE VG HAS FREE
+          # SPACE, SO A RE-RUN IS A NO-OP UNLESS THE DISK WAS ENLARGED IN BETWEEN.
+          # IT EXPECTS LVs root, home AND var ON A KVM OR VMWARE GUEST - SET false
+          # ON ANY OTHER HOST.
+          manage_filesystem: true
+          lvm_root_sizing: "35%"
+          lvm_home_sizing: "15%"
+
         pre_tasks:
           - name: Include vars
             ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
             when: path_to_vars_file is defined
+
+        # ROLES RUN AFTER pre_tasks AND BEFORE tasks, SO A vars FILE CAN STILL
+        # SWITCH IT OFF AND THE DISK IS GROWN BEFORE THE AGENT PULLS ANYTHING.
+        roles:
+          - role: sthings.rke.manage_filesystem
+            when: manage_filesystem | bool
 
         tasks:
           - name: Select registration command

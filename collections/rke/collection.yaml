@@ -29,3 +29,9 @@ requirements: |
     - src: https://github.com/stuttgart-things/download-install-binary.git
       scm: git
       version: 2026.07.15
+    # rancher_register GROWS THE NODE'S LVM LAYOUT BEFORE IT JOINS. SAME ROLE AND
+    # PIN AS sthings.baseos.setup, WHICH A CALLER LISTING ONLY rancher_register
+    # DOES NOT RUN.
+    - src: https://github.com/stuttgart-things/manage-filesystem.git
+      scm: git
+      version: 2026.13.04
