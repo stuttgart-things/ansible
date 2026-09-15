@@ -82,6 +82,36 @@ playbooks:
           lvm_root_sizing: "35%"
           lvm_home_sizing: "15%"
 
+          # OPTIONAL: PUBLISH THIS NODE'S KUBECONFIG TO VAULT ONCE IT HAS JOINED.
+          #
+          # FOR A CLUSTER BUILT WITHOUT A CNI (k3s flannel-backend: none, rke2
+          # cni: none). RANCHER'S PROXY RUNS THROUGH cattle-cluster-agent, WHICH
+          # IS AN ORDINARY POD - WITHOUT A CNI IT NEVER STARTS, SO NOTHING CAN
+          # REACH THE CLUSTER THROUGH RANCHER TO INSTALL ONE. THE WAY IN IS THE
+          # API SERVER DIRECTLY: THIS WRITES THE NODE'S OWN ADMIN KUBECONFIG,
+          # 127.0.0.1 REPLACED BY THE NODE ADDRESS, RAW UNDER
+          # <secret_path_kubeconfig>/data/<cluster_name> (KEY kubeconfig) - THE
+          # PATH A crossplane-configurations ClusterAccess READS, WHICH THEN LETS A
+          # Cni XR INSTALL CILIUM.
+          #
+          # ONLY ON A CONTROL-PLANE NODE: A WORKER HAS NO ADMIN KUBECONFIG. THE
+          # FILE APPEARS WHEN RANCHER STARTS THE DISTRIBUTION, WHICH IS AFTER THE
+          # AGENT REGISTERED - HENCE THE WAIT. THE KUBECONFIG CARRIES A CLUSTER-ADMIN
+          # CLIENT KEY, SO EVERY TASK TOUCHING IT IS no_log.
+          #
+          # VAULT CREDENTIALS COME FROM THE ENVIRONMENT (VAULT_ADDR, VAULT_ROLE_ID,
+          # VAULT_SECRET_ID) - FROM AN AnsibleRun THAT IS ITS vaultSecretName, SAME
+          # AS upload_kubeconfig_vault. THE AppRole NEEDS WRITE ON THE MOUNT.
+          rancher_upload_kubeconfig: false
+          rancher_kubeconfig_path: /etc/rancher/k3s/k3s.yaml   # rke2: /etc/rancher/rke2/rke2.yaml
+          rancher_kubeconfig_wait_timeout: 900
+          rancher_kubeconfig_api_port: 6443
+          secret_path_kubeconfig: kubeconfigs
+          # cluster_name: my-cluster                          # REQUIRED with rancher_upload_kubeconfig
+          rancher_kubeconfig_vault_addr: "{{ lookup('env', 'VAULT_ADDR') }}"
+          rancher_kubeconfig_vault_role_id: "{{ lookup('env', 'VAULT_ROLE_ID') }}"
+          rancher_kubeconfig_vault_secret_id: "{{ lookup('env', 'VAULT_SECRET_ID') }}"
+
         pre_tasks:
           - name: Include vars
             ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
@@ -119,6 +149,27 @@ playbooks:
                 rancher_node_worker must be true - a node without a role cannot
                 join the cluster.
               success_msg: "Node roles selected"
+
+          # CHECKED UP FRONT, NOT AFTER THE JOIN: A MISSING cluster_name OR VAULT
+          # CREDENTIAL WOULD OTHERWISE ONLY SURFACE AFTER THE NODE HAS JOINED AND
+          # THE WAIT FOR ITS KUBECONFIG HAS RUN - A HALF-DONE RUN INSTEAD OF A
+          # CLEAN FAILURE. ONLY LENGTHS ARE TESTED, SO NO VALUE IS PRINTED.
+          - name: Assert the kubeconfig upload is configured
+            ansible.builtin.assert:
+              that:
+                - cluster_name | default('', true) | trim | length > 0
+                - rancher_kubeconfig_vault_addr | default('', true) | length > 0
+                - rancher_kubeconfig_vault_role_id | default('', true) | length > 0
+                - rancher_kubeconfig_vault_secret_id | default('', true) | length > 0
+                - rancher_node_controlplane | bool
+              fail_msg: >-
+                rancher_upload_kubeconfig needs cluster_name (the Vault path and
+                the ClusterAccess clusterName), VAULT_ADDR / VAULT_ROLE_ID /
+                VAULT_SECRET_ID in the environment (the AnsibleRun's
+                vaultSecretName), and a control-plane node - a worker has no admin
+                kubeconfig to publish.
+              success_msg: "Kubeconfig upload configured"
+            when: rancher_upload_kubeconfig | bool
 
           - name: Build role flags
             ansible.builtin.set_fact:
@@ -210,3 +261,65 @@ playbooks:
             delay: "{{ rancher_agent_wait_delay | int }}"
             changed_when: false
             when: _rancher_register is changed
+
+          # SEE rancher_upload_kubeconfig IN vars. RUNS ON A RE-RUN TOO, SO AN
+          # AnsibleRun WITH A NEW runID REPUBLISHES THE KUBECONFIG - E.G. AFTER
+          # THE NODE CAME BACK WITH A DIFFERENT DHCP ADDRESS.
+          - name: Publish the node kubeconfig to vault
+            when: rancher_upload_kubeconfig | bool
+            block:
+              - name: Wait for the distribution to write its admin kubeconfig
+                ansible.builtin.wait_for:
+                  path: "{{ rancher_kubeconfig_path }}"
+                  timeout: "{{ rancher_kubeconfig_wait_timeout | int }}"
+
+              - name: Wait for the API server to listen
+                ansible.builtin.wait_for:
+                  host: 127.0.0.1
+                  port: "{{ rancher_kubeconfig_api_port | int }}"
+                  timeout: "{{ rancher_kubeconfig_wait_timeout | int }}"
+
+              - name: Read the admin kubeconfig
+                ansible.builtin.slurp:
+                  src: "{{ rancher_kubeconfig_path }}"
+                register: _rancher_kubeconfig_raw
+                no_log: true
+
+              # THE DISTRIBUTION POINTS ITS KUBECONFIG AT 127.0.0.1, WHICH IS
+              # USELESS FROM ANYWHERE ELSE. THE ADDRESS RANCHER REGISTERED THE
+              # NODE WITH WINS; OTHERWISE THE DEFAULT ROUTE'S.
+              - name: Point the kubeconfig at the node address
+                ansible.builtin.set_fact:
+                  _rancher_kubeconfig: >-
+                    {{
+                      _rancher_kubeconfig_raw.content | b64decode
+                      | regex_replace('https://127\.0\.0\.1:',
+                          'https://' ~ (rancher_node_address | default(ansible_default_ipv4.address, true)) ~ ':')
+                    }}
+                no_log: true
+
+              # become: false IS REQUIRED - THE PLAY BECOMES ROOT, AND A
+              # DELEGATED TASK WOULD TRY sudo INSIDE THE ANSIBLE RUNNER, WHICH HAS
+              # NONE. STORED RAW, NOT BASE64: provider-kubeconfig HANDS THE VALUE
+              # STRAIGHT TO clientcmd WITHOUT DECODING.
+              - name: Write the kubeconfig to vault
+                community.hashi_vault.vault_write:
+                  auth_method: approle
+                  url: "{{ rancher_kubeconfig_vault_addr }}"
+                  role_id: "{{ rancher_kubeconfig_vault_role_id }}"
+                  secret_id: "{{ rancher_kubeconfig_vault_secret_id }}"
+                  validate_certs: false
+                  path: "{{ secret_path_kubeconfig }}/data/{{ cluster_name }}"
+                  data:
+                    data:
+                      kubeconfig: "{{ _rancher_kubeconfig }}"
+                delegate_to: localhost
+                become: false
+                no_log: true
+
+              - name: Report the published kubeconfig
+                ansible.builtin.debug:
+                  msg: >-
+                    Published the admin kubeconfig of {{ inventory_hostname }} to
+                    {{ rancher_kubeconfig_vault_addr }} at
+                    {{ secret_path_kubeconfig }}/data/{{ cluster_name }} (key kubeconfig).
