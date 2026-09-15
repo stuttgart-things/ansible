@@ -136,7 +136,7 @@ jobs:
       contents: read
       id-token: write
       attestations: write
-    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-ansible-collection.yaml@c039039cefc6e15b42bcc6b98d5b525423e2c36c # main
+    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-ansible-collection.yaml@6c30aebec6599918de7ae33a83f4f54bbad5c2d4 # main
     with:
       runs-on: ubuntu-latest
       environment-name: k8s
