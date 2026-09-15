@@ -56,7 +56,11 @@ playbooks:
           rancher_register_no_log: true
 
           # WITH set -o pipefail A FAILED DOWNLOAD SURFACES AS curl'S EXIT CODE,
-          # WHICH IS ENOUGH TO NAME THE CAUSE WITHOUT PRINTING THE COMMAND.
+          # WHICH IS ENOUGH TO NAME THE CAUSE WITHOUT PRINTING THE COMMAND. THE
+          # FALLBACK IS A VAR AND NOT AN INLINE LITERAL BECAUSE A STRING WRAPPED
+          # ACROSS LINES INSIDE THE >- MESSAGE BELOW WOULD KEEP ITS NEWLINE AND
+          # INDENTATION: YAML FOLDS ONLY LINES AT THE BLOCK'S OWN INDENT.
+          rancher_register_rc_fallback: "the install script itself failed; check the rancher-system-agent install output on the node"
           rancher_register_rc_hints:
             6: "curl could not resolve the rancher host"
             7: "curl could not connect to the rancher host"
@@ -166,9 +170,7 @@ playbooks:
                   msg: >-
                     Registration on {{ inventory_hostname }} failed with
                     rc={{ _rancher_register.rc | default('unknown') }} -
-                    {{ rancher_register_rc_hints[_rancher_register.rc | default(0)]
-                       | default('the install script itself failed; check the rancher-system-agent
-                                  install output on the node') }}.
+                    {{ rancher_register_rc_hints[_rancher_register.rc | default(0)] | default(rancher_register_rc_fallback) }}.
                     The command is not shown because it carries the cluster
                     registration token; rancher_register_no_log=false prints it
                     (token included) if the exit code is not enough.
