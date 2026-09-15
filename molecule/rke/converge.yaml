@@ -22,3 +22,6 @@
 
 - name: Syntax check k3s node configuration
   ansible.builtin.import_playbook: sthings.rke.k3s
+
+- name: Syntax check rancher node registration
+  ansible.builtin.import_playbook: sthings.rke.rancher_register

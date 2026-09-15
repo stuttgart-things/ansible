@@ -39,6 +39,12 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `sthings.rke.k3s` | Deploy single-node K3s cluster (default k8s v1.36.1) with Cilium, ingress-nginx (v4.14.1), cert-manager (v1.19.1), and LB IP pool |
 | `sthings.rke.k3s_cluster` | Deploy single-node K3s cluster (minimal, fetches kubeconfig) |
 
+### Rancher
+
+| Playbook | Description |
+|----------|-------------|
+| `sthings.rke.rancher_register` | Join a host to an existing Rancher custom cluster by running Rancher's node-registration command |
+
 ## KEY VARIABLES
 
 ### RKE2 Variables
@@ -109,6 +115,44 @@ Build the tar from a node that already runs Cilium with
 | `token_description` | `admin token` | Token description |
 | `token_ttl` | `0` | Token TTL (0 = never expires) |
 | `path_to_kubeconfig` | - | Path to kubeconfig (required) |
+
+### Rancher Node Registration Variables
+
+`rancher_register` runs the node-registration command Rancher renders for a
+custom cluster (`provisioning.cattle.io/v1` cluster without `machinePools`). The
+command is **read from the environment**, not from a vars file and not from a
+playbook parameter: it embeds the cluster registration token, and handed in as a
+variable that token would travel as a PipelineRun parameter and stay readable
+there. The caller is an `AnsibleRun` XR from
+[stuttgart-things/crossplane-configurations](https://github.com/stuttgart-things/crossplane-configurations),
+whose `extraEnvSecretName` turns the keys of a Kubernetes secret into env vars of
+the same name in the ansible step — same pattern as `upload_kubeconfig_vault`
+with `VAULT_ROLE_ID`/`VAULT_SECRET_ID`.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `nodeCommand` | `$nodeCommand` | Registration command, from the env var of the same name |
+| `insecureNodeCommand` | `$insecureNodeCommand` | `--insecure` variant, from the env var of the same name |
+| `insecure` | `false` | Switches between `nodeCommand` and `insecureNodeCommand` |
+| `rancher_node_etcd` | `true` | Append `--etcd` |
+| `rancher_node_controlplane` | `true` | Append `--controlplane` |
+| `rancher_node_worker` | `true` | Append `--worker` |
+| `rancher_node_name` | - | Optional `--node-name` |
+| `rancher_node_address` | - | Optional `--address`, for multi-NIC hosts |
+| `rancher_register_force` | `false` | Register again on an already joined node |
+| `rancher_agent_service` | `rancher-system-agent` | Service used as the idempotency guard |
+| `rancher_agent_config_path` | `/etc/rancher/agent/config.yaml` | Second idempotency guard |
+| `rancher_agent_wait_retries` | `30` | Retries waiting for the agent to become active |
+| `rancher_agent_wait_delay` | `5` | Seconds between those retries |
+| `rancher_register_no_log` | `true` | Keeps the token off the log; a failed registration still reports its exit code and likely cause, so `false` is rarely needed |
+| `rancher_register_rc_hints` | curl codes | Exit code → cause, used to explain a failure without printing the command |
+
+Rancher does not ship the role flags with the command, so they are appended from
+the variables above — all three default to `true`, which is an all-in-one node.
+The command installs the `rancher-system-agent`; a run against a host that
+already has it skips registration, so repeated runs (the `AnsibleRun` is
+repeatable by design via `runID`) are a no-op unless `rancher_register_force` is
+set.
 
 ## USAGE
 
@@ -271,6 +315,36 @@ ansible-playbook sthings.rke.rke2_workflow \
 -i rke2 \
 -e path_to_vars_file=/path/to/custom-vars \
 -vv
+```
+
+</details>
+
+<details><summary>JOIN A NODE TO A RANCHER CUSTOM CLUSTER</summary>
+
+```bash
+# THE COMMAND COMES FROM RANCHER (CLUSTER > REGISTRATION) AND CARRIES THE
+# CLUSTER REGISTRATION TOKEN - PASS IT THROUGH THE ENVIRONMENT, NOT AS -e
+export nodeCommand="curl -fL https://rancher.example.com/system-agent-install.sh | sudo sh -s - --server https://rancher.example.com --label 'cattle.io/os=linux' --token <token> --ca-checksum <checksum>"
+
+cat <<EOF > rancher-nodes
+[all]
+10.100.136.151
+EOF
+
+# ALL-IN-ONE NODE (etcd + controlplane + worker ARE THE DEFAULTS)
+ansible-playbook sthings.rke.rancher_register -i rancher-nodes -vv
+
+# WORKER ONLY, PINNED TO ONE NIC
+ansible-playbook sthings.rke.rancher_register \
+-i rancher-nodes \
+-e rancher_node_etcd=false \
+-e rancher_node_controlplane=false \
+-e rancher_node_address=10.100.136.151 \
+-vv
+
+# UNTRUSTED RANCHER CERTIFICATE - USES $insecureNodeCommand INSTEAD
+export insecureNodeCommand="curl --insecure -fL https://rancher.example.com/system-agent-install.sh | sudo sh -s - --server https://rancher.example.com --label 'cattle.io/os=linux' --token <token> --ca-checksum <checksum>"
+ansible-playbook sthings.rke.rancher_register -i rancher-nodes -e insecure=true -vv
 ```
 
 </details>
