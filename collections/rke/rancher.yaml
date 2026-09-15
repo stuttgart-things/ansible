@@ -1,0 +1,152 @@
+---
+playbooks:
+  - name: rancher_register
+    play: | #pragma: allowlist secret
+      ---
+      # JOINS A HOST TO AN EXISTING RANCHER CUSTOM CLUSTER
+      # (provisioning.cattle.io/v1 CLUSTER WITHOUT machinePools) BY RUNNING THE
+      # NODE-REGISTRATION COMMAND RANCHER RENDERS FOR THAT CLUSTER. THE COMMAND
+      # IS EXECUTED AS DELIVERED - IT IS NOT VENDORED OR REBUILT HERE, SO A
+      # CHANGE IN RANCHER'S INSTALL SCRIPT NEEDS NO CHANGE IN THIS PLAYBOOK.
+      - hosts: all
+        gather_facts: true
+        become: true
+
+        vars:
+          # THE REGISTRATION COMMAND EMBEDS THE CLUSTER REGISTRATION TOKEN, SO IT
+          # IS READ FROM THE ENVIRONMENT - NOT FROM A VARS FILE AND NOT FROM A
+          # PLAYBOOK PARAMETER. THE CALLER IS AN AnsibleRun XR
+          # (stuttgart-things/crossplane-configurations) WHOSE extraEnvSecretName
+          # TURNS THE KEYS OF A KUBERNETES SECRET INTO ENV VARS OF THE SAME NAME
+          # IN THE ANSIBLE STEP. HANDED IN AS A VAR THE TOKEN WOULD TRAVEL AS A
+          # PipelineRun PARAMETER AND STAY READABLE THERE. SAME PATTERN AS
+          # upload_kubeconfig_vault WITH VAULT_ROLE_ID/VAULT_SECRET_ID.
+          nodeCommand: "{{ lookup('env', 'nodeCommand') }}"
+          insecureNodeCommand: "{{ lookup('env', 'insecureNodeCommand') }}"
+
+          # SWITCHES BETWEEN THE TWO COMMANDS ABOVE. true PICKS THE --insecure
+          # VARIANT, FOR A RANCHER SERVING A CERTIFICATE THE NODE DOES NOT TRUST.
+          insecure: false
+
+          # RANCHER DOES NOT SHIP THE ROLE FLAGS WITH THE COMMAND - THEY ARE
+          # APPENDED HERE. ALL THREE DEFAULT TO true, WHICH IS AN ALL-IN-ONE NODE.
+          rancher_node_etcd: true
+          rancher_node_controlplane: true
+          rancher_node_worker: true
+
+          # OPTIONAL. rancher_node_address PINS THE ADDRESS RANCHER REGISTERS THE
+          # NODE WITH, WHICH MATTERS ON MULTI-NIC HOSTS WHERE THE AGENT WOULD
+          # OTHERWISE PICK THE WRONG INTERFACE.
+          # rancher_node_name: node-1
+          # rancher_node_address: 192.168.10.11
+
+          # THE COMMAND INSTALLS THE rancher-system-agent. A SECOND RUN AGAINST AN
+          # ALREADY-JOINED NODE MUST NOT REGISTER IT AGAIN - THE AnsibleRun IS
+          # REPEATABLE BY DESIGN (runID), SO THIS PATH IS REALLY TAKEN.
+          rancher_register_force: false
+          rancher_agent_service: rancher-system-agent
+          rancher_agent_config_path: /etc/rancher/agent/config.yaml
+          rancher_agent_wait_retries: 30
+          rancher_agent_wait_delay: 5
+
+          # THE REGISTRATION TASK IS no_log BECAUSE THE COMMAND LINE CONTAINS THE
+          # TOKEN. FLIP TO false ONLY TO DEBUG A FAILING REGISTRATION.
+          rancher_register_no_log: true
+
+        pre_tasks:
+          - name: Include vars
+            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
+            when: path_to_vars_file is defined
+
+        tasks:
+          - name: Select registration command
+            ansible.builtin.set_fact:
+              _rancher_node_command: "{{ insecureNodeCommand if insecure | bool else nodeCommand }}"
+            no_log: "{{ rancher_register_no_log | bool }}"
+
+          - name: Assert a registration command was handed in
+            ansible.builtin.assert:
+              that:
+                - _rancher_node_command | default('', true) | trim | length > 0
+              fail_msg: >-
+                No registration command in the environment. Export
+                {{ 'insecureNodeCommand' if insecure | bool else 'nodeCommand' }}
+                for the ansible run - via extraEnvSecretName when called from an
+                AnsibleRun XR.
+              success_msg: "Registration command present"
+
+          - name: Assert at least one node role is enabled
+            ansible.builtin.assert:
+              that:
+                - (rancher_node_etcd | bool) or (rancher_node_controlplane | bool) or (rancher_node_worker | bool)
+              fail_msg: >-
+                At least one of rancher_node_etcd, rancher_node_controlplane,
+                rancher_node_worker must be true - a node without a role cannot
+                join the cluster.
+              success_msg: "Node roles selected"
+
+          - name: Build role flags
+            ansible.builtin.set_fact:
+              _rancher_role_flags: >-
+                {{
+                  (
+                    (['--etcd'] if rancher_node_etcd | bool else [])
+                    + (['--controlplane'] if rancher_node_controlplane | bool else [])
+                    + (['--worker'] if rancher_node_worker | bool else [])
+                    + (['--node-name ' ~ rancher_node_name] if rancher_node_name is defined else [])
+                    + (['--address ' ~ rancher_node_address] if rancher_node_address is defined else [])
+                  ) | join(' ')
+                }}
+
+          # IDEMPOTENCY GUARD: EITHER SIGN OF AN INSTALLED AGENT COUNTS AS
+          # REGISTERED, BECAUSE NEITHER ALONE HOLDS FOR EVERY AGENT VERSION - THE
+          # CONFIG PATH HAS MOVED, AND service_facts ONLY SEES THE UNIT ONCE IT IS
+          # INSTALLED. A HALF-INSTALLED AGENT IS THEREFORE READ AS REGISTERED;
+          # rancher_register_force IS THE WAY OUT OF THAT.
+          - name: Check for the rancher-system-agent config
+            ansible.builtin.stat:
+              path: "{{ rancher_agent_config_path }}"
+            register: _rancher_agent_config
+
+          - name: Gather service facts
+            ansible.builtin.service_facts:
+
+          - name: Determine whether the node is already registered
+            ansible.builtin.set_fact:
+              _rancher_already_registered: >-
+                {{
+                  _rancher_agent_config.stat.exists
+                  or (rancher_agent_service ~ '.service') in (ansible_facts.services | default({}))
+                }}
+
+          - name: Report an already registered node
+            ansible.builtin.debug:
+              msg: >-
+                {{ inventory_hostname }} already runs the {{ rancher_agent_service }} -
+                skipping registration. Set rancher_register_force=true to register again.
+            when:
+              - _rancher_already_registered | bool
+              - not rancher_register_force | bool
+
+          - name: Register node against rancher
+            ansible.builtin.shell: "{{ _rancher_node_command }} {{ _rancher_role_flags }}"
+            args:
+              executable: /bin/bash
+            register: _rancher_register
+            changed_when: _rancher_register.rc == 0
+            no_log: "{{ rancher_register_no_log | bool }}"
+            when: (not _rancher_already_registered | bool) or (rancher_register_force | bool)
+
+          # THE COMMAND RETURNS AS SOON AS THE AGENT IS INSTALLED, NOT WHEN IT
+          # HAS COME UP - SO A RUN THAT ONLY LOOKS AT THE COMMAND'S RC REPORTS A
+          # JOINED NODE THAT NEVER REACHES RANCHER. systemctl is-active IS USED
+          # OVER service_facts HERE BECAUSE ITS OUTPUT (activating, failed,
+          # inactive) SURVIVES INTO THE FAILURE MESSAGE.
+          - name: Wait for the rancher-system-agent to run
+            ansible.builtin.command: "systemctl is-active {{ rancher_agent_service }}"
+            register: _rancher_agent_state
+            until: _rancher_agent_state.stdout | trim == 'active'
+            retries: "{{ rancher_agent_wait_retries | int }}"
+            delay: "{{ rancher_agent_wait_delay | int }}"
+            changed_when: false
+            when: _rancher_register is changed
