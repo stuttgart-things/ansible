@@ -50,8 +50,18 @@ playbooks:
           rancher_agent_wait_delay: 5
 
           # THE REGISTRATION TASK IS no_log BECAUSE THE COMMAND LINE CONTAINS THE
-          # TOKEN. FLIP TO false ONLY TO DEBUG A FAILING REGISTRATION.
+          # TOKEN. A FAILURE STILL NAMES ITS EXIT CODE AND LIKELY CAUSE (SEE THE
+          # rescue BELOW), SO FLIP THIS ONLY WHEN THAT IS NOT ENOUGH - THE TOKEN
+          # IS THEN IN THE LOG.
           rancher_register_no_log: true
+
+          # WITH set -o pipefail A FAILED DOWNLOAD SURFACES AS curl'S EXIT CODE,
+          # WHICH IS ENOUGH TO NAME THE CAUSE WITHOUT PRINTING THE COMMAND.
+          rancher_register_rc_hints:
+            6: "curl could not resolve the rancher host"
+            7: "curl could not connect to the rancher host"
+            22: "rancher answered the install script request with an http error - the registration token may be wrong or expired"
+            60: "the node does not trust rancher's certificate - set insecure=true to use insecureNodeCommand, or install the CA on the node"
 
         pre_tasks:
           - name: Include vars
@@ -93,8 +103,8 @@ playbooks:
                     (['--etcd'] if rancher_node_etcd | bool else [])
                     + (['--controlplane'] if rancher_node_controlplane | bool else [])
                     + (['--worker'] if rancher_node_worker | bool else [])
-                    + (['--node-name ' ~ rancher_node_name] if rancher_node_name is defined else [])
-                    + (['--address ' ~ rancher_node_address] if rancher_node_address is defined else [])
+                    + (['--node-name ' ~ rancher_node_name] if rancher_node_name | default('', true) | trim | length > 0 else [])
+                    + (['--address ' ~ rancher_node_address] if rancher_node_address | default('', true) | trim | length > 0 else [])
                   ) | join(' ')
                 }}
 
@@ -128,20 +138,47 @@ playbooks:
               - _rancher_already_registered | bool
               - not rancher_register_force | bool
 
+          # set -o pipefail IS LOAD-BEARING: THE COMMAND IS A PIPELINE
+          # (curl ... | sh -s - ...), AND WITHOUT IT THE EXIT STATUS IS sh'S -
+          # WHICH EXITS 0 ON THE EMPTY STDIN A FAILED DOWNLOAD LEAVES BEHIND. A
+          # BROKEN DOWNLOAD WOULD REPORT SUCCESS HERE AND ONLY SURFACE MINUTES
+          # LATER IN THE WAIT BELOW, AS A COMPLAINT ABOUT THE AGENT INSTEAD OF
+          # ABOUT THE DOWNLOAD. executable: /bin/bash IS WHAT MAKES IT VALID.
           - name: Register node against rancher
-            ansible.builtin.shell: "{{ _rancher_node_command }} {{ _rancher_role_flags }}"
-            args:
-              executable: /bin/bash
-            register: _rancher_register
-            changed_when: _rancher_register.rc == 0
-            no_log: "{{ rancher_register_no_log | bool }}"
             when: (not _rancher_already_registered | bool) or (rancher_register_force | bool)
+            block:
+              - name: Run the registration command
+                ansible.builtin.shell: "set -o pipefail && {{ _rancher_node_command }} {{ _rancher_role_flags }}"
+                args:
+                  executable: /bin/bash
+                register: _rancher_register
+                changed_when: _rancher_register.rc == 0
+                no_log: "{{ rancher_register_no_log | bool }}"
+
+            # THE TASK ABOVE IS no_log, SO A FAILURE OTHERWISE READS "non-zero
+            # return code" AND NOTHING ELSE - AND THE ONLY WAY OUT WOULD BE A
+            # SECOND RUN WITH THE TOKEN VISIBLE IN THE LOG. THE EXIT CODE IS NOT
+            # SECRET, SO TRANSLATE IT INSTEAD. no_log IS DELIBERATELY NOT SET
+            # HERE: IT WOULD HIDE THE VERY MESSAGE THIS RESCUE EXISTS TO PRINT.
+            rescue:
+              - name: Report the failed registration without echoing the command
+                ansible.builtin.fail:
+                  msg: >-
+                    Registration on {{ inventory_hostname }} failed with
+                    rc={{ _rancher_register.rc | default('unknown') }} -
+                    {{ rancher_register_rc_hints[_rancher_register.rc | default(0)]
+                       | default('the install script itself failed; check the rancher-system-agent
+                                  install output on the node') }}.
+                    The command is not shown because it carries the cluster
+                    registration token; rancher_register_no_log=false prints it
+                    (token included) if the exit code is not enough.
 
           # THE COMMAND RETURNS AS SOON AS THE AGENT IS INSTALLED, NOT WHEN IT
-          # HAS COME UP - SO A RUN THAT ONLY LOOKS AT THE COMMAND'S RC REPORTS A
-          # JOINED NODE THAT NEVER REACHES RANCHER. systemctl is-active IS USED
-          # OVER service_facts HERE BECAUSE ITS OUTPUT (activating, failed,
-          # inactive) SURVIVES INTO THE FAILURE MESSAGE.
+          # HAS COME UP - SO A RUN THAT ONLY LOOKS AT THE COMMAND'S RC REPORTS AN
+          # AGENT THAT NEVER STARTED. THIS PROVES THE LOCAL AGENT IS ACTIVE, NOT
+          # THAT RANCHER HAS ACCEPTED THE NODE - THE CLUSTER IS STILL WHERE THAT
+          # IS CHECKED. systemctl is-active IS USED OVER service_facts BECAUSE ITS
+          # OUTPUT (activating, failed, inactive) SURVIVES INTO THE FAILURE MESSAGE.
           - name: Wait for the rancher-system-agent to run
             ansible.builtin.command: "systemctl is-active {{ rancher_agent_service }}"
             register: _rancher_agent_state

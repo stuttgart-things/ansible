@@ -144,7 +144,8 @@ with `VAULT_ROLE_ID`/`VAULT_SECRET_ID`.
 | `rancher_agent_config_path` | `/etc/rancher/agent/config.yaml` | Second idempotency guard |
 | `rancher_agent_wait_retries` | `30` | Retries waiting for the agent to become active |
 | `rancher_agent_wait_delay` | `5` | Seconds between those retries |
-| `rancher_register_no_log` | `true` | Keeps the token off the log; set `false` only to debug |
+| `rancher_register_no_log` | `true` | Keeps the token off the log; a failed registration still reports its exit code and likely cause, so `false` is rarely needed |
+| `rancher_register_rc_hints` | curl codes | Exit code → cause, used to explain a failure without printing the command |
 
 Rancher does not ship the role flags with the command, so they are appended from
 the variables above — all three default to `true`, which is an all-in-one node.
