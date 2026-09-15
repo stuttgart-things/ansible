@@ -19,6 +19,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | configure-rke-node | 2025.12.13 | Node configuration |
 | install-requirements | 2026.04.13 | Prerequisites installation |
 | download-install-binary | 2025.03.27 | Binary download utilities |
+| manage-filesystem | 2026.13.04 | Grows the LVM layout to the disk before `rancher_register` joins a node |
 
 ## PLAYBOOKS
 
@@ -146,6 +147,9 @@ with `VAULT_ROLE_ID`/`VAULT_SECRET_ID`.
 | `rancher_agent_wait_delay` | `5` | Seconds between those retries |
 | `rancher_register_no_log` | `true` | Keeps the token off the log; a failed registration still reports its exit code and likely cause, so `false` is rarely needed |
 | `rancher_register_rc_hints` | curl codes | Exit code → cause, used to explain a failure without printing the command |
+| `manage_filesystem` | `true` | Grow the node's LVM layout to its disk before joining (role `manage-filesystem`) |
+| `lvm_root_sizing` | `35%` | Share of the PV for LV `root` |
+| `lvm_home_sizing` | `15%` | Share of the PV for LV `home`; LV `var` takes the rest |
 
 Rancher does not ship the role flags with the command, so they are appended from
 the variables above — all three default to `true`, which is an all-in-one node.
@@ -153,6 +157,19 @@ The command installs the `rancher-system-agent`; a run against a host that
 already has it skips registration, so repeated runs (the `AnsibleRun` is
 repeatable by design via `runID`) are a no-op unless `rancher_register_force` is
 set.
+
+Before registering, the playbook grows the node's disk with the same
+`manage-filesystem` role and sizing `sthings.baseos.setup` uses. The VM
+templates ship a small LVM layout (a 15.5G partition with a 6G `/var`), and a
+clone onto a bigger disk leaves the rest unpartitioned until something grows it.
+A VM Configuration runs `sthings.baseos.setup` by default, but a `playbooks` list
+naming only `sthings.rke.rancher_register` replaces that default — and Rancher
+pulls its images into `/var`. The first join on a 50G Proxmox VM did exactly
+that, went into `DiskPressure` and had `cattle-cluster-agent` evicted 29 times.
+The role only acts when the partition or the volume group has free space, so a
+re-run is a no-op unless the disk was enlarged in between. It expects LVs
+`root`, `home` and `var` on a KVM or VMware guest; set `manage_filesystem=false`
+on any other host.
 
 ## USAGE
 
