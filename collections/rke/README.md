@@ -150,6 +150,13 @@ with `VAULT_ROLE_ID`/`VAULT_SECRET_ID`.
 | `manage_filesystem` | `true` | Grow the node's LVM layout to its disk before joining (role `manage-filesystem`) |
 | `lvm_root_sizing` | `35%` | Share of the PV for LV `root` |
 | `lvm_home_sizing` | `15%` | Share of the PV for LV `home`; LV `var` takes the rest |
+| `rancher_upload_kubeconfig` | `false` | After the join, publish the node's admin kubeconfig to Vault (see below) |
+| `cluster_name` | - | **Required** with `rancher_upload_kubeconfig`: Vault path `<secret_path_kubeconfig>/data/<cluster_name>` and the `ClusterAccess` `clusterName` |
+| `secret_path_kubeconfig` | `kubeconfigs` | KV v2 mount the kubeconfig is written to |
+| `rancher_kubeconfig_path` | `/etc/rancher/k3s/k3s.yaml` | The distribution's admin kubeconfig; rke2: `/etc/rancher/rke2/rke2.yaml` |
+| `rancher_kubeconfig_wait_timeout` | `900` | Seconds to wait for that file and for the API server port |
+| `rancher_kubeconfig_api_port` | `6443` | API server port waited on |
+| `rancher_kubeconfig_vault_addr` / `_role_id` / `_secret_id` | `$VAULT_ADDR` / `$VAULT_ROLE_ID` / `$VAULT_SECRET_ID` | AppRole with write on the mount — from an `AnsibleRun`, its `vaultSecretName` |
 
 Rancher does not ship the role flags with the command, so they are appended from
 the variables above — all three default to `true`, which is an all-in-one node.
@@ -170,6 +177,35 @@ The role only acts when the partition or the volume group has free space, so a
 re-run is a no-op unless the disk was enlarged in between. It expects LVs
 `root`, `home` and `var` on a KVM or VMware guest; set `manage_filesystem=false`
 on any other host.
+
+#### Publishing the node kubeconfig (`rancher_upload_kubeconfig`)
+
+For a cluster built **without a CNI** (k3s `flannel-backend: none`, rke2
+`cni: none`). Rancher's proxy runs through `cattle-cluster-agent`, an ordinary pod,
+so until a CNI runs nothing can reach the cluster through Rancher — including
+whatever would install the CNI. The way in is the API server directly: with
+`rancher_upload_kubeconfig: true` the play waits for the distribution's admin
+kubeconfig and the API server port, points the kubeconfig at the node address
+(`rancher_node_address`, else the default route's) instead of `127.0.0.1`, and
+writes it **raw** to `<secret_path_kubeconfig>/data/<cluster_name>` under key
+`kubeconfig`. That is the path a crossplane-configurations `ClusterAccess` reads,
+after which a `Cni` XR installs Cilium through the emitted `{cluster_name}-helm`
+ClusterProviderConfig.
+
+- Control-plane nodes only — a worker has no admin kubeconfig; the play asserts
+  `rancher_node_controlplane` up front, together with `cluster_name` and the Vault
+  credentials, so a misconfiguration fails before the node joins.
+- Vault credentials come from `VAULT_ADDR` / `VAULT_ROLE_ID` / `VAULT_SECRET_ID`
+  (an `AnsibleRun`'s `vaultSecretName`); the AppRole needs write on the mount.
+- The kubeconfig carries a cluster-admin client key: every task handling it is
+  `no_log`. The Vault write is delegated to the controller with `become: false`.
+- A re-run republishes, so an `AnsibleRun` with a new `runID` refreshes the entry —
+  e.g. after the node came back on a different DHCP address.
+
+```bash
+ansible-playbook sthings.rke.rancher_register -i rancher-nodes \
+  -e rancher_upload_kubeconfig=true -e cluster_name=my-cluster
+```
 
 ## USAGE
 
