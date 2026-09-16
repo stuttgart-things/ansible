@@ -406,6 +406,19 @@ playbooks:
             - bootstrap/flux-init/examples/environment-config.yaml
             - bootstrap/flux-apps/examples/environment-config.yaml
 
+          # EnvironmentConfigs that belong to ONE environment, from the same
+          # crossplane-configurations examples — set in the machinery cluster's
+          # exec vars, empty here. First user: the Vault policy mapping rancher-
+          # mode ClusterStacks derive their token policies from
+          # (bootstrap/cluster/examples/environment-config-vault-<env>.yaml,
+          # crossplane-configurations#454). It names Vault policies of one
+          # specific Vault, so a list shared by every machinery cluster would put
+          # LabUL's mapping onto a LabDA builder.
+          #
+          # ADDITIVE on purpose: exec vars are extra vars, and setting one of the
+          # lists above there would REPLACE it and silently drop flux-defaults.
+          extra_environment_config_manifests: []
+
           # Cluster-scoped RBAC that a Configuration documents as a PRECONDITION
           # but cannot ship — a package installs CRDs and Compositions, never
           # ClusterRoleBindings. Pulled from the repo rather than inlined so the
@@ -965,7 +978,8 @@ playbooks:
             become_user: "{{ ansible_user }}"
             loop: >-
               {{ environment_config_manifests
-                 + (platform_environment_config_manifests if platform_enabled | bool else []) }}
+                 + (platform_environment_config_manifests if platform_enabled | bool else [])
+                 + extra_environment_config_manifests }}
 
           # Same fetch-and-apply shape as the EnvironmentConfigs above, kept a
           # separate task because it is gated differently: these are cluster-
@@ -1689,6 +1703,19 @@ playbooks:
             - bootstrap/flux-init/examples/environment-config.yaml
             - bootstrap/flux-apps/examples/environment-config.yaml
 
+          # EnvironmentConfigs that belong to ONE environment, from the same
+          # crossplane-configurations examples — set in the machinery cluster's
+          # exec vars, empty here. First user: the Vault policy mapping rancher-
+          # mode ClusterStacks derive their token policies from
+          # (bootstrap/cluster/examples/environment-config-vault-<env>.yaml,
+          # crossplane-configurations#454). It names Vault policies of one
+          # specific Vault, so a list shared by every machinery cluster would put
+          # LabUL's mapping onto a LabDA builder.
+          #
+          # ADDITIVE on purpose: exec vars are extra vars, and setting one of the
+          # lists above there would REPLACE it and silently drop flux-defaults.
+          extra_environment_config_manifests: []
+
           # Cluster-scoped RBAC that a Configuration documents as a PRECONDITION
           # but cannot ship — a package installs CRDs and Compositions, never
           # ClusterRoleBindings. Pulled from the repo rather than inlined so the
@@ -2169,7 +2196,8 @@ playbooks:
               -f {{ crossplane_configurations_raw }}/{{ crossplane_configurations_ref }}/{{ item }}
             loop: >-
               {{ environment_config_manifests
-                 + (platform_environment_config_manifests if platform_enabled | bool else []) }}
+                 + (platform_environment_config_manifests if platform_enabled | bool else [])
+                 + extra_environment_config_manifests }}
 
           # Same fetch-and-apply shape as the EnvironmentConfigs above, kept a
           # separate task because it is gated differently: these are cluster-
