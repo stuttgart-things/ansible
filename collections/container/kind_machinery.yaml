@@ -751,8 +751,15 @@ playbooks:
             # app-secret-profile >=v0.1.0, installed by the package manager; the
             # AppSecretProfiles themselves and the cluster-vault-<env> keys
             # (mounts/shared/reservedEntries/writer) are cluster preconditions.
+            # v0.11.4 (2026-09-17) — v0.11.0/v0.11.1 carried a CEL rule whose
+            # estimated cost exceeded the API server budget, so the ClusterStack
+            # CRD could not be updated and, after a Crossplane restart, NO
+            # ClusterStack reconciled (crossplane-configurations#473). v0.11.2 and
+            # v0.11.3 were published before that fix merged and are v0.11.1
+            # content — never pin those. Also brings xplane-cluster 0.18.0
+            # (per-owner secret store/entry annotations, #472).
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.4"
 
           configuration_packages: >-
             {{ machinery_packages
@@ -2159,8 +2166,15 @@ playbooks:
             # app-secret-profile >=v0.1.0, installed by the package manager; the
             # AppSecretProfiles themselves and the cluster-vault-<env> keys
             # (mounts/shared/reservedEntries/writer) are cluster preconditions.
+            # v0.11.4 (2026-09-17) — v0.11.0/v0.11.1 carried a CEL rule whose
+            # estimated cost exceeded the API server budget, so the ClusterStack
+            # CRD could not be updated and, after a Crossplane restart, NO
+            # ClusterStack reconciled (crossplane-configurations#473). v0.11.2 and
+            # v0.11.3 were published before that fix merged and are v0.11.1
+            # content — never pin those. Also brings xplane-cluster 0.18.0
+            # (per-owner secret store/entry annotations, #472).
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.4"
 
           configuration_packages: >-
             {{ machinery_packages
