@@ -332,6 +332,11 @@ playbooks:
           # `namespace` is where the SECRET is written; the CR itself always
           # goes next to the GitRepository, because the operator resolves
           # sourceRef only within the CR's own namespace.
+          # Per-cluster additions to standalone_sops_secrets below, set in exec
+          # vars. ADDITIVE on purpose: exec vars are extra vars, and setting
+          # standalone_sops_secrets there would replace the list and silently
+          # drop the `vault` source every derive task depends on.
+          extra_standalone_sops_secrets: []
           standalone_sops_secrets:
             - name: vault
               namespace: tekton-ci
@@ -471,6 +476,32 @@ playbooks:
               package: "ghcr.io/stuttgart-things/provider-clusterbook-xpkg:v0.4.2"
               provider_crd: clusterproviderconfigs.clusterbook.stuttgart-things.com
 
+          # --- provider-vault -------------------------------------------------
+          # Native Vault managed resources for the crossplane-configurations
+          # vault/vault-k8s-auth and vault/vault-secrets Configurations
+          # (crossplane-configurations#452, #454, #464). Off by default; a
+          # machinery cluster opts in through its exec vars.
+          #
+          # The Provider CR MUST be named `upbound-provider-vault`: that is the
+          # name the package manager derives from those Configurations'
+          # dependsOn, and a second name for the same package is a duplicate
+          # Lock node that freezes the resolver for every package on the cluster.
+          vault_provider_enabled: false
+          vault_provider_name: upbound-provider-vault
+          vault_provider_package: "xpkg.upbound.io/upbound/provider-vault:v4.0.4"
+          # One ClusterProviderConfig per entry. The credential is derived from
+          # a sops-git AppRole Secret in {{ tekton_ci_namespace }} (keys
+          # VAULT_ROLE_ID / VAULT_SECRET_ID, same as `vault` above) — no second
+          # copy to distribute or rotate. `tfvars_secret` additionally projects
+          # the same AppRole as terraform.tfvars for OpenTofu Workspaces
+          # (bootstrap/vault-auth reads default/vault-approle).
+          #   - name: vault
+          #     address: https://vault.infra.sthings-vsphere.labul.sva.de
+          #     source_secret: vault-k8sauth-bootstrap      # needs an entry in extra_standalone_sops_secrets
+          #     credentials_secret: vault-provider-creds
+          #     tfvars_secret: {name: vault-approle, namespace: default}
+          vault_provider_configs: []
+
           # Machinery half: VM + image builders. Each pulls its provider via
           # dependsOn. `provider_crd` is the CRD that provider registers — waited
           # on so the capability charts can reference it; omit when the package
@@ -500,7 +531,7 @@ playbooks:
             # ansible-run-<env> hat, waehlt sie ueber spec.ansible.environmentConfig.
             # crossplane-configurations#347.
             - name: vspherevm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.9.2"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.11.0"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
             # v0.10.0 added spec.vm.cloneDatastore, v0.11.0 its `none` opt-out
             # sentinel. NOT optional for LabUL: both base-OS templates keep their
@@ -527,7 +558,7 @@ playbooks:
             # dieselbe Korrektur wie vspherevm v0.9.2 oben, gleiche Begruendung.
             # crossplane-configurations#347.
             - name: proxmoxvm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.13.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.15.0"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             # Tekton-backed Packer builder — only provider-kubernetes, already up.
             - name: packer-build
@@ -643,8 +674,12 @@ playbooks:
             #               signal anyway.
             #               Floors unchanged (vault-pki-secrets >=v0.1.5), so this
             #               is NOT the "raised floor" case above.
+            # v0.7.2 (2026-09-16) — caught up with u26-kind3 (#3013). New since
+            # v0.6.2: bound ServiceAccounts for additional Vault auths,
+            # clusterSecrets (the cluster's own observability entry), cni.gatewayAPI
+            # passthrough, no generated webhook token. Floors unchanged.
             - name: platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.6.2"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.7.2"
             # flux-apps is NOT listed. platform has declared the dependency
             # since v0.3.1, so an explicit pin would put the same ghcr path
             # under both a short CR name (this play) and a dependsOn — which is
@@ -699,8 +734,19 @@ playbooks:
             # nothing left to wait for. Forty minutes to find
             # (crossplane-configurations#336, argoplatform-test2 2026-08-19).
             # The XRD now also rejects the two known crossed pairs at apply time.
+            # v0.10.0 (2026-09-16) — caught up with u26-kind3, which ran it while
+            # this pin still said v0.6.1: a re-run would have DOWNGRADED the
+            # package and shrunk the XRD back (no rancher provisioner, profiles,
+            # secretStores), stuttgart-things/stuttgart-things#3013. New since
+            # v0.6.1: the rancher-rke2 provisioner (RancherCluster child, join
+            # stage), the Vault kubeconfig lifecycle Workspace, profiles and
+            # derived Argo CD labels, and a load-environment step reading the
+            # cluster-vault-<env> EnvironmentConfig. RAISED FLOOR: dependsOn
+            # rancher-cluster >=v0.8.1 and function-environment-configs — fresh
+            # clusters resolve it, an older installed rancher-cluster has to be
+            # patched forward by hand (see the note at the top).
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.6.1"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.10.0"
 
           configuration_packages: >-
             {{ machinery_packages
@@ -944,6 +990,85 @@ playbooks:
               label: "{{ item.name }}"
             when: platform_enabled | bool
 
+          # ---- provider-vault (vault_provider_enabled) ----------------------
+          - name: Install provider-vault
+            ansible.builtin.shell: |
+              cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+              apiVersion: pkg.crossplane.io/v1
+              kind: Provider
+              metadata:
+                name: {{ vault_provider_name }}
+              spec:
+                package: {{ vault_provider_package }}
+              EOF
+              kubectl wait provider.pkg.crossplane.io/{{ vault_provider_name }} --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
+              for i in $(seq 1 60); do kubectl get crd clusterproviderconfigs.vault.m.upbound.io --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && break; sleep 5; done
+              kubectl wait --for=condition=established crd/clusterproviderconfigs.vault.m.upbound.io --timeout=180s --kubeconfig {{ kubeconfig }}
+            become_user: "{{ ansible_user }}"
+            when: vault_provider_enabled | bool
+
+          # Credentials for provider-vault, reshaped from the sops-git AppRole
+          # Secret — never typed, never printed. Server-side apply: a client-side
+          # `kubectl apply` would copy the whole Secret, credentials included,
+          # into the last-applied-configuration annotation. The JSON is built
+          # with printf; role and secret IDs are UUIDs, nothing to escape.
+          - name: Derive provider-vault credentials from sops-git AppRole Secrets
+            ansible.builtin.shell: |
+              set -euo pipefail
+              {% for c in vault_provider_configs %}
+              for i in $(seq 1 60); do
+                V=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
+                  -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' --kubeconfig {{ kubeconfig }} 2>/dev/null || true)
+                [ -n "$V" ] && break
+                sleep 5
+              done
+              ROLE_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
+                -o jsonpath='{.data.{{ vault_approle_role_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
+              SECRET_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
+                -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
+              test -n "$ROLE_ID"
+              test -n "$SECRET_ID"
+              printf '{"auth_login":{"path":"auth/approle/login","parameters":{"role_id":"%s","secret_id":"%s"}}}' "$ROLE_ID" "$SECRET_ID" \
+                | kubectl -n crossplane-system create secret generic {{ c.credentials_secret }} \
+                    --from-file=credentials=/dev/stdin --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --server-side --force-conflicts --field-manager=kind-machinery --kubeconfig {{ kubeconfig }} -f -
+              {% if c.tfvars_secret is defined %}
+              printf 'vault_role_id = "%s"\nvault_secret_id = "%s"\n' "$ROLE_ID" "$SECRET_ID" \
+                | kubectl -n {{ c.tfvars_secret.namespace }} create secret generic {{ c.tfvars_secret.name }} \
+                    --from-file=terraform.tfvars=/dev/stdin --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --server-side --force-conflicts --field-manager=kind-machinery --kubeconfig {{ kubeconfig }} -f -
+              {% endif %}
+              {% endfor %}
+            become_user: "{{ ansible_user }}"
+            when: vault_provider_enabled | bool and vault_provider_configs | length > 0
+            no_log: true    # never echo the AppRole credentials
+
+          - name: Apply provider-vault ClusterProviderConfigs
+            ansible.builtin.shell: |
+              cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+              {% for c in vault_provider_configs %}
+              ---
+              apiVersion: vault.m.upbound.io/v1beta1
+              kind: ClusterProviderConfig
+              metadata:
+                name: {{ c.name }}
+              spec:
+                address: {{ c.address }}
+                skip_tls_verify: {{ c.skip_tls_verify | default(true) | bool | lower }}
+                # Without it the provider mints a child token through
+                # auth/token/create, which none of the narrow AppRoles may do.
+                skip_child_token: true
+                credentials:
+                  source: Secret
+                  secretRef:
+                    name: {{ c.credentials_secret }}
+                    namespace: crossplane-system
+                    key: credentials
+              {% endfor %}
+              EOF
+            become_user: "{{ ansible_user }}"
+            when: vault_provider_enabled | bool and vault_provider_configs | length > 0
+
           - name: Install Configuration packages
             ansible.builtin.shell: |
               cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
@@ -1048,7 +1173,7 @@ playbooks:
                 --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
                 | kubectl apply --kubeconfig {{ kubeconfig }} -f -
             become_user: "{{ ansible_user }}"
-            loop: "{{ standalone_sops_secrets | map(attribute='namespace') | unique | list }}"
+            loop: "{{ (standalone_sops_secrets + extra_standalone_sops_secrets) | map(attribute='namespace') | unique | list }}"
             when: capabilities_enabled | bool and sops_git_secrets_enabled | bool
 
           - name: Deploy sops-git-secrets (GitRepository + read-only credential)
@@ -1059,7 +1184,7 @@ playbooks:
               --set git.url={{ stuttgart_things_repo }}
               --set git.auth.username={{ sops_git_username }}
               --set git.auth.password={{ sops_git_token }}
-              {% for s in standalone_sops_secrets %}--set secrets[{{ loop.index0 }}].name={{ s.name }} --set secrets[{{ loop.index0 }}].namespace={{ s.namespace }} {% endfor %}
+              {% for s in (standalone_sops_secrets + extra_standalone_sops_secrets) %}--set secrets[{{ loop.index0 }}].name={{ s.name }} --set secrets[{{ loop.index0 }}].namespace={{ s.namespace }} {% endfor %}
               --set ageKeySecret.name={{ sops_age_key_ref_name }}
               -n crossplane-system --create-namespace
               --kubeconfig {{ kubeconfig }}
@@ -1634,6 +1759,11 @@ playbooks:
           # `namespace` is where the SECRET is written; the CR itself always
           # goes next to the GitRepository, because the operator resolves
           # sourceRef only within the CR's own namespace.
+          # Per-cluster additions to standalone_sops_secrets below, set in exec
+          # vars. ADDITIVE on purpose: exec vars are extra vars, and setting
+          # standalone_sops_secrets there would replace the list and silently
+          # drop the `vault` source every derive task depends on.
+          extra_standalone_sops_secrets: []
           standalone_sops_secrets:
             - name: vault
               namespace: tekton-ci
@@ -1768,6 +1898,32 @@ playbooks:
               package: "ghcr.io/stuttgart-things/provider-clusterbook-xpkg:v0.4.2"
               provider_crd: clusterproviderconfigs.clusterbook.stuttgart-things.com
 
+          # --- provider-vault -------------------------------------------------
+          # Native Vault managed resources for the crossplane-configurations
+          # vault/vault-k8s-auth and vault/vault-secrets Configurations
+          # (crossplane-configurations#452, #454, #464). Off by default; a
+          # machinery cluster opts in through its exec vars.
+          #
+          # The Provider CR MUST be named `upbound-provider-vault`: that is the
+          # name the package manager derives from those Configurations'
+          # dependsOn, and a second name for the same package is a duplicate
+          # Lock node that freezes the resolver for every package on the cluster.
+          vault_provider_enabled: false
+          vault_provider_name: upbound-provider-vault
+          vault_provider_package: "xpkg.upbound.io/upbound/provider-vault:v4.0.4"
+          # One ClusterProviderConfig per entry. The credential is derived from
+          # a sops-git AppRole Secret in {{ tekton_ci_namespace }} (keys
+          # VAULT_ROLE_ID / VAULT_SECRET_ID, same as `vault` above) — no second
+          # copy to distribute or rotate. `tfvars_secret` additionally projects
+          # the same AppRole as terraform.tfvars for OpenTofu Workspaces
+          # (bootstrap/vault-auth reads default/vault-approle).
+          #   - name: vault
+          #     address: https://vault.infra.sthings-vsphere.labul.sva.de
+          #     source_secret: vault-k8sauth-bootstrap      # needs an entry in extra_standalone_sops_secrets
+          #     credentials_secret: vault-provider-creds
+          #     tfvars_secret: {name: vault-approle, namespace: default}
+          vault_provider_configs: []
+
           machinery_packages:
             # v0.9.1 reicht den environmentConfig an den Ansible-Teil durch statt
             # Defaults zu raten — derselbe Fix wie bei proxmoxvm v0.12.1 unten,
@@ -1792,7 +1948,7 @@ playbooks:
             # ansible-run-<env> hat, waehlt sie ueber spec.ansible.environmentConfig.
             # crossplane-configurations#347.
             - name: vspherevm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.9.2"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.11.0"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
             # v0.10.0 added spec.vm.cloneDatastore, v0.11.0 its `none` opt-out
             # sentinel. NOT optional for LabUL: both base-OS templates keep their
@@ -1819,7 +1975,7 @@ playbooks:
             # dieselbe Korrektur wie vspherevm v0.9.2 oben, gleiche Begruendung.
             # crossplane-configurations#347.
             - name: proxmoxvm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.13.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.15.0"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             - name: packer-build
               package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.4.1"
@@ -1920,8 +2076,12 @@ playbooks:
             #               signal anyway.
             #               Floors unchanged (vault-pki-secrets >=v0.1.5), so this
             #               is NOT the "raised floor" case above.
+            # v0.7.2 (2026-09-16) — caught up with u26-kind3 (#3013). New since
+            # v0.6.2: bound ServiceAccounts for additional Vault auths,
+            # clusterSecrets (the cluster's own observability entry), cni.gatewayAPI
+            # passthrough, no generated webhook token. Floors unchanged.
             - name: platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.6.2"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.7.2"
             # flux-apps is NOT listed. platform has declared the dependency
             # since v0.3.1, so an explicit pin would put the same ghcr path
             # under both a short CR name (this play) and a dependsOn — which is
@@ -1976,8 +2136,19 @@ playbooks:
             # nothing left to wait for. Forty minutes to find
             # (crossplane-configurations#336, argoplatform-test2 2026-08-19).
             # The XRD now also rejects the two known crossed pairs at apply time.
+            # v0.10.0 (2026-09-16) — caught up with u26-kind3, which ran it while
+            # this pin still said v0.6.1: a re-run would have DOWNGRADED the
+            # package and shrunk the XRD back (no rancher provisioner, profiles,
+            # secretStores), stuttgart-things/stuttgart-things#3013. New since
+            # v0.6.1: the rancher-rke2 provisioner (RancherCluster child, join
+            # stage), the Vault kubeconfig lifecycle Workspace, profiles and
+            # derived Argo CD labels, and a load-environment step reading the
+            # cluster-vault-<env> EnvironmentConfig. RAISED FLOOR: dependsOn
+            # rancher-cluster >=v0.8.1 and function-environment-configs — fresh
+            # clusters resolve it, an older installed rancher-cluster has to be
+            # patched forward by hand (see the note at the top).
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.6.1"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.10.0"
 
           configuration_packages: >-
             {{ machinery_packages
@@ -2165,6 +2336,82 @@ playbooks:
               label: "{{ item.name }}"
             when: platform_enabled | bool
 
+          # ---- provider-vault (vault_provider_enabled) ----------------------
+          - name: Install provider-vault
+            ansible.builtin.shell: |
+              cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+              apiVersion: pkg.crossplane.io/v1
+              kind: Provider
+              metadata:
+                name: {{ vault_provider_name }}
+              spec:
+                package: {{ vault_provider_package }}
+              EOF
+              kubectl wait provider.pkg.crossplane.io/{{ vault_provider_name }} --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
+              for i in $(seq 1 60); do kubectl get crd clusterproviderconfigs.vault.m.upbound.io --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && break; sleep 5; done
+              kubectl wait --for=condition=established crd/clusterproviderconfigs.vault.m.upbound.io --timeout=180s --kubeconfig {{ kubeconfig }}
+            when: vault_provider_enabled | bool
+
+          # Credentials for provider-vault, reshaped from the sops-git AppRole
+          # Secret — never typed, never printed. Server-side apply: a client-side
+          # `kubectl apply` would copy the whole Secret, credentials included,
+          # into the last-applied-configuration annotation. The JSON is built
+          # with printf; role and secret IDs are UUIDs, nothing to escape.
+          - name: Derive provider-vault credentials from sops-git AppRole Secrets
+            ansible.builtin.shell: |
+              set -euo pipefail
+              {% for c in vault_provider_configs %}
+              for i in $(seq 1 60); do
+                V=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
+                  -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' --kubeconfig {{ kubeconfig }} 2>/dev/null || true)
+                [ -n "$V" ] && break
+                sleep 5
+              done
+              ROLE_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
+                -o jsonpath='{.data.{{ vault_approle_role_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
+              SECRET_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
+                -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
+              test -n "$ROLE_ID"
+              test -n "$SECRET_ID"
+              printf '{"auth_login":{"path":"auth/approle/login","parameters":{"role_id":"%s","secret_id":"%s"}}}' "$ROLE_ID" "$SECRET_ID" \
+                | kubectl -n crossplane-system create secret generic {{ c.credentials_secret }} \
+                    --from-file=credentials=/dev/stdin --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --server-side --force-conflicts --field-manager=kind-machinery --kubeconfig {{ kubeconfig }} -f -
+              {% if c.tfvars_secret is defined %}
+              printf 'vault_role_id = "%s"\nvault_secret_id = "%s"\n' "$ROLE_ID" "$SECRET_ID" \
+                | kubectl -n {{ c.tfvars_secret.namespace }} create secret generic {{ c.tfvars_secret.name }} \
+                    --from-file=terraform.tfvars=/dev/stdin --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --server-side --force-conflicts --field-manager=kind-machinery --kubeconfig {{ kubeconfig }} -f -
+              {% endif %}
+              {% endfor %}
+            when: vault_provider_enabled | bool and vault_provider_configs | length > 0
+            no_log: true    # never echo the AppRole credentials
+
+          - name: Apply provider-vault ClusterProviderConfigs
+            ansible.builtin.shell: |
+              cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+              {% for c in vault_provider_configs %}
+              ---
+              apiVersion: vault.m.upbound.io/v1beta1
+              kind: ClusterProviderConfig
+              metadata:
+                name: {{ c.name }}
+              spec:
+                address: {{ c.address }}
+                skip_tls_verify: {{ c.skip_tls_verify | default(true) | bool | lower }}
+                # Without it the provider mints a child token through
+                # auth/token/create, which none of the narrow AppRoles may do.
+                skip_child_token: true
+                credentials:
+                  source: Secret
+                  secretRef:
+                    name: {{ c.credentials_secret }}
+                    namespace: crossplane-system
+                    key: credentials
+              {% endfor %}
+              EOF
+            when: vault_provider_enabled | bool and vault_provider_configs | length > 0
+
           - name: Install Configuration packages
             ansible.builtin.shell: |
               cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
@@ -2243,7 +2490,7 @@ playbooks:
               kubectl create namespace {{ item }} \
                 --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
                 | kubectl apply --kubeconfig {{ kubeconfig }} -f -
-            loop: "{{ standalone_sops_secrets | map(attribute='namespace') | unique | list }}"
+            loop: "{{ (standalone_sops_secrets + extra_standalone_sops_secrets) | map(attribute='namespace') | unique | list }}"
             when: capabilities_enabled | bool and sops_git_secrets_enabled | bool
 
           - name: Deploy sops-git-secrets (GitRepository + read-only credential)
@@ -2254,7 +2501,7 @@ playbooks:
               --set git.url={{ stuttgart_things_repo }}
               --set git.auth.username={{ sops_git_username }}
               --set git.auth.password={{ sops_git_token }}
-              {% for s in standalone_sops_secrets %}--set secrets[{{ loop.index0 }}].name={{ s.name }} --set secrets[{{ loop.index0 }}].namespace={{ s.namespace }} {% endfor %}
+              {% for s in (standalone_sops_secrets + extra_standalone_sops_secrets) %}--set secrets[{{ loop.index0 }}].name={{ s.name }} --set secrets[{{ loop.index0 }}].namespace={{ s.namespace }} {% endfor %}
               --set ageKeySecret.name={{ sops_age_key_ref_name }}
               -n crossplane-system --create-namespace
               --kubeconfig {{ kubeconfig }}
