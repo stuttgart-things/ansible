@@ -745,8 +745,14 @@ playbooks:
             # rancher-cluster >=v0.8.1 and function-environment-configs — fresh
             # clusters resolve it, an older installed rancher-cluster has to be
             # patched forward by hand (see the note at the top).
+            # v0.11.0 (2026-09-17) — app secrets from AppSecretProfiles
+            # (crossplane-configurations#464/#470): rancher-mode app profiles
+            # compose VaultSecretSets. NEW dependsOn: vault-secrets >=v0.4.0 and
+            # app-secret-profile >=v0.1.0, installed by the package manager; the
+            # AppSecretProfiles themselves and the cluster-vault-<env> keys
+            # (mounts/shared/reservedEntries/writer) are cluster preconditions.
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.10.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.0"
 
           configuration_packages: >-
             {{ machinery_packages
@@ -2147,8 +2153,14 @@ playbooks:
             # rancher-cluster >=v0.8.1 and function-environment-configs — fresh
             # clusters resolve it, an older installed rancher-cluster has to be
             # patched forward by hand (see the note at the top).
+            # v0.11.0 (2026-09-17) — app secrets from AppSecretProfiles
+            # (crossplane-configurations#464/#470): rancher-mode app profiles
+            # compose VaultSecretSets. NEW dependsOn: vault-secrets >=v0.4.0 and
+            # app-secret-profile >=v0.1.0, installed by the package manager; the
+            # AppSecretProfiles themselves and the cluster-vault-<env> keys
+            # (mounts/shared/reservedEntries/writer) are cluster preconditions.
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.10.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.0"
 
           configuration_packages: >-
             {{ machinery_packages
