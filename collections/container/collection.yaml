@@ -21,7 +21,7 @@ requirements: |
       version: 2026.07.19
     - src: https://github.com/stuttgart-things/install-requirements.git
       scm: git
-      version: 2026.07.30
+      version: 2026.09.17
     - src: https://github.com/stuttgart-things/install-configure-vault.git
       scm: git
       # 2026.09.01 -- install-ca-auth derives the CA filename from the Vault
