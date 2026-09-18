@@ -235,7 +235,7 @@ playbooks:
           # (next to the GitRepository), so that is the only per-CR namespace.
           sops_age_key_ref_name: "{{ '' if sops_global_age_key_enabled | bool else 'sops-age-key' }}"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
-          ansible_chart_version: "0.9.2" # datasource=docker depName=ghcr.io/stuttgart-things/charts/ansible
+          ansible_chart_version: "0.9.3" # datasource=docker depName=ghcr.io/stuttgart-things/charts/ansible
           # The name the ansible chart gives its Configuration — which is the
           # name `crossplane xpkg install` derives from the image ref, NOT the
           # short `ansible-run`. See the adopt task below for why this matters.
@@ -1676,7 +1676,7 @@ playbooks:
           # (next to the GitRepository), so that is the only per-CR namespace.
           sops_age_key_ref_name: "{{ '' if sops_global_age_key_enabled | bool else 'sops-age-key' }}"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
-          ansible_chart_version: "0.9.2" # datasource=docker depName=ghcr.io/stuttgart-things/charts/ansible
+          ansible_chart_version: "0.9.3" # datasource=docker depName=ghcr.io/stuttgart-things/charts/ansible
           # The name the ansible chart gives its Configuration — which is the
           # name `crossplane xpkg install` derives from the image ref, NOT the
           # short `ansible-run`. See the adopt task below for why this matters.
