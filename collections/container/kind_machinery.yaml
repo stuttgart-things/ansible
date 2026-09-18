@@ -295,8 +295,14 @@ playbooks:
             # 2026-08-11 alongside this bump); 0.9.2 was deliberately left in
             # place rather than overwritten, so clusters already on it are
             # unchanged. Found on u26-kind3.
+            # 0.11.0 (2026-09-18) — caught up with u26-kind3, which has run
+            # it since 2026-08-20 (installed by hand). It moves labul to node
+            # ul-pve11 and adds cloudInitDatastore: DD-sthings, which the
+            # proxmoxvm Configuration (>= v0.13.0) reads to keep the cidata
+            # disk off V5010-01-1, where a stop/start leaves the VM unbootable.
+            # A run on 0.10.0 would roll kind3 back to both old values.
             - chart: proxmoxvm
-              version: "0.10.0"
+              version: "0.11.0"
               envs: "{{ proxmox_envs }}"
               credentials_prefix: proxmox-creds
               backend_key: secretStore.backend
@@ -1765,8 +1771,14 @@ playbooks:
             # 2026-08-11 alongside this bump); 0.9.2 was deliberately left in
             # place rather than overwritten, so clusters already on it are
             # unchanged. Found on u26-kind3.
+            # 0.11.0 (2026-09-18) — caught up with u26-kind3, which has run
+            # it since 2026-08-20 (installed by hand). It moves labul to node
+            # ul-pve11 and adds cloudInitDatastore: DD-sthings, which the
+            # proxmoxvm Configuration (>= v0.13.0) reads to keep the cidata
+            # disk off V5010-01-1, where a stop/start leaves the VM unbootable.
+            # A run on 0.10.0 would roll kind3 back to both old values.
             - chart: proxmoxvm
-              version: "0.10.0"
+              version: "0.11.0"
               envs: "{{ proxmox_envs }}"
               credentials_prefix: proxmox-creds
               backend_key: secretStore.backend
