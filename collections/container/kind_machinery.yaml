@@ -501,6 +501,17 @@ playbooks:
           #     credentials_secret: vault-provider-creds
           #     tfvars_secret: {name: vault-approle, namespace: default}
           vault_provider_configs: []
+          # CA bundles the Platform's vaultIssuer chain reads (`caSourceSecret`),
+          # one Secret per Vault, FETCHED from that Vault's PKI instead of copied
+          # by hand (stuttgart-things#3013). A CA certificate is public, so no
+          # sops; fetching it means a rebuilt cluster always gets the current one.
+          # TLS is not verified on this request — the Vault's listener is signed
+          # by the very CA being fetched, which the host does not trust yet.
+          #   - name: vault-pki-source-ca
+          #     namespace: default
+          #     vault_addr: https://vault.infra.sthings-vsphere.labul.sva.de
+          #     pki_mount: pki          # default
+          vault_pki_ca_secrets: []
 
           # Machinery half: VM + image builders. Each pulls its provider via
           # dependsOn. `provider_crd` is the CRD that provider registers — waited
@@ -1084,6 +1095,24 @@ playbooks:
               EOF
             become_user: "{{ ansible_user }}"
             when: vault_provider_enabled | bool and vault_provider_configs | length > 0
+
+          - name: Create the Vault PKI CA bundle Secrets
+            ansible.builtin.shell: |
+              set -euo pipefail
+              ca=$(curl -fsSk --retry 5 --retry-delay 3 "{{ item.vault_addr }}/v1/{{ item.pki_mount | default('pki') }}/ca/pem")
+              printf '%s\n' "$ca" | grep -q 'BEGIN CERTIFICATE' || { echo "no PEM from {{ item.vault_addr }}" >&2; exit 1; }
+              kubectl create namespace {{ item.namespace }} --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+              printf '%s\n' "$ca" | kubectl -n {{ item.namespace }} create secret generic {{ item.name }} \
+                  --from-file=ca.crt=/dev/stdin --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+            args:
+              executable: /bin/bash
+            become_user: "{{ ansible_user }}"
+            loop: "{{ vault_pki_ca_secrets }}"
+            loop_control:
+              label: "{{ item.namespace }}/{{ item.name }}"
+            when: vault_pki_ca_secrets | length > 0
 
           - name: Install Configuration packages
             ansible.builtin.shell: |
@@ -1939,6 +1968,17 @@ playbooks:
           #     credentials_secret: vault-provider-creds
           #     tfvars_secret: {name: vault-approle, namespace: default}
           vault_provider_configs: []
+          # CA bundles the Platform's vaultIssuer chain reads (`caSourceSecret`),
+          # one Secret per Vault, FETCHED from that Vault's PKI instead of copied
+          # by hand (stuttgart-things#3013). A CA certificate is public, so no
+          # sops; fetching it means a rebuilt cluster always gets the current one.
+          # TLS is not verified on this request — the Vault's listener is signed
+          # by the very CA being fetched, which the host does not trust yet.
+          #   - name: vault-pki-source-ca
+          #     namespace: default
+          #     vault_addr: https://vault.infra.sthings-vsphere.labul.sva.de
+          #     pki_mount: pki          # default
+          vault_pki_ca_secrets: []
 
           machinery_packages:
             # v0.9.1 reicht den environmentConfig an den Ansible-Teil durch statt
@@ -2443,6 +2483,23 @@ playbooks:
               {% endfor %}
               EOF
             when: vault_provider_enabled | bool and vault_provider_configs | length > 0
+
+          - name: Create the Vault PKI CA bundle Secrets
+            ansible.builtin.shell: |
+              set -euo pipefail
+              ca=$(curl -fsSk --retry 5 --retry-delay 3 "{{ item.vault_addr }}/v1/{{ item.pki_mount | default('pki') }}/ca/pem")
+              printf '%s\n' "$ca" | grep -q 'BEGIN CERTIFICATE' || { echo "no PEM from {{ item.vault_addr }}" >&2; exit 1; }
+              kubectl create namespace {{ item.namespace }} --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+              printf '%s\n' "$ca" | kubectl -n {{ item.namespace }} create secret generic {{ item.name }} \
+                  --from-file=ca.crt=/dev/stdin --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+            args:
+              executable: /bin/bash
+            loop: "{{ vault_pki_ca_secrets }}"
+            loop_control:
+              label: "{{ item.namespace }}/{{ item.name }}"
+            when: vault_pki_ca_secrets | length > 0
 
           - name: Install Configuration packages
             ansible.builtin.shell: |
