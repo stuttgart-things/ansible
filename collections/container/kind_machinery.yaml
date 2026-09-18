@@ -235,7 +235,7 @@ playbooks:
           # (next to the GitRepository), so that is the only per-CR namespace.
           sops_age_key_ref_name: "{{ '' if sops_global_age_key_enabled | bool else 'sops-age-key' }}"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
-          ansible_chart_version: "0.9.2" # datasource=docker depName=ghcr.io/stuttgart-things/charts/ansible
+          ansible_chart_version: "0.9.3" # datasource=docker depName=ghcr.io/stuttgart-things/charts/ansible
           # The name the ansible chart gives its Configuration — which is the
           # name `crossplane xpkg install` derives from the image ref, NOT the
           # short `ansible-run`. See the adopt task below for why this matters.
@@ -758,8 +758,11 @@ playbooks:
             # v0.11.3 were published before that fix merged and are v0.11.1
             # content — never pin those. Also brings xplane-cluster 0.18.0
             # (per-owner secret store/entry annotations, #472).
+            # v0.11.5 (2026-09-18) — xplane-cluster 0.19.0: tabletennis brings
+            # CloudNativePG, and a profile component without its platform
+            # umbrella fails the render (crossplane-configurations#474).
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.4"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.5"
 
           configuration_packages: >-
             {{ machinery_packages
@@ -1673,7 +1676,7 @@ playbooks:
           # (next to the GitRepository), so that is the only per-CR namespace.
           sops_age_key_ref_name: "{{ '' if sops_global_age_key_enabled | bool else 'sops-age-key' }}"
           charts_oci: "oci://ghcr.io/stuttgart-things/charts"
-          ansible_chart_version: "0.9.2" # datasource=docker depName=ghcr.io/stuttgart-things/charts/ansible
+          ansible_chart_version: "0.9.3" # datasource=docker depName=ghcr.io/stuttgart-things/charts/ansible
           # The name the ansible chart gives its Configuration — which is the
           # name `crossplane xpkg install` derives from the image ref, NOT the
           # short `ansible-run`. See the adopt task below for why this matters.
@@ -2173,8 +2176,11 @@ playbooks:
             # v0.11.3 were published before that fix merged and are v0.11.1
             # content — never pin those. Also brings xplane-cluster 0.18.0
             # (per-owner secret store/entry annotations, #472).
+            # v0.11.5 (2026-09-18) — xplane-cluster 0.19.0: tabletennis brings
+            # CloudNativePG, and a profile component without its platform
+            # umbrella fails the render (crossplane-configurations#474).
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.4"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.5"
 
           configuration_packages: >-
             {{ machinery_packages
