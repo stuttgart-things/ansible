@@ -758,8 +758,11 @@ playbooks:
             # v0.11.3 were published before that fix merged and are v0.11.1
             # content — never pin those. Also brings xplane-cluster 0.18.0
             # (per-owner secret store/entry annotations, #472).
+            # v0.11.5 (2026-09-18) — xplane-cluster 0.19.0: tabletennis brings
+            # CloudNativePG, and a profile component without its platform
+            # umbrella fails the render (crossplane-configurations#474).
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.4"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.5"
 
           configuration_packages: >-
             {{ machinery_packages
@@ -2173,8 +2176,11 @@ playbooks:
             # v0.11.3 were published before that fix merged and are v0.11.1
             # content — never pin those. Also brings xplane-cluster 0.18.0
             # (per-owner secret store/entry annotations, #472).
+            # v0.11.5 (2026-09-18) — xplane-cluster 0.19.0: tabletennis brings
+            # CloudNativePG, and a profile component without its platform
+            # umbrella fails the render (crossplane-configurations#474).
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.4"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.5"
 
           configuration_packages: >-
             {{ machinery_packages
