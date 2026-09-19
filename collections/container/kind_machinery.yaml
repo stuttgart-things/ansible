@@ -1069,7 +1069,7 @@ playbooks:
               # deleted. So: our own name if it exists, else any Configuration with the
               # same source, else ours. u26-kind3, 2026-09-18: cluster-backup,
               # packer-build, packer-release and tofu-run all hit this.
-              # awk reads kubectl's output to the end on purpose: an early `exit`
+              # awk reads the kubectl output to the end on purpose: an early `exit`
               # closes the pipe, kubectl dies of SIGPIPE, and pipefail fails the
               # task (rc 141) whenever the match is not near the end of the list.
               src='{{ item.package | regex_replace(':[^:/]+$', '') }}'
@@ -2501,7 +2501,7 @@ playbooks:
               # deleted. So: our own name if it exists, else any Configuration with the
               # same source, else ours. u26-kind3, 2026-09-18: cluster-backup,
               # packer-build, packer-release and tofu-run all hit this.
-              # awk reads kubectl's output to the end on purpose: an early `exit`
+              # awk reads the kubectl output to the end on purpose: an early `exit`
               # closes the pipe, kubectl dies of SIGPIPE, and pipefail fails the
               # task (rc 141) whenever the match is not near the end of the list.
               src='{{ item.package | regex_replace(':[^:/]+$', '') }}'
