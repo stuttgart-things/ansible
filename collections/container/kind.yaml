@@ -101,10 +101,15 @@ playbooks:
           kind_cluster_name: dev2
           kubeconfig_folder: "/home/{{ ansible_user }}/.kube"
 
+          # Same pin as kind_machinery: every helmfile and kustomization below
+          # is read from this commit of the helm repo, not from main.
+          helm_repo: "git::https://github.com/stuttgart-things/helm.git"
+          helm_repo_ref: "eadb58b8ff903a20de665e21de135636037e5485" # renovate: git-refs stuttgart-things/helm main
+
           kustomize_urls:
-            - https://github.com/stuttgart-things/helm/infra/crds/cilium
-            - https://github.com/stuttgart-things/helm/infra/crds/cert-manager
-            - https://github.com/stuttgart-things/helm/cicd/crds/crossplane
+            - https://github.com/stuttgart-things/helm/infra/crds/cilium?ref={{ helm_repo_ref }}
+            - https://github.com/stuttgart-things/helm/infra/crds/cert-manager?ref={{ helm_repo_ref }}
+            - https://github.com/stuttgart-things/helm/cicd/crds/crossplane?ref={{ helm_repo_ref }}
 
           # Plain manifests to `kubectl apply -f`. Empty by default: the entry
           # that used to live here,
@@ -119,19 +124,19 @@ playbooks:
           manifest_urls: []
 
           helmfile_deployments:
-            - location: "git::https://github.com/stuttgart-things/helm.git@infra/cilium.yaml.gotmpl"
+            - location: "{{ helm_repo }}@infra/cilium.yaml.gotmpl?ref={{ helm_repo_ref }}"
               state: "{{ deploy_cilium | default('present') }}"
               state_values:
                 config: kind
                 clusterName: "{{ kind_cluster_name}}"
                 configureLB: false
 
-            - location: "git::https://github.com/stuttgart-things/helm.git@infra/cert-manager.yaml.gotmpl"
+            - location: "{{ helm_repo }}@infra/cert-manager.yaml.gotmpl?ref={{ helm_repo_ref }}"
               state: "{{ deploy_cert_manager | default('present') }}"
               state_values:
                 installCrds: false
 
-            - location: "git::https://github.com/stuttgart-things/helm.git@cicd/crossplane.yaml.gotmpl"
+            - location: "{{ helm_repo }}@cicd/crossplane.yaml.gotmpl?ref={{ helm_repo_ref }}"
               state: "{{ deploy_crossplane | default('present') }}"
               state_values:
                 version: 2.2.0

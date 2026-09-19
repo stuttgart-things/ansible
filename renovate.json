@@ -125,6 +125,20 @@
       "datasourceTemplate": "docker",
       "packageNameTemplate": "ghcr.io/stuttgart-things/crossplane-configurations/{{{depName}}}",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "HELM REPO COMMIT THE KIND PLAYS READ THEIR HELMFILES AND KUSTOMIZATIONS FROM (helm_repo_ref). A SHA, NOT A TAG: THE HELM REPO'S TAGS STOPPED IN 2025. TRACKS main",
+      "fileMatch": [
+        "^collections/container/kind(_machinery)?\\.yaml$"
+      ],
+      "matchStrings": [
+        "helm_repo_ref:\\s*\"(?<currentDigest>[0-9a-f]{40})\"\\s*#\\s*renovate: git-refs stuttgart-things/helm main"
+      ],
+      "datasourceTemplate": "git-refs",
+      "depNameTemplate": "stuttgart-things/helm",
+      "packageNameTemplate": "https://github.com/stuttgart-things/helm",
+      "currentValueTemplate": "main"
     }
   ],
   "customDatasources": {
