@@ -208,6 +208,12 @@ playbooks:
 
           # --- component refs / versions ---
           helm_repo: "git::https://github.com/stuttgart-things/helm.git"
+          # Commit of the helm repo every helmfile below is read from. Pinned,
+          # not main: main moves, and a run then picks up whatever it carries
+          # that day. On u26-kind3 (2026-09-18) an unpinned run bumped three
+          # providers mid-run and put provider-opentofu into the Lock twice.
+          # Renovate bumps it (git-refs manager in renovate.json).
+          helm_repo_ref: "eadb58b8ff903a20de665e21de135636037e5485" # renovate: git-refs stuttgart-things/helm main
           # From v0.9.0 the ref alone selects the image: semantic-release now
           # writes config/manager/kustomization.yaml before it tags, so the
           # tagged tree pins its own release. Verified by building the bundle:
@@ -807,11 +813,11 @@ playbooks:
           # `location` plus optional `state_values` (a dict rendered into
           # --state-values-set). A plain string still works.
           pre_crossplane_helmfiles:
-            - location: "{{ helm_repo }}@infra/openebs.yaml.gotmpl"
+            - location: "{{ helm_repo }}@infra/openebs.yaml.gotmpl?ref={{ helm_repo_ref }}"
               state_values:
                 openebs_loki_enabled: "{{ openebs_loki_enabled | lower }}"
                 openebs_alloy_enabled: "{{ openebs_alloy_enabled | lower }}"
-            - location: "{{ helm_repo }}@cicd/tekton.yaml.gotmpl"
+            - location: "{{ helm_repo }}@cicd/tekton.yaml.gotmpl?ref={{ helm_repo_ref }}"
 
         tasks:
           # ================================================================
@@ -963,19 +969,19 @@ playbooks:
           # ================================================================
           - name: Crossplane core
             ansible.builtin.shell: |
-              helmfile apply -f {{ helm_repo }}@cicd/crossplane.yaml.gotmpl --kubeconfig {{ kubeconfig }}
+              helmfile apply -f {{ helm_repo }}@cicd/crossplane.yaml.gotmpl?ref={{ helm_repo_ref }} --kubeconfig {{ kubeconfig }}
               kubectl -n crossplane-system rollout status deploy/crossplane --timeout=180s --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
 
           - name: Crossplane providers (+ RBAC) and wait Healthy
             ansible.builtin.shell: |
-              helmfile apply -f {{ helm_repo }}@cicd/crossplane-providers.yaml.gotmpl --kubeconfig {{ kubeconfig }}
+              helmfile apply -f {{ helm_repo }}@cicd/crossplane-providers.yaml.gotmpl?ref={{ helm_repo_ref }} --kubeconfig {{ kubeconfig }}
               kubectl wait provider.pkg.crossplane.io --all --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
 
           - name: Crossplane functions + configurations and wait Healthy
             ansible.builtin.shell: |
-              helmfile apply -f {{ helm_repo }}@cicd/crossplane-config.yaml.gotmpl --kubeconfig {{ kubeconfig }}
+              helmfile apply -f {{ helm_repo }}@cicd/crossplane-config.yaml.gotmpl?ref={{ helm_repo_ref }} --kubeconfig {{ kubeconfig }}
               kubectl wait configuration.pkg.crossplane.io --all --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
               kubectl wait function.pkg.crossplane.io --all --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
@@ -983,7 +989,7 @@ playbooks:
           - name: Wait for transitive provider-kubernetes CRD, then provider-configs
             ansible.builtin.shell: |
               for i in $(seq 1 60); do kubectl get crd clusterproviderconfigs.kubernetes.m.crossplane.io --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && break; sleep 5; done
-              helmfile apply -f {{ helm_repo }}@cicd/crossplane-provider-configs.yaml.gotmpl --kubeconfig {{ kubeconfig }}
+              helmfile apply -f {{ helm_repo }}@cicd/crossplane-provider-configs.yaml.gotmpl?ref={{ helm_repo_ref }} --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
 
           # ================================================================
@@ -1721,6 +1727,12 @@ playbooks:
           kubeconfig_provider_runtime_config: provider-kubeconfig
 
           helm_repo: "git::https://github.com/stuttgart-things/helm.git"
+          # Commit of the helm repo every helmfile below is read from. Pinned,
+          # not main: main moves, and a run then picks up whatever it carries
+          # that day. On u26-kind3 (2026-09-18) an unpinned run bumped three
+          # providers mid-run and put provider-opentofu into the Lock twice.
+          # Renovate bumps it (git-refs manager in renovate.json).
+          helm_repo_ref: "eadb58b8ff903a20de665e21de135636037e5485" # renovate: git-refs stuttgart-things/helm main
           # From v0.9.0 the ref alone selects the image: semantic-release now
           # writes config/manager/kustomization.yaml before it tags, so the
           # tagged tree pins its own release. Verified by building the bundle:
@@ -2391,11 +2403,11 @@ playbooks:
                 {% if item.state_values is defined %}--state-values-set {% for k, v in item.state_values.items() %}{{ k }}={{ v }}{{ "," if not loop.last }}{% endfor %} \
                 {% endif %}--kubeconfig {{ kubeconfig }}
             loop:
-              - location: "{{ helm_repo }}@infra/openebs.yaml.gotmpl"
+              - location: "{{ helm_repo }}@infra/openebs.yaml.gotmpl?ref={{ helm_repo_ref }}"
                 state_values:
                   openebs_loki_enabled: "{{ openebs_loki_enabled | lower }}"
                   openebs_alloy_enabled: "{{ openebs_alloy_enabled | lower }}"
-              - location: "{{ helm_repo }}@cicd/tekton.yaml.gotmpl"
+              - location: "{{ helm_repo }}@cicd/tekton.yaml.gotmpl?ref={{ helm_repo_ref }}"
             loop_control:
               label: "{{ item.location }}"
 
@@ -2408,24 +2420,24 @@ playbooks:
 
           - name: Crossplane core + rollout
             ansible.builtin.shell: |
-              helmfile apply -f {{ helm_repo }}@cicd/crossplane.yaml.gotmpl --kubeconfig {{ kubeconfig }}
+              helmfile apply -f {{ helm_repo }}@cicd/crossplane.yaml.gotmpl?ref={{ helm_repo_ref }} --kubeconfig {{ kubeconfig }}
               kubectl -n crossplane-system rollout status deploy/crossplane --timeout=180s --kubeconfig {{ kubeconfig }}
 
           - name: Crossplane providers + wait Healthy
             ansible.builtin.shell: |
-              helmfile apply -f {{ helm_repo }}@cicd/crossplane-providers.yaml.gotmpl --kubeconfig {{ kubeconfig }}
+              helmfile apply -f {{ helm_repo }}@cicd/crossplane-providers.yaml.gotmpl?ref={{ helm_repo_ref }} --kubeconfig {{ kubeconfig }}
               kubectl wait provider.pkg.crossplane.io --all --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
 
           - name: Crossplane config (functions+configurations) + wait Healthy
             ansible.builtin.shell: |
-              helmfile apply -f {{ helm_repo }}@cicd/crossplane-config.yaml.gotmpl --kubeconfig {{ kubeconfig }}
+              helmfile apply -f {{ helm_repo }}@cicd/crossplane-config.yaml.gotmpl?ref={{ helm_repo_ref }} --kubeconfig {{ kubeconfig }}
               kubectl wait configuration.pkg.crossplane.io --all --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
               kubectl wait function.pkg.crossplane.io --all --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
 
           - name: Wait for transitive kubernetes.m CRD, then provider-configs
             ansible.builtin.shell: |
               for i in $(seq 1 60); do kubectl get crd clusterproviderconfigs.kubernetes.m.crossplane.io --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && break; sleep 5; done
-              helmfile apply -f {{ helm_repo }}@cicd/crossplane-provider-configs.yaml.gotmpl --kubeconfig {{ kubeconfig }}
+              helmfile apply -f {{ helm_repo }}@cicd/crossplane-provider-configs.yaml.gotmpl?ref={{ helm_repo_ref }} --kubeconfig {{ kubeconfig }}
 
           # Providers with no Configuration to carry them (see provider_packages).
           # Applied before the Configurations so their CRDs are established by
