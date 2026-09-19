@@ -104,7 +104,7 @@ playbooks:
           # Same pin as kind_machinery: every helmfile and kustomization below
           # is read from this commit of the helm repo, not from main.
           helm_repo: "git::https://github.com/stuttgart-things/helm.git"
-          helm_repo_ref: "eadb58b8ff903a20de665e21de135636037e5485" # renovate: git-refs stuttgart-things/helm main
+          helm_repo_ref: "51284621dea45db57526475fd343dd77c43843cd" # renovate: git-refs stuttgart-things/helm main
 
           kustomize_urls:
             - https://github.com/stuttgart-things/helm/infra/crds/cilium?ref={{ helm_repo_ref }}

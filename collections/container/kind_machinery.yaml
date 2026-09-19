@@ -213,7 +213,7 @@ playbooks:
           # that day. On u26-kind3 (2026-09-18) an unpinned run bumped three
           # providers mid-run and put provider-opentofu into the Lock twice.
           # Renovate bumps it (git-refs manager in renovate.json).
-          helm_repo_ref: "eadb58b8ff903a20de665e21de135636037e5485" # renovate: git-refs stuttgart-things/helm main
+          helm_repo_ref: "51284621dea45db57526475fd343dd77c43843cd" # renovate: git-refs stuttgart-things/helm main
           # From v0.9.0 the ref alone selects the image: semantic-release now
           # writes config/manager/kustomization.yaml before it tags, so the
           # tagged tree pins its own release. Verified by building the bundle:
@@ -1732,7 +1732,7 @@ playbooks:
           # that day. On u26-kind3 (2026-09-18) an unpinned run bumped three
           # providers mid-run and put provider-opentofu into the Lock twice.
           # Renovate bumps it (git-refs manager in renovate.json).
-          helm_repo_ref: "eadb58b8ff903a20de665e21de135636037e5485" # renovate: git-refs stuttgart-things/helm main
+          helm_repo_ref: "51284621dea45db57526475fd343dd77c43843cd" # renovate: git-refs stuttgart-things/helm main
           # From v0.9.0 the ref alone selects the image: semantic-release now
           # writes config/manager/kustomization.yaml before it tags, so the
           # tagged tree pins its own release. Verified by building the bundle:
