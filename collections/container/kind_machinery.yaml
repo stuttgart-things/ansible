@@ -1040,68 +1040,6 @@ playbooks:
             become_user: "{{ ansible_user }}"
             when: vault_provider_enabled | bool
 
-          # Credentials for provider-vault, reshaped from the sops-git AppRole
-          # Secret — never typed, never printed. Server-side apply: a client-side
-          # `kubectl apply` would copy the whole Secret, credentials included,
-          # into the last-applied-configuration annotation. The JSON is built
-          # with printf; role and secret IDs are UUIDs, nothing to escape.
-          - name: Derive provider-vault credentials from sops-git AppRole Secrets
-            ansible.builtin.shell: |
-              set -euo pipefail
-              {% for c in vault_provider_configs %}
-              for i in $(seq 1 60); do
-                V=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
-                  -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' --kubeconfig {{ kubeconfig }} 2>/dev/null || true)
-                [ -n "$V" ] && break
-                sleep 5
-              done
-              ROLE_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
-                -o jsonpath='{.data.{{ vault_approle_role_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
-              SECRET_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
-                -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
-              test -n "$ROLE_ID"
-              test -n "$SECRET_ID"
-              printf '{"auth_login":{"path":"auth/approle/login","parameters":{"role_id":"%s","secret_id":"%s"}}}' "$ROLE_ID" "$SECRET_ID" \
-                | kubectl -n crossplane-system create secret generic {{ c.credentials_secret }} \
-                    --from-file=credentials=/dev/stdin --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
-                | kubectl apply --server-side --force-conflicts --field-manager=kind-machinery --kubeconfig {{ kubeconfig }} -f -
-              {% if c.tfvars_secret is defined %}
-              printf 'vault_role_id = "%s"\nvault_secret_id = "%s"\n' "$ROLE_ID" "$SECRET_ID" \
-                | kubectl -n {{ c.tfvars_secret.namespace }} create secret generic {{ c.tfvars_secret.name }} \
-                    --from-file=terraform.tfvars=/dev/stdin --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
-                | kubectl apply --server-side --force-conflicts --field-manager=kind-machinery --kubeconfig {{ kubeconfig }} -f -
-              {% endif %}
-              {% endfor %}
-            become_user: "{{ ansible_user }}"
-            when: vault_provider_enabled | bool and vault_provider_configs | length > 0
-            no_log: true    # never echo the AppRole credentials
-
-          - name: Apply provider-vault ClusterProviderConfigs
-            ansible.builtin.shell: |
-              cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
-              {% for c in vault_provider_configs %}
-              ---
-              apiVersion: vault.m.upbound.io/v1beta1
-              kind: ClusterProviderConfig
-              metadata:
-                name: {{ c.name }}
-              spec:
-                address: {{ c.address }}
-                skip_tls_verify: {{ c.skip_tls_verify | default(true) | bool | lower }}
-                # Without it the provider mints a child token through
-                # auth/token/create, which none of the narrow AppRoles may do.
-                skip_child_token: true
-                credentials:
-                  source: Secret
-                  secretRef:
-                    name: {{ c.credentials_secret }}
-                    namespace: crossplane-system
-                    key: credentials
-              {% endfor %}
-              EOF
-            become_user: "{{ ansible_user }}"
-            when: vault_provider_enabled | bool and vault_provider_configs | length > 0
-
           - name: Create the Vault PKI CA bundle Secrets
             ansible.builtin.shell: |
               set -euo pipefail
@@ -1242,6 +1180,73 @@ playbooks:
             become_user: "{{ ansible_user }}"
             when: capabilities_enabled | bool and sops_git_secrets_enabled | bool
             no_log: true    # never echo the git token
+
+          # Runs AFTER sops-git-secrets on purpose: the AppRole source Secrets
+          # it reads from tekton-ci are written by that chart. Placed before it,
+          # the task waited 5 min for Secrets that did not exist yet and failed —
+          # it only ever passed where they had been created by hand (u26-kind3,
+          # 2026-09-18).
+          # Credentials for provider-vault, reshaped from the sops-git AppRole
+          # Secret — never typed, never printed. Server-side apply: a client-side
+          # `kubectl apply` would copy the whole Secret, credentials included,
+          # into the last-applied-configuration annotation. The JSON is built
+          # with printf; role and secret IDs are UUIDs, nothing to escape.
+          - name: Derive provider-vault credentials from sops-git AppRole Secrets
+            ansible.builtin.shell: |
+              set -euo pipefail
+              {% for c in vault_provider_configs %}
+              for i in $(seq 1 60); do
+                V=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
+                  -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' --kubeconfig {{ kubeconfig }} 2>/dev/null || true)
+                [ -n "$V" ] && break
+                sleep 5
+              done
+              ROLE_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
+                -o jsonpath='{.data.{{ vault_approle_role_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
+              SECRET_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
+                -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
+              test -n "$ROLE_ID"
+              test -n "$SECRET_ID"
+              printf '{"auth_login":{"path":"auth/approle/login","parameters":{"role_id":"%s","secret_id":"%s"}}}' "$ROLE_ID" "$SECRET_ID" \
+                | kubectl -n crossplane-system create secret generic {{ c.credentials_secret }} \
+                    --from-file=credentials=/dev/stdin --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --server-side --force-conflicts --field-manager=kind-machinery --kubeconfig {{ kubeconfig }} -f -
+              {% if c.tfvars_secret is defined %}
+              printf 'vault_role_id = "%s"\nvault_secret_id = "%s"\n' "$ROLE_ID" "$SECRET_ID" \
+                | kubectl -n {{ c.tfvars_secret.namespace }} create secret generic {{ c.tfvars_secret.name }} \
+                    --from-file=terraform.tfvars=/dev/stdin --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --server-side --force-conflicts --field-manager=kind-machinery --kubeconfig {{ kubeconfig }} -f -
+              {% endif %}
+              {% endfor %}
+            become_user: "{{ ansible_user }}"
+            when: vault_provider_enabled | bool and vault_provider_configs | length > 0
+            no_log: true    # never echo the AppRole credentials
+
+          - name: Apply provider-vault ClusterProviderConfigs
+            ansible.builtin.shell: |
+              cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+              {% for c in vault_provider_configs %}
+              ---
+              apiVersion: vault.m.upbound.io/v1beta1
+              kind: ClusterProviderConfig
+              metadata:
+                name: {{ c.name }}
+              spec:
+                address: {{ c.address }}
+                skip_tls_verify: {{ c.skip_tls_verify | default(true) | bool | lower }}
+                # Without it the provider mints a child token through
+                # auth/token/create, which none of the narrow AppRoles may do.
+                skip_child_token: true
+                credentials:
+                  source: Secret
+                  secretRef:
+                    name: {{ c.credentials_secret }}
+                    namespace: crossplane-system
+                    key: credentials
+              {% endfor %}
+              EOF
+            become_user: "{{ ansible_user }}"
+            when: vault_provider_enabled | bool and vault_provider_configs | length > 0
 
           - name: Deploy per-environment capability charts
             ansible.builtin.command: >
@@ -2436,66 +2441,6 @@ playbooks:
               kubectl wait --for=condition=established crd/clusterproviderconfigs.vault.m.upbound.io --timeout=180s --kubeconfig {{ kubeconfig }}
             when: vault_provider_enabled | bool
 
-          # Credentials for provider-vault, reshaped from the sops-git AppRole
-          # Secret — never typed, never printed. Server-side apply: a client-side
-          # `kubectl apply` would copy the whole Secret, credentials included,
-          # into the last-applied-configuration annotation. The JSON is built
-          # with printf; role and secret IDs are UUIDs, nothing to escape.
-          - name: Derive provider-vault credentials from sops-git AppRole Secrets
-            ansible.builtin.shell: |
-              set -euo pipefail
-              {% for c in vault_provider_configs %}
-              for i in $(seq 1 60); do
-                V=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
-                  -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' --kubeconfig {{ kubeconfig }} 2>/dev/null || true)
-                [ -n "$V" ] && break
-                sleep 5
-              done
-              ROLE_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
-                -o jsonpath='{.data.{{ vault_approle_role_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
-              SECRET_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
-                -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
-              test -n "$ROLE_ID"
-              test -n "$SECRET_ID"
-              printf '{"auth_login":{"path":"auth/approle/login","parameters":{"role_id":"%s","secret_id":"%s"}}}' "$ROLE_ID" "$SECRET_ID" \
-                | kubectl -n crossplane-system create secret generic {{ c.credentials_secret }} \
-                    --from-file=credentials=/dev/stdin --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
-                | kubectl apply --server-side --force-conflicts --field-manager=kind-machinery --kubeconfig {{ kubeconfig }} -f -
-              {% if c.tfvars_secret is defined %}
-              printf 'vault_role_id = "%s"\nvault_secret_id = "%s"\n' "$ROLE_ID" "$SECRET_ID" \
-                | kubectl -n {{ c.tfvars_secret.namespace }} create secret generic {{ c.tfvars_secret.name }} \
-                    --from-file=terraform.tfvars=/dev/stdin --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
-                | kubectl apply --server-side --force-conflicts --field-manager=kind-machinery --kubeconfig {{ kubeconfig }} -f -
-              {% endif %}
-              {% endfor %}
-            when: vault_provider_enabled | bool and vault_provider_configs | length > 0
-            no_log: true    # never echo the AppRole credentials
-
-          - name: Apply provider-vault ClusterProviderConfigs
-            ansible.builtin.shell: |
-              cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
-              {% for c in vault_provider_configs %}
-              ---
-              apiVersion: vault.m.upbound.io/v1beta1
-              kind: ClusterProviderConfig
-              metadata:
-                name: {{ c.name }}
-              spec:
-                address: {{ c.address }}
-                skip_tls_verify: {{ c.skip_tls_verify | default(true) | bool | lower }}
-                # Without it the provider mints a child token through
-                # auth/token/create, which none of the narrow AppRoles may do.
-                skip_child_token: true
-                credentials:
-                  source: Secret
-                  secretRef:
-                    name: {{ c.credentials_secret }}
-                    namespace: crossplane-system
-                    key: credentials
-              {% endfor %}
-              EOF
-            when: vault_provider_enabled | bool and vault_provider_configs | length > 0
-
           - name: Create the Vault PKI CA bundle Secrets
             ansible.builtin.shell: |
               set -euo pipefail
@@ -2608,6 +2553,71 @@ playbooks:
               --kubeconfig {{ kubeconfig }}
             when: capabilities_enabled | bool and sops_git_secrets_enabled | bool
             no_log: true    # never echo the git token
+
+          # Runs AFTER sops-git-secrets on purpose: the AppRole source Secrets
+          # it reads from tekton-ci are written by that chart. Placed before it,
+          # the task waited 5 min for Secrets that did not exist yet and failed —
+          # it only ever passed where they had been created by hand (u26-kind3,
+          # 2026-09-18).
+          # Credentials for provider-vault, reshaped from the sops-git AppRole
+          # Secret — never typed, never printed. Server-side apply: a client-side
+          # `kubectl apply` would copy the whole Secret, credentials included,
+          # into the last-applied-configuration annotation. The JSON is built
+          # with printf; role and secret IDs are UUIDs, nothing to escape.
+          - name: Derive provider-vault credentials from sops-git AppRole Secrets
+            ansible.builtin.shell: |
+              set -euo pipefail
+              {% for c in vault_provider_configs %}
+              for i in $(seq 1 60); do
+                V=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
+                  -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' --kubeconfig {{ kubeconfig }} 2>/dev/null || true)
+                [ -n "$V" ] && break
+                sleep 5
+              done
+              ROLE_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
+                -o jsonpath='{.data.{{ vault_approle_role_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
+              SECRET_ID=$(kubectl -n {{ tekton_ci_namespace }} get secret {{ c.source_secret }} \
+                -o jsonpath='{.data.{{ vault_approle_secret_id_key }}}' --kubeconfig {{ kubeconfig }} | base64 -d)
+              test -n "$ROLE_ID"
+              test -n "$SECRET_ID"
+              printf '{"auth_login":{"path":"auth/approle/login","parameters":{"role_id":"%s","secret_id":"%s"}}}' "$ROLE_ID" "$SECRET_ID" \
+                | kubectl -n crossplane-system create secret generic {{ c.credentials_secret }} \
+                    --from-file=credentials=/dev/stdin --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --server-side --force-conflicts --field-manager=kind-machinery --kubeconfig {{ kubeconfig }} -f -
+              {% if c.tfvars_secret is defined %}
+              printf 'vault_role_id = "%s"\nvault_secret_id = "%s"\n' "$ROLE_ID" "$SECRET_ID" \
+                | kubectl -n {{ c.tfvars_secret.namespace }} create secret generic {{ c.tfvars_secret.name }} \
+                    --from-file=terraform.tfvars=/dev/stdin --dry-run=client -o yaml --kubeconfig {{ kubeconfig }} \
+                | kubectl apply --server-side --force-conflicts --field-manager=kind-machinery --kubeconfig {{ kubeconfig }} -f -
+              {% endif %}
+              {% endfor %}
+            when: vault_provider_enabled | bool and vault_provider_configs | length > 0
+            no_log: true    # never echo the AppRole credentials
+
+          - name: Apply provider-vault ClusterProviderConfigs
+            ansible.builtin.shell: |
+              cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+              {% for c in vault_provider_configs %}
+              ---
+              apiVersion: vault.m.upbound.io/v1beta1
+              kind: ClusterProviderConfig
+              metadata:
+                name: {{ c.name }}
+              spec:
+                address: {{ c.address }}
+                skip_tls_verify: {{ c.skip_tls_verify | default(true) | bool | lower }}
+                # Without it the provider mints a child token through
+                # auth/token/create, which none of the narrow AppRoles may do.
+                skip_child_token: true
+                credentials:
+                  source: Secret
+                  secretRef:
+                    name: {{ c.credentials_secret }}
+                    namespace: crossplane-system
+                    key: credentials
+              {% endfor %}
+              EOF
+            when: vault_provider_enabled | bool and vault_provider_configs | length > 0
 
           - name: Deploy per-environment capability charts
             ansible.builtin.command: >
