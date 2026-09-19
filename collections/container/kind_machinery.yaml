@@ -213,7 +213,14 @@ playbooks:
           # that day. On u26-kind3 (2026-09-18) an unpinned run bumped three
           # providers mid-run and put provider-opentofu into the Lock twice.
           # Renovate bumps it (git-refs manager in renovate.json).
-          helm_repo_ref: "51284621dea45db57526475fd343dd77c43843cd" # renovate: git-refs stuttgart-things/helm main
+          helm_repo_ref: "4ba396544adf2b1d2e02eb9c8f2c2b1af3bdc07d" # renovate: git-refs stuttgart-things/helm main
+          # Packages pinned by the helmfiles under their dependsOn-derived names;
+          # adopted into their release on clusters that already have them.
+          helm_adopt_packages:
+            - {kind: provider, name: crossplane-contrib-provider-kubernetes, release: crossplane-providers}
+            - {kind: provider, name: valkiriaaquaticamendi-provider-proxmox-bpg, release: crossplane-providers}
+            - {kind: function, name: crossplane-contrib-function-kcl, release: crossplane-functions}
+            - {kind: function, name: crossplane-contrib-function-patch-and-transform, release: crossplane-functions}
           # From v0.9.0 the ref alone selects the image: semantic-release now
           # writes config/manager/kustomization.yaml before it tags, so the
           # tagged tree pins its own release. Verified by building the bundle:
@@ -786,6 +793,15 @@ playbooks:
             # umbrella fails the render (crossplane-configurations#474).
             - name: cluster
               package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.5"
+            # capability and argocd-cluster: nothing dependsOn them, so they only
+            # exist where someone installs them. On u26-kind3 that was by hand
+            # (2026-08-17/18), each with a live XR (seed-labda-1-capability,
+            # homerun2-test1); a machinery cluster rebuilt from Git lacked both
+            # XRDs (found by the u26-kindtest rebuild, 2026-09-19).
+            - name: capability
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/capability:v0.7.2"
+            - name: argocd-cluster
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/argocd-cluster:v0.2.1"
 
           configuration_packages: >-
             {{ machinery_packages
@@ -976,6 +992,28 @@ playbooks:
             ansible.builtin.shell: |
               helmfile apply -f {{ helm_repo }}@cicd/crossplane.yaml.gotmpl?ref={{ helm_repo_ref }} --kubeconfig {{ kubeconfig }}
               kubectl -n crossplane-system rollout status deploy/crossplane --timeout=180s --kubeconfig {{ kubeconfig }}
+            become_user: "{{ ansible_user }}"
+
+          # The crossplane-providers and crossplane-config helmfiles pin packages
+          # that the package manager also installs for the Configurations dependsOn,
+          # under the same derived name. On a fresh cluster the helmfiles run first
+          # and own them from the start. On an existing cluster the dependency got
+          # there first and Helm refuses the object (invalid ownership metadata), so
+          # it is adopted here, same as ansible-run further down. A no-op where the
+          # object does not exist yet.
+          - name: Adopt dependency-derived packages into their Helm releases
+            ansible.builtin.shell: |
+              set -euo pipefail
+              {% for a in helm_adopt_packages %}
+              if kubectl get {{ a.kind }}.pkg.crossplane.io {{ a.name }} --kubeconfig {{ kubeconfig }} >/dev/null 2>&1; then
+                kubectl label {{ a.kind }}.pkg.crossplane.io {{ a.name }} \
+                  app.kubernetes.io/managed-by=Helm --overwrite --kubeconfig {{ kubeconfig }}
+                kubectl annotate {{ a.kind }}.pkg.crossplane.io {{ a.name }} \
+                  meta.helm.sh/release-name={{ a.release }} \
+                  meta.helm.sh/release-namespace=crossplane-system \
+                  --overwrite --kubeconfig {{ kubeconfig }}
+              fi
+              {% endfor %}
             become_user: "{{ ansible_user }}"
 
           - name: Crossplane providers (+ RBAC) and wait Healthy
@@ -1737,7 +1775,14 @@ playbooks:
           # that day. On u26-kind3 (2026-09-18) an unpinned run bumped three
           # providers mid-run and put provider-opentofu into the Lock twice.
           # Renovate bumps it (git-refs manager in renovate.json).
-          helm_repo_ref: "51284621dea45db57526475fd343dd77c43843cd" # renovate: git-refs stuttgart-things/helm main
+          helm_repo_ref: "4ba396544adf2b1d2e02eb9c8f2c2b1af3bdc07d" # renovate: git-refs stuttgart-things/helm main
+          # Packages pinned by the helmfiles under their dependsOn-derived names;
+          # adopted into their release on clusters that already have them.
+          helm_adopt_packages:
+            - {kind: provider, name: crossplane-contrib-provider-kubernetes, release: crossplane-providers}
+            - {kind: provider, name: valkiriaaquaticamendi-provider-proxmox-bpg, release: crossplane-providers}
+            - {kind: function, name: crossplane-contrib-function-kcl, release: crossplane-functions}
+            - {kind: function, name: crossplane-contrib-function-patch-and-transform, release: crossplane-functions}
           # From v0.9.0 the ref alone selects the image: semantic-release now
           # writes config/manager/kustomization.yaml before it tags, so the
           # tagged tree pins its own release. Verified by building the bundle:
@@ -2287,6 +2332,15 @@ playbooks:
             # umbrella fails the render (crossplane-configurations#474).
             - name: cluster
               package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.5"
+            # capability and argocd-cluster: nothing dependsOn them, so they only
+            # exist where someone installs them. On u26-kind3 that was by hand
+            # (2026-08-17/18), each with a live XR (seed-labda-1-capability,
+            # homerun2-test1); a machinery cluster rebuilt from Git lacked both
+            # XRDs (found by the u26-kindtest rebuild, 2026-09-19).
+            - name: capability
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/capability:v0.7.2"
+            - name: argocd-cluster
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/argocd-cluster:v0.2.1"
 
           configuration_packages: >-
             {{ machinery_packages
@@ -2432,6 +2486,27 @@ playbooks:
             ansible.builtin.shell: |
               helmfile apply -f {{ helm_repo }}@cicd/crossplane.yaml.gotmpl?ref={{ helm_repo_ref }} --kubeconfig {{ kubeconfig }}
               kubectl -n crossplane-system rollout status deploy/crossplane --timeout=180s --kubeconfig {{ kubeconfig }}
+
+          # The crossplane-providers and crossplane-config helmfiles pin packages
+          # that the package manager also installs for the Configurations dependsOn,
+          # under the same derived name. On a fresh cluster the helmfiles run first
+          # and own them from the start. On an existing cluster the dependency got
+          # there first and Helm refuses the object (invalid ownership metadata), so
+          # it is adopted here, same as ansible-run further down. A no-op where the
+          # object does not exist yet.
+          - name: Adopt dependency-derived packages into their Helm releases
+            ansible.builtin.shell: |
+              set -euo pipefail
+              {% for a in helm_adopt_packages %}
+              if kubectl get {{ a.kind }}.pkg.crossplane.io {{ a.name }} --kubeconfig {{ kubeconfig }} >/dev/null 2>&1; then
+                kubectl label {{ a.kind }}.pkg.crossplane.io {{ a.name }} \
+                  app.kubernetes.io/managed-by=Helm --overwrite --kubeconfig {{ kubeconfig }}
+                kubectl annotate {{ a.kind }}.pkg.crossplane.io {{ a.name }} \
+                  meta.helm.sh/release-name={{ a.release }} \
+                  meta.helm.sh/release-namespace=crossplane-system \
+                  --overwrite --kubeconfig {{ kubeconfig }}
+              fi
+              {% endfor %}
 
           - name: Crossplane providers + wait Healthy
             ansible.builtin.shell: |
