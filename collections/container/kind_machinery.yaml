@@ -1060,11 +1060,29 @@ playbooks:
 
           - name: Install Configuration packages
             ansible.builtin.shell: |
-              cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+              set -euo pipefail
+              # A package may already be on the cluster under ANOTHER name: the long,
+              # dependsOn-derived one Crossplane gives a package it installed as a
+              # dependency (stuttgart-things-crossplane-configurations-<pkg>). A second
+              # Configuration with the same source puts the package into the Lock twice,
+              # and then NO package resolves ("node ... already exists") until one is
+              # deleted. So: our own name if it exists, else any Configuration with the
+              # same source, else ours. u26-kind3, 2026-09-18: cluster-backup,
+              # packer-build, packer-release and tofu-run all hit this.
+              src='{{ item.package | regex_replace(':[^:/]+$', '') }}'
+              if kubectl get configuration.pkg.crossplane.io/{{ item.name }} --kubeconfig {{ kubeconfig }} >/dev/null 2>&1; then
+                name={{ item.name }}
+              else
+                name=$(kubectl get configuration.pkg.crossplane.io --no-headers \
+                  -o custom-columns=N:.metadata.name,P:.spec.package --kubeconfig {{ kubeconfig }} \
+                  | awk -v s="$src" '{p=$2; sub(/:[^:\/]+$/, "", p)} p == s {print $1; exit}')
+                name=${name:-{{ item.name }}}
+              fi
+              cat <<EOF | kubectl apply --kubeconfig {{ kubeconfig }} -f -
               apiVersion: pkg.crossplane.io/v1
               kind: Configuration
               metadata:
-                name: {{ item.name }}
+                name: $name
               spec:
                 package: {{ item.package }}
               EOF
@@ -1075,7 +1093,18 @@ playbooks:
 
           - name: Wait Configuration Healthy + provider CRD established
             ansible.builtin.shell: |
-              kubectl wait configuration.pkg.crossplane.io/{{ item.name }} --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
+              set -euo pipefail
+              # Same name resolution as the install task above.
+              src='{{ item.package | regex_replace(':[^:/]+$', '') }}'
+              if kubectl get configuration.pkg.crossplane.io/{{ item.name }} --kubeconfig {{ kubeconfig }} >/dev/null 2>&1; then
+                name={{ item.name }}
+              else
+                name=$(kubectl get configuration.pkg.crossplane.io --no-headers \
+                  -o custom-columns=N:.metadata.name,P:.spec.package --kubeconfig {{ kubeconfig }} \
+                  | awk -v s="$src" '{p=$2; sub(/:[^:\/]+$/, "", p)} p == s {print $1; exit}')
+                name=${name:-{{ item.name }}}
+              fi
+              kubectl wait configuration.pkg.crossplane.io/$name --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
               {% if item.provider_crd is defined %}
               for i in $(seq 1 60); do kubectl get crd {{ item.provider_crd }} --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && break; sleep 5; done
               kubectl wait --for=condition=established crd/{{ item.provider_crd }} --timeout=180s --kubeconfig {{ kubeconfig }}
@@ -2460,11 +2489,29 @@ playbooks:
 
           - name: Install Configuration packages
             ansible.builtin.shell: |
-              cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
+              set -euo pipefail
+              # A package may already be on the cluster under ANOTHER name: the long,
+              # dependsOn-derived one Crossplane gives a package it installed as a
+              # dependency (stuttgart-things-crossplane-configurations-<pkg>). A second
+              # Configuration with the same source puts the package into the Lock twice,
+              # and then NO package resolves ("node ... already exists") until one is
+              # deleted. So: our own name if it exists, else any Configuration with the
+              # same source, else ours. u26-kind3, 2026-09-18: cluster-backup,
+              # packer-build, packer-release and tofu-run all hit this.
+              src='{{ item.package | regex_replace(':[^:/]+$', '') }}'
+              if kubectl get configuration.pkg.crossplane.io/{{ item.name }} --kubeconfig {{ kubeconfig }} >/dev/null 2>&1; then
+                name={{ item.name }}
+              else
+                name=$(kubectl get configuration.pkg.crossplane.io --no-headers \
+                  -o custom-columns=N:.metadata.name,P:.spec.package --kubeconfig {{ kubeconfig }} \
+                  | awk -v s="$src" '{p=$2; sub(/:[^:\/]+$/, "", p)} p == s {print $1; exit}')
+                name=${name:-{{ item.name }}}
+              fi
+              cat <<EOF | kubectl apply --kubeconfig {{ kubeconfig }} -f -
               apiVersion: pkg.crossplane.io/v1
               kind: Configuration
               metadata:
-                name: {{ item.name }}
+                name: $name
               spec:
                 package: {{ item.package }}
               EOF
@@ -2474,7 +2521,18 @@ playbooks:
 
           - name: Wait Configuration Healthy + provider CRD established
             ansible.builtin.shell: |
-              kubectl wait configuration.pkg.crossplane.io/{{ item.name }} --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
+              set -euo pipefail
+              # Same name resolution as the install task above.
+              src='{{ item.package | regex_replace(':[^:/]+$', '') }}'
+              if kubectl get configuration.pkg.crossplane.io/{{ item.name }} --kubeconfig {{ kubeconfig }} >/dev/null 2>&1; then
+                name={{ item.name }}
+              else
+                name=$(kubectl get configuration.pkg.crossplane.io --no-headers \
+                  -o custom-columns=N:.metadata.name,P:.spec.package --kubeconfig {{ kubeconfig }} \
+                  | awk -v s="$src" '{p=$2; sub(/:[^:\/]+$/, "", p)} p == s {print $1; exit}')
+                name=${name:-{{ item.name }}}
+              fi
+              kubectl wait configuration.pkg.crossplane.io/$name --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
               {% if item.provider_crd is defined %}
               for i in $(seq 1 60); do kubectl get crd {{ item.provider_crd }} --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && break; sleep 5; done
               kubectl wait --for=condition=established crd/{{ item.provider_crd }} --timeout=180s --kubeconfig {{ kubeconfig }}
