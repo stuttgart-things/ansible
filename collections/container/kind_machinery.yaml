@@ -862,7 +862,12 @@ playbooks:
           # ================================================================
           - name: Ensure cert-manager (sops-secrets-operator webhook dependency)
             ansible.builtin.shell: |
-              kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/{{ cert_manager_version }}/cert-manager.yaml --kubeconfig {{ kubeconfig }}
+              set -euo pipefail
+              # cert-manager tags its releases vX.Y.Z; Renovate writes cert_manager_version
+              # without the v (ansible#1168). The URL without it is a 404, and without
+              # set -e that failure was silently ignored, so this step installed nothing
+              # from #1168 until the fix. Normalise instead of relying on the var format.
+              kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v{{ cert_manager_version | regex_replace('^v', '') }}/cert-manager.yaml --kubeconfig {{ kubeconfig }}
               for d in cert-manager cert-manager-webhook cert-manager-cainjector; do
                 kubectl -n cert-manager rollout status deploy/$d --timeout=180s --kubeconfig {{ kubeconfig }}
               done
@@ -2322,7 +2327,12 @@ playbooks:
 
           - name: Ensure cert-manager (sops-secrets-operator webhook dependency)
             ansible.builtin.shell: |
-              kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/{{ cert_manager_version }}/cert-manager.yaml --kubeconfig {{ kubeconfig }}
+              set -euo pipefail
+              # cert-manager tags its releases vX.Y.Z; Renovate writes cert_manager_version
+              # without the v (ansible#1168). The URL without it is a 404, and without
+              # set -e that failure was silently ignored, so this step installed nothing
+              # from #1168 until the fix. Normalise instead of relying on the var format.
+              kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v{{ cert_manager_version | regex_replace('^v', '') }}/cert-manager.yaml --kubeconfig {{ kubeconfig }}
               for d in cert-manager cert-manager-webhook cert-manager-cainjector; do
                 kubectl -n cert-manager rollout status deploy/$d --timeout=180s --kubeconfig {{ kubeconfig }}
               done
