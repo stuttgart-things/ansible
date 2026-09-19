@@ -1069,13 +1069,16 @@ playbooks:
               # deleted. So: our own name if it exists, else any Configuration with the
               # same source, else ours. u26-kind3, 2026-09-18: cluster-backup,
               # packer-build, packer-release and tofu-run all hit this.
+              # awk reads kubectl's output to the end on purpose: an early `exit`
+              # closes the pipe, kubectl dies of SIGPIPE, and pipefail fails the
+              # task (rc 141) whenever the match is not near the end of the list.
               src='{{ item.package | regex_replace(':[^:/]+$', '') }}'
               if kubectl get configuration.pkg.crossplane.io/{{ item.name }} --kubeconfig {{ kubeconfig }} >/dev/null 2>&1; then
                 name={{ item.name }}
               else
                 name=$(kubectl get configuration.pkg.crossplane.io --no-headers \
                   -o custom-columns=N:.metadata.name,P:.spec.package --kubeconfig {{ kubeconfig }} \
-                  | awk -v s="$src" '{p=$2; sub(/:[^:\/]+$/, "", p)} p == s {print $1; exit}')
+                  | awk -v s="$src" '{p=$2; sub(/:[^:\/]+$/, "", p)} !n && p == s {n = $1} END {print n}')
                 name=${name:-{{ item.name }}}
               fi
               cat <<EOF | kubectl apply --kubeconfig {{ kubeconfig }} -f -
@@ -1101,7 +1104,7 @@ playbooks:
               else
                 name=$(kubectl get configuration.pkg.crossplane.io --no-headers \
                   -o custom-columns=N:.metadata.name,P:.spec.package --kubeconfig {{ kubeconfig }} \
-                  | awk -v s="$src" '{p=$2; sub(/:[^:\/]+$/, "", p)} p == s {print $1; exit}')
+                  | awk -v s="$src" '{p=$2; sub(/:[^:\/]+$/, "", p)} !n && p == s {n = $1} END {print n}')
                 name=${name:-{{ item.name }}}
               fi
               kubectl wait configuration.pkg.crossplane.io/$name --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
@@ -2498,13 +2501,16 @@ playbooks:
               # deleted. So: our own name if it exists, else any Configuration with the
               # same source, else ours. u26-kind3, 2026-09-18: cluster-backup,
               # packer-build, packer-release and tofu-run all hit this.
+              # awk reads kubectl's output to the end on purpose: an early `exit`
+              # closes the pipe, kubectl dies of SIGPIPE, and pipefail fails the
+              # task (rc 141) whenever the match is not near the end of the list.
               src='{{ item.package | regex_replace(':[^:/]+$', '') }}'
               if kubectl get configuration.pkg.crossplane.io/{{ item.name }} --kubeconfig {{ kubeconfig }} >/dev/null 2>&1; then
                 name={{ item.name }}
               else
                 name=$(kubectl get configuration.pkg.crossplane.io --no-headers \
                   -o custom-columns=N:.metadata.name,P:.spec.package --kubeconfig {{ kubeconfig }} \
-                  | awk -v s="$src" '{p=$2; sub(/:[^:\/]+$/, "", p)} p == s {print $1; exit}')
+                  | awk -v s="$src" '{p=$2; sub(/:[^:\/]+$/, "", p)} !n && p == s {n = $1} END {print n}')
                 name=${name:-{{ item.name }}}
               fi
               cat <<EOF | kubectl apply --kubeconfig {{ kubeconfig }} -f -
@@ -2529,7 +2535,7 @@ playbooks:
               else
                 name=$(kubectl get configuration.pkg.crossplane.io --no-headers \
                   -o custom-columns=N:.metadata.name,P:.spec.package --kubeconfig {{ kubeconfig }} \
-                  | awk -v s="$src" '{p=$2; sub(/:[^:\/]+$/, "", p)} p == s {print $1; exit}')
+                  | awk -v s="$src" '{p=$2; sub(/:[^:\/]+$/, "", p)} !n && p == s {n = $1} END {print n}')
                 name=${name:-{{ item.name }}}
               fi
               kubectl wait configuration.pkg.crossplane.io/$name --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
