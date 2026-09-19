@@ -213,7 +213,7 @@ playbooks:
           # that day. On u26-kind3 (2026-09-18) an unpinned run bumped three
           # providers mid-run and put provider-opentofu into the Lock twice.
           # Renovate bumps it (git-refs manager in renovate.json).
-          helm_repo_ref: "51284621dea45db57526475fd343dd77c43843cd" # renovate: git-refs stuttgart-things/helm main
+          helm_repo_ref: "4ba396544adf2b1d2e02eb9c8f2c2b1af3bdc07d" # renovate: git-refs stuttgart-things/helm main
           # Packages pinned by the helmfiles under their dependsOn-derived names;
           # adopted into their release on clusters that already have them.
           helm_adopt_packages:
@@ -1775,7 +1775,7 @@ playbooks:
           # that day. On u26-kind3 (2026-09-18) an unpinned run bumped three
           # providers mid-run and put provider-opentofu into the Lock twice.
           # Renovate bumps it (git-refs manager in renovate.json).
-          helm_repo_ref: "51284621dea45db57526475fd343dd77c43843cd" # renovate: git-refs stuttgart-things/helm main
+          helm_repo_ref: "4ba396544adf2b1d2e02eb9c8f2c2b1af3bdc07d" # renovate: git-refs stuttgart-things/helm main
           # Packages pinned by the helmfiles under their dependsOn-derived names;
           # adopted into their release on clusters that already have them.
           helm_adopt_packages:
