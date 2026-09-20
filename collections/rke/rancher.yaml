@@ -110,7 +110,9 @@ playbooks:
           # ELSE'S CLUSTER. A WRONG GUESS FAILS ONLY AT THE VERY END, AFTER THE
           # FULL rancher_kubeconfig_wait_timeout - 15 MINUTES ON A RUN THAT HAD
           # ALREADY DONE EVERYTHING ELSE RIGHT (stuttgart-things/kcl#277).
-          # SET IT TO PIN ONE PATH ANYWAY; THEN NOTHING IS DETECTED.
+          # SET IT TO PIN ONE PATH ANYWAY; THEN NOTHING IS DETECTED. EMPTY,
+          # UNSET AND null ALL MEAN DETECT - A varsFile THAT CARRIES THE KEY
+          # WITHOUT A VALUE HANDS OVER null.
           rancher_kubeconfig_path: ""
           rancher_kubeconfig_candidates:
             - /etc/rancher/k3s/k3s.yaml
@@ -290,8 +292,13 @@ playbooks:
                   patterns: "{{ _rancher_kubeconfig_search | map('basename') | list }}"
                   file_type: file
                 vars:
+                  # default('', true) BECAUSE AN UNSET PATH ARRIVES AS None, NOT
+                  # AS "": a varsFile written by an AnsibleRun carries the key
+                  # with no value, YAML reads that as null, and `null | length`
+                  # is a templating error rather than a falsy value. Measured on
+                  # the schmetterpause-rehearsal1 build, 2026-09-20.
                   _rancher_kubeconfig_search: >-
-                    {{ [rancher_kubeconfig_path] if rancher_kubeconfig_path | length > 0
+                    {{ [rancher_kubeconfig_path] if (rancher_kubeconfig_path | default('', true) | trim | length) > 0
                        else rancher_kubeconfig_candidates }}
                 register: _rancher_kubeconfig_found
                 until: _rancher_kubeconfig_found.files | length > 0
