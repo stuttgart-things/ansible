@@ -494,6 +494,20 @@ playbooks:
             - name: provider-clusterbook
               package: "ghcr.io/stuttgart-things/provider-clusterbook-xpkg:v0.4.2"
               provider_crd: clusterproviderconfigs.clusterbook.stuttgart-things.com
+            # provider-minio for the storage/minio Configuration
+            # (crossplane-configurations#481): buckets, policies and users as
+            # managed resources instead of mc commands. Published by VSHN only
+            # on their own registry, and named after the path the package
+            # manager derives from that path, like every other entry here.
+            # v0.4.5 verified Healthy on Crossplane 2.3.3 with a lab MinIO.
+            #
+            # Installing it alone does nothing: the Configuration also needs a
+            # cluster-scoped minio.crossplane.io ProviderConfig whose Secret
+            # holds the instance admin keys. That Secret is per environment and
+            # therefore not here.
+            - name: vshn-provider-minio
+              package: "ghcr.io/vshn/provider-minio:v0.4.5"
+              provider_crd: buckets.minio.crossplane.io
 
           # --- provider-vault -------------------------------------------------
           # Native Vault managed resources for the crossplane-configurations
@@ -2053,6 +2067,20 @@ playbooks:
             - name: provider-clusterbook
               package: "ghcr.io/stuttgart-things/provider-clusterbook-xpkg:v0.4.2"
               provider_crd: clusterproviderconfigs.clusterbook.stuttgart-things.com
+            # provider-minio for the storage/minio Configuration
+            # (crossplane-configurations#481): buckets, policies and users as
+            # managed resources instead of mc commands. Published by VSHN only
+            # on their own registry, and named after the path the package
+            # manager derives from that path, like every other entry here.
+            # v0.4.5 verified Healthy on Crossplane 2.3.3 with a lab MinIO.
+            #
+            # Installing it alone does nothing: the Configuration also needs a
+            # cluster-scoped minio.crossplane.io ProviderConfig whose Secret
+            # holds the instance admin keys. That Secret is per environment and
+            # therefore not here.
+            - name: vshn-provider-minio
+              package: "ghcr.io/vshn/provider-minio:v0.4.5"
+              provider_crd: buckets.minio.crossplane.io
 
           # --- provider-vault -------------------------------------------------
           # Native Vault managed resources for the crossplane-configurations
