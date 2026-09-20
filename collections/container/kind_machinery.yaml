@@ -792,7 +792,7 @@ playbooks:
             # CloudNativePG, and a profile component without its platform
             # umbrella fails the render (crossplane-configurations#474).
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.5"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.6"
             # capability and argocd-cluster: nothing dependsOn them, so they only
             # exist where someone installs them. On u26-kind3 that was by hand
             # (2026-08-17/18), each with a live XR (seed-labda-1-capability,
@@ -2331,7 +2331,7 @@ playbooks:
             # CloudNativePG, and a profile component without its platform
             # umbrella fails the render (crossplane-configurations#474).
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.5"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.6"
             # capability and argocd-cluster: nothing dependsOn them, so they only
             # exist where someone installs them. On u26-kind3 that was by hand
             # (2026-08-17/18), each with a live XR (seed-labda-1-capability,
