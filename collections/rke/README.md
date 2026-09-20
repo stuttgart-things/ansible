@@ -153,7 +153,9 @@ with `VAULT_ROLE_ID`/`VAULT_SECRET_ID`.
 | `rancher_upload_kubeconfig` | `false` | After the join, publish the node's admin kubeconfig to Vault (see below) |
 | `cluster_name` | - | **Required** with `rancher_upload_kubeconfig`: Vault path `<secret_path_kubeconfig>/data/<cluster_name>` and the `ClusterAccess` `clusterName` |
 | `secret_path_kubeconfig` | `kubeconfigs` | KV v2 mount the kubeconfig is written to |
-| `rancher_kubeconfig_path` | `/etc/rancher/k3s/k3s.yaml` | The distribution's admin kubeconfig; rke2: `/etc/rancher/rke2/rke2.yaml` |
+| `rancher_kubeconfig_path` | `""` (detect) | Pin the distribution's admin kubeconfig. Empty polls `rancher_kubeconfig_candidates` and takes whichever appears — the distribution belongs to the Rancher cluster, not to the caller |
+| `rancher_kubeconfig_candidates` | k3s and rke2 paths | Searched while `rancher_kubeconfig_path` is empty |
+| `rancher_kubeconfig_wait_delay` | `5` | Seconds between those polls; `timeout / delay` is the retry count |
 | `rancher_kubeconfig_wait_timeout` | `900` | Seconds to wait for that file and for the API server port |
 | `rancher_kubeconfig_api_port` | `6443` | API server port waited on |
 | `rancher_kubeconfig_vault_addr` / `_role_id` / `_secret_id` | `$VAULT_ADDR` / `$VAULT_ROLE_ID` / `$VAULT_SECRET_ID` | AppRole with write on the mount — from an `AnsibleRun`, its `vaultSecretName` |

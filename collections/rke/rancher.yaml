@@ -103,8 +103,20 @@ playbooks:
           # VAULT_SECRET_ID) - FROM AN AnsibleRun THAT IS ITS vaultSecretName, SAME
           # AS upload_kubeconfig_vault. THE AppRole NEEDS WRITE ON THE MOUNT.
           rancher_upload_kubeconfig: false
-          rancher_kubeconfig_path: /etc/rancher/k3s/k3s.yaml   # rke2: /etc/rancher/rke2/rke2.yaml
+          # EMPTY MEANS DETECT. ON A RANCHER CUSTOM NODE THE DISTRIBUTION IS
+          # RANCHER'S CHOICE, NOT THE CALLER'S: THE SAME REGISTRATION COMMAND
+          # INSTALLS k3s OR rke2 DEPENDING ON THE CLUSTER IT BELONGS TO, AND A
+          # PATH PINNED BY WHOEVER ORDERED THE RUN IS A GUESS ABOUT SOMEBODY
+          # ELSE'S CLUSTER. A WRONG GUESS FAILS ONLY AT THE VERY END, AFTER THE
+          # FULL rancher_kubeconfig_wait_timeout - 15 MINUTES ON A RUN THAT HAD
+          # ALREADY DONE EVERYTHING ELSE RIGHT (stuttgart-things/kcl#277).
+          # SET IT TO PIN ONE PATH ANYWAY; THEN NOTHING IS DETECTED.
+          rancher_kubeconfig_path: ""
+          rancher_kubeconfig_candidates:
+            - /etc/rancher/k3s/k3s.yaml
+            - /etc/rancher/rke2/rke2.yaml
           rancher_kubeconfig_wait_timeout: 900
+          rancher_kubeconfig_wait_delay: 5
           rancher_kubeconfig_api_port: 6443
           secret_path_kubeconfig: kubeconfigs
           # cluster_name: my-cluster                          # REQUIRED with rancher_upload_kubeconfig
@@ -268,10 +280,35 @@ playbooks:
           - name: Publish the node kubeconfig to vault
             when: rancher_upload_kubeconfig | bool
             block:
-              - name: Wait for the distribution to write its admin kubeconfig
-                ansible.builtin.wait_for:
-                  path: "{{ rancher_kubeconfig_path }}"
-                  timeout: "{{ rancher_kubeconfig_wait_timeout | int }}"
+              # wait_for TAKES ONE PATH, AND WITH rancher_kubeconfig_path
+              # EMPTY THERE ARE TWO CANDIDATES - SO THIS POLLS WITH find AND
+              # STOPS AT WHICHEVER APPEARS. retries x delay IS THE SAME BUDGET
+              # wait_for HAD.
+              - name: Wait for the distribution to write an admin kubeconfig
+                ansible.builtin.find:
+                  paths: "{{ _rancher_kubeconfig_search | map('dirname') | list }}"
+                  patterns: "{{ _rancher_kubeconfig_search | map('basename') | list }}"
+                  file_type: file
+                vars:
+                  _rancher_kubeconfig_search: >-
+                    {{ [rancher_kubeconfig_path] if rancher_kubeconfig_path | length > 0
+                       else rancher_kubeconfig_candidates }}
+                register: _rancher_kubeconfig_found
+                until: _rancher_kubeconfig_found.files | length > 0
+                retries: "{{ ((rancher_kubeconfig_wait_timeout | int) // (rancher_kubeconfig_wait_delay | int)) | int }}"
+                delay: "{{ rancher_kubeconfig_wait_delay | int }}"
+
+              # ONE NODE RUNS ONE DISTRIBUTION, SO THERE IS NORMALLY ONE FILE.
+              # SORTED ANYWAY, SO A NODE CARRYING LEFTOVERS OF A PREVIOUS ONE
+              # PICKS THE SAME FILE ON EVERY RUN INSTEAD OF WHICHEVER THE
+              # FILESYSTEM LISTED FIRST.
+              - name: Name the admin kubeconfig that appeared
+                ansible.builtin.set_fact:
+                  _rancher_kubeconfig_path: "{{ _rancher_kubeconfig_found.files | map(attribute='path') | sort | first }}"
+
+              - name: Report the admin kubeconfig in use
+                ansible.builtin.debug:
+                  msg: "Admin kubeconfig: {{ _rancher_kubeconfig_path }}"
 
               - name: Wait for the API server to listen
                 ansible.builtin.wait_for:
@@ -281,7 +318,7 @@ playbooks:
 
               - name: Read the admin kubeconfig
                 ansible.builtin.slurp:
-                  src: "{{ rancher_kubeconfig_path }}"
+                  src: "{{ _rancher_kubeconfig_path }}"
                 register: _rancher_kubeconfig_raw
                 no_log: true
 
