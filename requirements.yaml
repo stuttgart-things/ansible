@@ -17,7 +17,7 @@ collections:
   - name: community.vmware
     version: 6.4.0
   - name: kubernetes.core
-    version: 6.5.0
+    version: 6.6.0
   # THE sthings.* PINS. CONSUMER-FACING, AND ALSO WHAT CI INSTALLS AS THE
   # DEPENDENCY BASELINE BEFORE OVERWRITING THE COLLECTION UNDER TEST WITH THE
   # FRESH BUILD (see pr-collection-build.yaml, and the split explained in
