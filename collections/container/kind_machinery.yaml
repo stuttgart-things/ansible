@@ -735,7 +735,7 @@ playbooks:
             # clusterSecrets (the cluster's own observability entry), cni.gatewayAPI
             # passthrough, no generated webhook token. Floors unchanged.
             - name: platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.7.2"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.8.0"
             # flux-apps is NOT listed. platform has declared the dependency
             # since v0.3.1, so an explicit pin would put the same ghcr path
             # under both a short CR name (this play) and a dependsOn — which is
@@ -2320,7 +2320,7 @@ playbooks:
             # clusterSecrets (the cluster's own observability entry), cni.gatewayAPI
             # passthrough, no generated webhook token. Floors unchanged.
             - name: platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.7.2"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.8.0"
             # flux-apps is NOT listed. platform has declared the dependency
             # since v0.3.1, so an explicit pin would put the same ghcr path
             # under both a short CR name (this play) and a dependsOn — which is
