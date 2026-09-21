@@ -581,7 +581,7 @@ playbooks:
             # ansible-run-<env> hat, waehlt sie ueber spec.ansible.environmentConfig.
             # crossplane-configurations#347.
             - name: vspherevm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.11.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.12.0"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
             # v0.10.0 added spec.vm.cloneDatastore, v0.11.0 its `none` opt-out
             # sentinel. NOT optional for LabUL: both base-OS templates keep their
@@ -2185,7 +2185,7 @@ playbooks:
             # ansible-run-<env> hat, waehlt sie ueber spec.ansible.environmentConfig.
             # crossplane-configurations#347.
             - name: vspherevm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.11.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.12.0"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
             # v0.10.0 added spec.vm.cloneDatastore, v0.11.0 its `none` opt-out
             # sentinel. NOT optional for LabUL: both base-OS templates keep their
