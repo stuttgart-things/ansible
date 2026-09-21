@@ -6,7 +6,7 @@
 # homerun2 stack that provision_edge / send_events_homerun already serve.
 playbooks:
   - name: homerun2_led_catcher_pi
-    play: |
+    play: | # pragma: allowlist secret -- variable names (led_api_token, led_redis_password, led_tls_vault_token), no values
       ---
       # =============================================================================
       # homerun2-led-catcher on a Raspberry Pi
@@ -42,6 +42,12 @@ playbooks:
       #     -e led_mode=full -e led_redis_addr=redis.example.com \
       #     -e led_api_token=change-me -e led_redis_password=secret
       #
+      #   # behind https://matrix.sthings.lab, with a certificate from the OpenBao PKI
+      #   # (VAULT_TOKEN on the controller), and the clock between displays
+      #   VAULT_TOKEN=... ansible-playbook -i inventory.ini sthings.container.homerun2_led_catcher_pi \
+      #     -e led_api_token=change-me -e led_tls_hostname=matrix.sthings.lab \
+      #     -e led_tls_ip_sans=192.168.10.120 -e led_idle=clock
+      #
       #   # another release, PWM mod soldered, no automatic reboot
       #   ansible-playbook -i inventory.ini sthings.container.homerun2_led_catcher_pi \
       #     -e led_catcher_version=v0.11.0 -e led_hardware_mapping=adafruit-hat-pwm \
@@ -51,7 +57,7 @@ playbooks:
       #   [ledpi]
       #   192.168.10.120 ansible_user=sthings
       #
-      # Tags: boot, packages, install, service, verify
+      # Tags: boot, packages, install, service, tls, verify
       # =============================================================================
 
       - name: Install homerun2-led-catcher on a Raspberry Pi
@@ -80,6 +86,23 @@ playbooks:
           led_hardware_mapping: adafruit-hat    # adafruit-hat-pwm if the PWM bridge is soldered
           led_gpio_slowdown: 2
           led_brightness: 100
+
+          # --- Idle screen (homerun2-led-catcher v0.12.0 and later) ---
+          led_idle: ""                          # clock; empty leaves LED_IDLE unset, the panel dark between displays
+          led_idle_color: ""                    # a profile colour name or r,g,b; empty: the catcher's default (info)
+
+          # --- TLS (optional): a hostname, a PKI certificate, Caddy on 443 ---
+          led_tls_hostname: ""                  # e.g. matrix.sthings.lab; empty: no certificate, no Caddy
+          led_tls_ip_sans: []                   # e.g. [192.168.10.120] or "192.168.10.120", so https://<ip> is valid too
+          # a list, or a comma-separated string (-e key=value cannot pass a list)
+          led_tls_ips: "{{ (led_tls_ip_sans.split(',') if led_tls_ip_sans is string else led_tls_ip_sans) | map('trim') | select | list }}"
+          led_tls_vault_addr: https://openbao.platform.sthings.lab
+          led_tls_vault_pki_path: pki
+          led_tls_vault_role: sthings-lab       # allows subdomains of sthings.lab, up to a year
+          led_tls_vault_token: "{{ lookup('env', 'VAULT_TOKEN') }}"   # read on the controller
+          led_tls_ttl: 2160h                    # 90 days
+          led_tls_renew_days: 30                # re-issue when fewer days are left
+          led_tls_ca_name: sthings-lab          # file name of the PKI's CA in the Pi's trust store
 
           # --- Redis (led, full, web) ---
           led_redis_addr: ""
@@ -381,6 +404,13 @@ playbooks:
                 # shown by /healthz and the simulator footer
                 Environment=VERSION={{ led_catcher_version }}
                 Environment=COMMIT={{ led_catcher_commit.stdout }}
+                {% if led_idle | length > 0 %}
+                # what the panel shows between displays
+                Environment=LED_IDLE={{ led_idle }}
+                {% endif %}
+                {% if led_idle_color | length > 0 %}
+                Environment=LED_IDLE_COLOR={{ led_idle_color }}
+                {% endif %}
                 {% if led_mode != 'standalone' %}
                 Environment=REDIS_ADDR={{ led_redis_addr }}
                 Environment=REDIS_PORT={{ led_redis_port }}
@@ -440,12 +470,160 @@ playbooks:
             delay: 2
             tags: verify
 
+          # ----------------------------------------------------------------- tls ---
+          # Only with led_tls_hostname. The certificate comes from the PKI's API with
+          # the controller's token, which only ever travels as a no_log task
+          # argument: the Pi keeps a certificate, never a credential. It is only
+          # re-issued when it is missing, about to expire or for another name, so a
+          # second run changes nothing. Caddy terminates TLS on 443 (80 redirects)
+          # and proxies to the catcher; the catcher itself stays on plain HTTP.
+          - name: Install Caddy
+            ansible.builtin.apt:
+              name: caddy
+              state: present
+            when: led_tls_hostname | length > 0
+            tags: tls
+
+          # First contact with the PKI: this download is what establishes trust,
+          # so it cannot verify the server yet. Later runs keep the file.
+          - name: Trust the PKI's CA on the Pi
+            ansible.builtin.get_url:
+              url: "{{ led_tls_vault_addr }}/v1/{{ led_tls_vault_pki_path }}/ca/pem"
+              dest: "/usr/local/share/ca-certificates/{{ led_tls_ca_name }}.crt"
+              mode: "0644"
+              validate_certs: false
+            register: led_tls_ca
+            when: led_tls_hostname | length > 0
+            tags: tls
+
+          - name: Update the trust store
+            ansible.builtin.command: update-ca-certificates
+            when: led_tls_ca is changed
+            changed_when: true
+            tags: tls
+
+          - name: Directory for the certificate
+            ansible.builtin.file:
+              path: /etc/caddy/tls
+              state: directory
+              owner: root
+              group: caddy
+              mode: "0750"
+            when: led_tls_hostname | length > 0
+            tags: tls
+
+          - name: Check the certificate (there, for this name, valid long enough)
+            ansible.builtin.shell: |
+              cert=/etc/caddy/tls/{{ led_tls_hostname }}.crt
+              test -s "$cert" || { echo missing; exit 0; }
+              openssl x509 -in "$cert" -noout -checkend {{ (led_tls_renew_days | int) * 86400 }} >/dev/null || { echo expiring; exit 0; }
+              openssl x509 -in "$cert" -noout -ext subjectAltName | grep -qF "DNS:{{ led_tls_hostname }}" || { echo other-name; exit 0; }
+              echo ok
+            register: led_tls_current
+            changed_when: false
+            when: led_tls_hostname | length > 0
+            tags: tls
+
+          - name: A token for the PKI
+            ansible.builtin.assert:
+              that: led_tls_vault_token | length > 0
+              fail_msg: >-
+                The certificate for {{ led_tls_hostname }} is {{ led_tls_current.stdout }} and has to be
+                issued: export VAULT_TOKEN on the controller (the pki-issue policy is enough).
+              quiet: true
+            when: led_tls_current.stdout | default('ok') != 'ok'
+            tags: tls
+
+          - name: Issue a certificate for {{ led_tls_hostname }}
+            ansible.builtin.uri:
+              url: "{{ led_tls_vault_addr }}/v1/{{ led_tls_vault_pki_path }}/issue/{{ led_tls_vault_role }}"
+              method: POST
+              headers:
+                X-Vault-Token: "{{ led_tls_vault_token }}"
+              body_format: json
+              body:
+                common_name: "{{ led_tls_hostname }}"
+                ip_sans: "{{ led_tls_ips | join(',') }}"
+                ttl: "{{ led_tls_ttl }}"
+              return_content: true
+            register: led_tls_issued
+            no_log: true
+            when: led_tls_current.stdout | default('ok') != 'ok'
+            tags: tls
+
+          - name: Install the certificate, with the CA that issued it
+            ansible.builtin.copy:
+              dest: "/etc/caddy/tls/{{ led_tls_hostname }}.crt"
+              content: "{{ led_tls_issued.json.data.certificate }}\n{{ led_tls_issued.json.data.issuing_ca }}\n"
+              owner: root
+              group: caddy
+              mode: "0644"
+            when: led_tls_issued is not skipped
+            notify: Reload caddy
+            tags: tls
+
+          - name: Install the key
+            ansible.builtin.copy:
+              dest: "/etc/caddy/tls/{{ led_tls_hostname }}.key"
+              content: "{{ led_tls_issued.json.data.private_key }}\n"
+              owner: root
+              group: caddy
+              mode: "0640"
+            no_log: true
+            when: led_tls_issued is not skipped
+            notify: Reload caddy
+            tags: tls
+
+          - name: Caddyfile
+            ansible.builtin.copy:
+              dest: /etc/caddy/Caddyfile
+              mode: "0644"
+              content: |
+                # Managed by stuttgart-things/ansible sthings.container.homerun2_led_catcher_pi
+                {{ ([led_tls_hostname] + led_tls_ips) | join(', ') }} {
+                	tls /etc/caddy/tls/{{ led_tls_hostname }}.crt /etc/caddy/tls/{{ led_tls_hostname }}.key
+                	reverse_proxy 127.0.0.1:{{ led_health_port }} {
+                		# the simulator's event stream: pass every event on at once
+                		flush_interval -1
+                	}
+                }
+            when: led_tls_hostname | length > 0
+            notify: Reload caddy
+            tags: tls
+
+          - name: Enable and start Caddy
+            ansible.builtin.systemd_service:
+              name: caddy
+              enabled: true
+              state: started
+            when: led_tls_hostname | length > 0
+            tags: tls
+
+          - name: Apply pending Caddy reloads
+            ansible.builtin.meta: flush_handlers
+            tags: tls
+
+          # --resolve: the check must not depend on the DNS record for the name.
+          - name: Check the catcher over HTTPS
+            ansible.builtin.command: >-
+              curl -sS --fail -m 5 --resolve {{ led_tls_hostname }}:443:127.0.0.1
+              https://{{ led_tls_hostname }}/healthz
+            register: led_tls_health
+            until: led_tls_health.rc == 0
+            retries: 10
+            delay: 2
+            changed_when: false
+            when: led_tls_hostname | length > 0
+            tags: [tls, verify]
+
           - name: Report
             ansible.builtin.debug:
               msg: >-
                 {{ ['led-catcher ' ~ led_catcher_version ~ ' (' ~ led_catcher_commit.stdout[:7] ~ ') is running in ' ~ led_mode ~ ' mode',
                     'health: ' ~ (led_health.json | to_json),
                     'simulator and API: http://' ~ led_connect_addr ~ ':' ~ led_health_port]
+                   + (['over TLS: https://' ~ led_tls_hostname ~ ' (certificate ' ~ led_tls_current.stdout ~ ' before this run)']
+                      if led_tls_hostname | length > 0 else [])
                    + (['also on the default route: http://' ~ led_default_addr ~ ':' ~ led_health_port]
                       if led_default_addr not in ['', led_connect_addr] else [])
                    + ['logs: journalctl -u led-catcher -f'] }}
@@ -456,6 +634,11 @@ playbooks:
             tags: verify
 
         handlers:
+          - name: Reload caddy
+            ansible.builtin.systemd_service:
+              name: caddy
+              state: reloaded
+
           - name: Restart led-catcher
             ansible.builtin.systemd_service:
               name: led-catcher
