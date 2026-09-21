@@ -817,8 +817,12 @@ playbooks:
             # v0.11.5 (2026-09-18) — xplane-cluster 0.19.0: tabletennis brings
             # CloudNativePG, and a profile component without its platform
             # umbrella fails the render (crossplane-configurations#474).
+            # v0.11.10 (2026-09-20) — what u26-kind3 already runs: it loads the
+            # rancher environment so the distro is checkable (#491) and takes
+            # xplane-cluster 0.20.0, which refuses a mismatched pair (#492).
+            # Left at v0.11.8 here, a play run DOWNGRADED the live cluster.
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.8"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.10"
             # capability and argocd-cluster: nothing dependsOn them, so they only
             # exist where someone installs them. On u26-kind3 that was by hand
             # (2026-08-17/18), each with a live XR (seed-labda-1-capability,
@@ -2402,8 +2406,12 @@ playbooks:
             # v0.11.5 (2026-09-18) — xplane-cluster 0.19.0: tabletennis brings
             # CloudNativePG, and a profile component without its platform
             # umbrella fails the render (crossplane-configurations#474).
+            # v0.11.10 (2026-09-20) — what u26-kind3 already runs: it loads the
+            # rancher environment so the distro is checkable (#491) and takes
+            # xplane-cluster 0.20.0, which refuses a mismatched pair (#492).
+            # Left at v0.11.8 here, a play run DOWNGRADED the live cluster.
             - name: cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.8"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.10"
             # capability and argocd-cluster: nothing dependsOn them, so they only
             # exist where someone installs them. On u26-kind3 that was by hand
             # (2026-08-17/18), each with a live XR (seed-labda-1-capability,
