@@ -58,7 +58,7 @@
     rgbmatrix_version: master
 
     # --- Who runs it (defaults to the SSH user) ---
-    led_user: "{{ ansible_user | default(ansible_env.SUDO_USER | default('')) }}"
+    led_user: "{{ ansible_user | default(ansible_facts['env'].SUDO_USER | default('')) }}"
 
     # --- Service ---
     led_mode: standalone                  # standalone, led, full, web
@@ -161,7 +161,7 @@
       register: led_cmdline
       when:
         - led_isolate_cpu | bool
-        - ansible_processor_nproc | int >= 4
+        - ansible_facts['processor_nproc'] | int >= 4
         - led_has_cmdline_txt | bool
       tags: boot
 
@@ -318,6 +318,17 @@
         success_msg: "{{ led_venv_check.stdout }}"
       tags: [install, verify]
 
+    # Read from the checkout, not from the git task's result: that task is
+    # skipped under --tags service, and the unit would lose the commit.
+    - name: Read the installed commit (VERSION and COMMIT for /healthz)
+      ansible.builtin.command:
+        cmd: git -C {{ led_dir }} rev-parse HEAD
+      become: true
+      become_user: "{{ led_user }}"
+      register: led_catcher_commit
+      changed_when: false
+      tags: [install, service, verify]
+
     # ------------------------------------------------------------- service ---
     - name: Secrets for the service (API token, Redis password)
       ansible.builtin.copy:
@@ -358,6 +369,9 @@
           Environment=HEALTH_PORT={{ led_health_port }}
           Environment=LOG_FORMAT={{ led_log_format }}
           Environment=LOG_LEVEL={{ led_log_level }}
+          # shown by /healthz and the simulator footer
+          Environment=VERSION={{ led_catcher_version }}
+          Environment=COMMIT={{ led_catcher_commit.stdout }}
           {% if led_mode != 'standalone' %}
           Environment=REDIS_ADDR={{ led_redis_addr }}
           Environment=REDIS_PORT={{ led_redis_port }}
@@ -391,6 +405,13 @@
       notify: Restart led-catcher
       tags: service
 
+    # Before the start task: on a first install the restart handler does the
+    # one and only start (restarted also starts a stopped unit), instead of
+    # killing the service the start task had just brought up.
+    - name: Apply pending restarts (starts the service on a first install)
+      ansible.builtin.meta: flush_handlers
+      tags: always
+
     - name: Enable and start led-catcher
       ansible.builtin.systemd_service:
         name: led-catcher
@@ -398,10 +419,6 @@
         state: started
         daemon_reload: true
       tags: service
-
-    - name: Apply pending restarts before checking health
-      ansible.builtin.meta: flush_handlers
-      tags: always
 
     # -------------------------------------------------------------- verify ---
     - name: Wait for /healthz
@@ -416,11 +433,17 @@
 
     - name: Report
       ansible.builtin.debug:
-        msg:
-          - "led-catcher {{ led_catcher_version }} is running in {{ led_mode }} mode"
-          - "health: {{ led_health.json }}"
-          - "simulator and API: http://{{ ansible_default_ipv4.address | default(inventory_hostname) }}:{{ led_health_port }}"
-          - "logs: journalctl -u led-catcher -f"
+        msg: >-
+          {{ ['led-catcher ' ~ led_catcher_version ~ ' (' ~ led_catcher_commit.stdout[:7] ~ ') is running in ' ~ led_mode ~ ' mode',
+              'health: ' ~ (led_health.json | to_json),
+              'simulator and API: http://' ~ led_connect_addr ~ ':' ~ led_health_port]
+             + (['also on the default route: http://' ~ led_default_addr ~ ':' ~ led_health_port]
+                if led_default_addr not in ['', led_connect_addr] else [])
+             + ['logs: journalctl -u led-catcher -f'] }}
+      vars:
+        # the address the play connected to, which the inventory and docs use
+        led_connect_addr: "{{ ansible_host | default(inventory_hostname) }}"
+        led_default_addr: "{{ ansible_facts['default_ipv4']['address'] | default('') }}"
       tags: verify
 
   handlers:
