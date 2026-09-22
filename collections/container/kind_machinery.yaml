@@ -200,10 +200,13 @@ playbooks:
             - provider_config: vault-kubeconfigs-labda
               source_secret: vault-labda
               approle_secret: vault-approle-labda
-          # The Provider CR the package manager creates for provider-kubeconfig,
-          # and the DeploymentRuntimeConfig the chart emits for it. They have to
-          # be wired together by hand — see the patch task.
-          kubeconfig_provider_name: provider-kubeconfig
+          # The Provider CR for provider-kubeconfig (installed by the
+          # crossplane-providers helmfile), and the DeploymentRuntimeConfig the
+          # provider-kubeconfig-vault chart emits for it. They have to be wired
+          # together by hand — see the patch task. The CR carries the derived
+          # name since the helmfiles run with derivedNames=true (flux#506); the
+          # DRC name belongs to that chart and does not change.
+          kubeconfig_provider_name: stuttgart-things-provider-kubeconfig-xpkg
           kubeconfig_provider_runtime_config: provider-kubeconfig
 
           # --- component refs / versions ---
@@ -221,6 +224,23 @@ playbooks:
             - {kind: provider, name: valkiriaaquaticamendi-provider-proxmox-bpg, release: crossplane-providers}
             - {kind: function, name: crossplane-contrib-function-kcl, release: crossplane-functions}
             - {kind: function, name: crossplane-contrib-function-patch-and-transform, release: crossplane-functions}
+          # Packages whose CR name changed to the derived one (stuttgart-things/flux#506):
+          # the name Crossplane derives from the package path, the one the flux
+          # machinery profile and xplane-crossplane-catalog use. The helmfiles
+          # apply them under these names (derivedNames=true), provider_packages
+          # below carries clusterbook's.
+          #
+          # FRESH CLUSTERS ONLY. The preflight refuses a cluster that already
+          # has one of these sources under ANOTHER name: applying the new name
+          # beside it is a duplicate Lock node (every package Healthy=False),
+          # and helm replacing it deletes the old Provider/Configuration
+          # together with its CRDs and every managed resource on them.
+          derived_name_packages:
+            - {kind: provider, source: xpkg.upbound.io/upbound/provider-opentofu, name: upbound-provider-opentofu}
+            - {kind: provider, source: ghcr.io/stuttgart-things/provider-kubeconfig-xpkg, name: stuttgart-things-provider-kubeconfig-xpkg}
+            - {kind: provider, source: ghcr.io/stuttgart-things/provider-clusterbook-xpkg, name: stuttgart-things-provider-clusterbook-xpkg}
+            - {kind: configuration, source: ghcr.io/stuttgart-things/crossplane-configurations/namespace, name: stuttgart-things-crossplane-configurations-namespace}
+            - {kind: configuration, source: ghcr.io/stuttgart-things/crossplane-configurations/volume-claim, name: stuttgart-things-crossplane-configurations-volume-claim}
           # From v0.9.0 the ref alone selects the image: semantic-release now
           # writes config/manager/kustomization.yaml before it tags, so the
           # tagged tree pins its own release. Verified by building the bundle:
@@ -505,8 +525,12 @@ playbooks:
           #
           # Gated on platform_enabled with the rest of the fleet-manager half:
           # a pure VM builder composes no Platform and needs none of it.
+          #
+          # Derived names, like every other entry (flux#506):
+          # stuttgart-things-provider-clusterbook-xpkg was provider-clusterbook
+          # until the rename; see derived_name_packages.
           provider_packages:
-            - name: provider-clusterbook
+            - name: stuttgart-things-provider-clusterbook-xpkg
               package: "ghcr.io/stuttgart-things/provider-clusterbook-xpkg:v0.4.2"
               provider_crd: clusterproviderconfigs.clusterbook.stuttgart-things.com
             # provider-minio for the storage/minio Configuration
@@ -527,14 +551,28 @@ playbooks:
           # --- provider-vault -------------------------------------------------
           # Native Vault managed resources for the crossplane-configurations
           # vault/vault-k8s-auth and vault/vault-secrets Configurations
-          # (crossplane-configurations#452, #454, #464). Off by default; a
-          # machinery cluster opts in through its exec vars.
+          # (crossplane-configurations#452, #454, #464).
           #
-          # The Provider CR MUST be named `upbound-provider-vault`: that is the
-          # name the package manager derives from those Configurations'
-          # dependsOn, and a second name for the same package is a duplicate
-          # Lock node that freezes the resolver for every package on the cluster.
-          vault_provider_enabled: false
+          # ALWAYS pinned. vault-secrets (via cluster) and vault-k8s-auth (via
+          # platform) depend on it (>=v4.0.4,<v5.0.0), so it is on every
+          # machinery cluster anyway — unpinned, it floats to whatever the
+          # constraint allows that day. The package is inert without a
+          # ClusterProviderConfig; those follow vault_provider_configs below.
+          #
+          # The Provider CR MUST be named `upbound-provider-vault` and the
+          # package MUST stay on xpkg.upbound.io: that is the name and source the
+          # package manager derives from those Configurations' dependsOn, and a
+          # second name or registry for the same package is a duplicate Lock
+          # node that freezes the resolver for every package on the cluster.
+          #
+          # vault_provider_enabled is DEPRECATED and no longer needed. It is
+          # still honoured as an alias: `false` keeps the ClusterProviderConfigs
+          # off even when vault_provider_configs is set, as it always did. Drop
+          # it from exec vars; unset, the configs alone decide.
+          #
+          # Runs without poll/sync tuning on purpose: measure once the seeds
+          # have moved from OpenTofu to provider-vault (stuttgart-things#3063,
+          # #3085), then decide (flux#506).
           vault_provider_name: upbound-provider-vault
           vault_provider_package: "xpkg.upbound.io/upbound/provider-vault:v4.0.4"
           # One ClusterProviderConfig per entry. The credential is derived from
@@ -911,6 +949,61 @@ playbooks:
             become_user: "{{ ansible_user }}"
             changed_when: false
 
+          # derived_name_packages: a cluster built before the CR-name rename has
+          # these sources under their OLD names. Running on means the helmfiles
+          # create the new name beside the old one (duplicate Lock node, every
+          # package Healthy=False) and helm drops the old CR from its release
+          # (Provider/Configuration deleted, CRDs/XRDs and everything on them
+          # with it). So stop here, before anything has been touched.
+          # Keyed on the SOURCE, not on a list of old names: any other name for
+          # the same package is the same collision.
+          - name: Preflight — no package under a pre-rename CR name
+            ansible.builtin.shell: |
+              set -euo pipefail
+              {% for p in derived_name_packages %}
+              if kubectl get crd {{ p.kind }}s.pkg.crossplane.io --kubeconfig {{ kubeconfig }} >/dev/null 2>&1; then
+                kubectl get {{ p.kind }}s.pkg.crossplane.io --kubeconfig {{ kubeconfig }} \
+                  -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.package}{"\n"}{end}' \
+                | while read -r name pkg; do
+                    [ -n "$name" ] || continue
+                    src="${pkg%@*}"; src="${src%:*}"
+                    if [ "$src" = "{{ p.source }}" ] && [ "$name" != "{{ p.name }}" ]; then
+                      echo "{{ p.kind }} $name ($pkg) -> would become {{ p.name }}"
+                    fi
+                  done
+              fi
+              {% endfor %}
+            args:
+              executable: /bin/bash
+            become_user: "{{ ansible_user }}"
+            register: pre_rename_crs
+            changed_when: false
+
+          - name: Preflight — stop on a cluster that predates the rename
+            ansible.builtin.fail:
+              msg: |-
+                This cluster predates the CR-name rename (stuttgart-things/flux#506).
+                These packages exist under a name this play no longer uses:
+
+                  {{ pre_rename_crs.stdout_lines | join('\n  ') }}
+
+                Continuing would create each one a second time under the new name
+                (a duplicate Lock node: every package goes Healthy=False) and let
+                helm delete the old CR, together with its CRDs and every managed
+                resource on them. Nothing has been changed.
+
+                Rebuild the cluster (new names from the start), or migrate by hand.
+            when: pre_rename_crs.stdout_lines | length > 0
+
+          - name: Preflight — vault_provider_enabled is deprecated
+            ansible.builtin.debug:
+              msg: >-
+                vault_provider_enabled is deprecated: provider-vault is always
+                pinned now, and its ClusterProviderConfigs follow
+                vault_provider_configs. Drop the var from the exec vars
+                {{ '(it is false here, which still keeps the ClusterProviderConfigs off).' if not (vault_provider_enabled | bool) else '(true is the new default behaviour).' }}
+            when: vault_provider_enabled is defined
+
           # ================================================================
           # 1) SECRETS LAYER — cert-manager (sops webhook serving-cert
           #    dependency), then sops-secrets-operator + age key.
@@ -1077,13 +1170,15 @@ playbooks:
 
           - name: Crossplane providers (+ RBAC) and wait Healthy
             ansible.builtin.shell: |
-              helmfile apply -f {{ helm_repo }}@cicd/crossplane-providers.yaml.gotmpl?ref={{ helm_repo_ref }} --kubeconfig {{ kubeconfig }}
+              helmfile apply -f {{ helm_repo }}@cicd/crossplane-providers.yaml.gotmpl?ref={{ helm_repo_ref }} \
+                --state-values-set derivedNames=true --kubeconfig {{ kubeconfig }}
               kubectl wait provider.pkg.crossplane.io --all --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
 
           - name: Crossplane functions + configurations and wait Healthy
             ansible.builtin.shell: |
-              helmfile apply -f {{ helm_repo }}@cicd/crossplane-config.yaml.gotmpl?ref={{ helm_repo_ref }} --kubeconfig {{ kubeconfig }}
+              helmfile apply -f {{ helm_repo }}@cicd/crossplane-config.yaml.gotmpl?ref={{ helm_repo_ref }} \
+                --state-values-set derivedNames=true --kubeconfig {{ kubeconfig }}
               kubectl wait configuration.pkg.crossplane.io --all --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
               kubectl wait function.pkg.crossplane.io --all --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
@@ -1131,7 +1226,7 @@ playbooks:
               label: "{{ item.name }}"
             when: platform_enabled | bool
 
-          # ---- provider-vault (vault_provider_enabled) ----------------------
+          # ---- provider-vault (always pinned; CPCs follow vault_provider_configs)
           - name: Install provider-vault
             ansible.builtin.shell: |
               cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
@@ -1146,7 +1241,6 @@ playbooks:
               for i in $(seq 1 60); do kubectl get crd clusterproviderconfigs.vault.m.upbound.io --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && break; sleep 5; done
               kubectl wait --for=condition=established crd/clusterproviderconfigs.vault.m.upbound.io --timeout=180s --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
-            when: vault_provider_enabled | bool
 
           - name: Create the Vault PKI CA bundle Secrets
             ansible.builtin.shell: |
@@ -1359,7 +1453,7 @@ playbooks:
               {% endif %}
               {% endfor %}
             become_user: "{{ ansible_user }}"
-            when: vault_provider_enabled | bool and vault_provider_configs | length > 0
+            when: vault_provider_configs | length > 0 and (vault_provider_enabled | default(true) | bool)
             no_log: true    # never echo the AppRole credentials
 
           - name: Apply provider-vault ClusterProviderConfigs
@@ -1386,7 +1480,7 @@ playbooks:
               {% endfor %}
               EOF
             become_user: "{{ ansible_user }}"
-            when: vault_provider_enabled | bool and vault_provider_configs | length > 0
+            when: vault_provider_configs | length > 0 and (vault_provider_enabled | default(true) | bool)
 
           - name: Deploy per-environment capability charts
             ansible.builtin.command: >
@@ -1822,10 +1916,13 @@ playbooks:
             - provider_config: vault-kubeconfigs-labda
               source_secret: vault-labda
               approle_secret: vault-approle-labda
-          # The Provider CR the package manager creates for provider-kubeconfig,
-          # and the DeploymentRuntimeConfig the chart emits for it. They have to
-          # be wired together by hand — see the patch task.
-          kubeconfig_provider_name: provider-kubeconfig
+          # The Provider CR for provider-kubeconfig (installed by the
+          # crossplane-providers helmfile), and the DeploymentRuntimeConfig the
+          # provider-kubeconfig-vault chart emits for it. They have to be wired
+          # together by hand — see the patch task. The CR carries the derived
+          # name since the helmfiles run with derivedNames=true (flux#506); the
+          # DRC name belongs to that chart and does not change.
+          kubeconfig_provider_name: stuttgart-things-provider-kubeconfig-xpkg
           kubeconfig_provider_runtime_config: provider-kubeconfig
 
           helm_repo: "git::https://github.com/stuttgart-things/helm.git"
@@ -1842,6 +1939,23 @@ playbooks:
             - {kind: provider, name: valkiriaaquaticamendi-provider-proxmox-bpg, release: crossplane-providers}
             - {kind: function, name: crossplane-contrib-function-kcl, release: crossplane-functions}
             - {kind: function, name: crossplane-contrib-function-patch-and-transform, release: crossplane-functions}
+          # Packages whose CR name changed to the derived one (stuttgart-things/flux#506):
+          # the name Crossplane derives from the package path, the one the flux
+          # machinery profile and xplane-crossplane-catalog use. The helmfiles
+          # apply them under these names (derivedNames=true), provider_packages
+          # below carries clusterbook's.
+          #
+          # FRESH CLUSTERS ONLY. The preflight refuses a cluster that already
+          # has one of these sources under ANOTHER name: applying the new name
+          # beside it is a duplicate Lock node (every package Healthy=False),
+          # and helm replacing it deletes the old Provider/Configuration
+          # together with its CRDs and every managed resource on them.
+          derived_name_packages:
+            - {kind: provider, source: xpkg.upbound.io/upbound/provider-opentofu, name: upbound-provider-opentofu}
+            - {kind: provider, source: ghcr.io/stuttgart-things/provider-kubeconfig-xpkg, name: stuttgart-things-provider-kubeconfig-xpkg}
+            - {kind: provider, source: ghcr.io/stuttgart-things/provider-clusterbook-xpkg, name: stuttgart-things-provider-clusterbook-xpkg}
+            - {kind: configuration, source: ghcr.io/stuttgart-things/crossplane-configurations/namespace, name: stuttgart-things-crossplane-configurations-namespace}
+            - {kind: configuration, source: ghcr.io/stuttgart-things/crossplane-configurations/volume-claim, name: stuttgart-things-crossplane-configurations-volume-claim}
           # From v0.9.0 the ref alone selects the image: semantic-release now
           # writes config/manager/kustomization.yaml before it tags, so the
           # tagged tree pins its own release. Verified by building the bundle:
@@ -2123,8 +2237,12 @@ playbooks:
           #
           # Gated on platform_enabled with the rest of the fleet-manager half:
           # a pure VM builder composes no Platform and needs none of it.
+          #
+          # Derived names, like every other entry (flux#506):
+          # stuttgart-things-provider-clusterbook-xpkg was provider-clusterbook
+          # until the rename; see derived_name_packages.
           provider_packages:
-            - name: provider-clusterbook
+            - name: stuttgart-things-provider-clusterbook-xpkg
               package: "ghcr.io/stuttgart-things/provider-clusterbook-xpkg:v0.4.2"
               provider_crd: clusterproviderconfigs.clusterbook.stuttgart-things.com
             # provider-minio for the storage/minio Configuration
@@ -2145,14 +2263,28 @@ playbooks:
           # --- provider-vault -------------------------------------------------
           # Native Vault managed resources for the crossplane-configurations
           # vault/vault-k8s-auth and vault/vault-secrets Configurations
-          # (crossplane-configurations#452, #454, #464). Off by default; a
-          # machinery cluster opts in through its exec vars.
+          # (crossplane-configurations#452, #454, #464).
           #
-          # The Provider CR MUST be named `upbound-provider-vault`: that is the
-          # name the package manager derives from those Configurations'
-          # dependsOn, and a second name for the same package is a duplicate
-          # Lock node that freezes the resolver for every package on the cluster.
-          vault_provider_enabled: false
+          # ALWAYS pinned. vault-secrets (via cluster) and vault-k8s-auth (via
+          # platform) depend on it (>=v4.0.4,<v5.0.0), so it is on every
+          # machinery cluster anyway — unpinned, it floats to whatever the
+          # constraint allows that day. The package is inert without a
+          # ClusterProviderConfig; those follow vault_provider_configs below.
+          #
+          # The Provider CR MUST be named `upbound-provider-vault` and the
+          # package MUST stay on xpkg.upbound.io: that is the name and source the
+          # package manager derives from those Configurations' dependsOn, and a
+          # second name or registry for the same package is a duplicate Lock
+          # node that freezes the resolver for every package on the cluster.
+          #
+          # vault_provider_enabled is DEPRECATED and no longer needed. It is
+          # still honoured as an alias: `false` keeps the ClusterProviderConfigs
+          # off even when vault_provider_configs is set, as it always did. Drop
+          # it from exec vars; unset, the configs alone decide.
+          #
+          # Runs without poll/sync tuning on purpose: measure once the seeds
+          # have moved from OpenTofu to provider-vault (stuttgart-things#3063,
+          # #3085), then decide (flux#506).
           vault_provider_name: upbound-provider-vault
           vault_provider_package: "xpkg.upbound.io/upbound/provider-vault:v4.0.4"
           # One ClusterProviderConfig per entry. The credential is derived from
@@ -2477,6 +2609,60 @@ playbooks:
             ansible.builtin.command: "kubectl get nodes --kubeconfig {{ kubeconfig }}"
             changed_when: false
 
+          # derived_name_packages: a cluster built before the CR-name rename has
+          # these sources under their OLD names. Running on means the helmfiles
+          # create the new name beside the old one (duplicate Lock node, every
+          # package Healthy=False) and helm drops the old CR from its release
+          # (Provider/Configuration deleted, CRDs/XRDs and everything on them
+          # with it). So stop here, before anything has been touched.
+          # Keyed on the SOURCE, not on a list of old names: any other name for
+          # the same package is the same collision.
+          - name: Preflight — no package under a pre-rename CR name
+            ansible.builtin.shell: |
+              set -euo pipefail
+              {% for p in derived_name_packages %}
+              if kubectl get crd {{ p.kind }}s.pkg.crossplane.io --kubeconfig {{ kubeconfig }} >/dev/null 2>&1; then
+                kubectl get {{ p.kind }}s.pkg.crossplane.io --kubeconfig {{ kubeconfig }} \
+                  -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.package}{"\n"}{end}' \
+                | while read -r name pkg; do
+                    [ -n "$name" ] || continue
+                    src="${pkg%@*}"; src="${src%:*}"
+                    if [ "$src" = "{{ p.source }}" ] && [ "$name" != "{{ p.name }}" ]; then
+                      echo "{{ p.kind }} $name ($pkg) -> would become {{ p.name }}"
+                    fi
+                  done
+              fi
+              {% endfor %}
+            args:
+              executable: /bin/bash
+            register: pre_rename_crs
+            changed_when: false
+
+          - name: Preflight — stop on a cluster that predates the rename
+            ansible.builtin.fail:
+              msg: |-
+                This cluster predates the CR-name rename (stuttgart-things/flux#506).
+                These packages exist under a name this play no longer uses:
+
+                  {{ pre_rename_crs.stdout_lines | join('\n  ') }}
+
+                Continuing would create each one a second time under the new name
+                (a duplicate Lock node: every package goes Healthy=False) and let
+                helm delete the old CR, together with its CRDs and every managed
+                resource on them. Nothing has been changed.
+
+                Rebuild the cluster (new names from the start), or migrate by hand.
+            when: pre_rename_crs.stdout_lines | length > 0
+
+          - name: Preflight — vault_provider_enabled is deprecated
+            ansible.builtin.debug:
+              msg: >-
+                vault_provider_enabled is deprecated: provider-vault is always
+                pinned now, and its ClusterProviderConfigs follow
+                vault_provider_configs. Drop the var from the exec vars
+                {{ '(it is false here, which still keeps the ClusterProviderConfigs off).' if not (vault_provider_enabled | bool) else '(true is the new default behaviour).' }}
+            when: vault_provider_enabled is defined
+
           - name: Ensure cert-manager (sops-secrets-operator webhook dependency)
             ansible.builtin.shell: |
               set -euo pipefail
@@ -2628,12 +2814,14 @@ playbooks:
 
           - name: Crossplane providers + wait Healthy
             ansible.builtin.shell: |
-              helmfile apply -f {{ helm_repo }}@cicd/crossplane-providers.yaml.gotmpl?ref={{ helm_repo_ref }} --kubeconfig {{ kubeconfig }}
+              helmfile apply -f {{ helm_repo }}@cicd/crossplane-providers.yaml.gotmpl?ref={{ helm_repo_ref }} \
+                --state-values-set derivedNames=true --kubeconfig {{ kubeconfig }}
               kubectl wait provider.pkg.crossplane.io --all --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
 
           - name: Crossplane config (functions+configurations) + wait Healthy
             ansible.builtin.shell: |
-              helmfile apply -f {{ helm_repo }}@cicd/crossplane-config.yaml.gotmpl?ref={{ helm_repo_ref }} --kubeconfig {{ kubeconfig }}
+              helmfile apply -f {{ helm_repo }}@cicd/crossplane-config.yaml.gotmpl?ref={{ helm_repo_ref }} \
+                --state-values-set derivedNames=true --kubeconfig {{ kubeconfig }}
               kubectl wait configuration.pkg.crossplane.io --all --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
               kubectl wait function.pkg.crossplane.io --all --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
 
@@ -2672,7 +2860,7 @@ playbooks:
               label: "{{ item.name }}"
             when: platform_enabled | bool
 
-          # ---- provider-vault (vault_provider_enabled) ----------------------
+          # ---- provider-vault (always pinned; CPCs follow vault_provider_configs)
           - name: Install provider-vault
             ansible.builtin.shell: |
               cat <<'EOF' | kubectl apply --kubeconfig {{ kubeconfig }} -f -
@@ -2686,7 +2874,6 @@ playbooks:
               kubectl wait provider.pkg.crossplane.io/{{ vault_provider_name }} --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
               for i in $(seq 1 60); do kubectl get crd clusterproviderconfigs.vault.m.upbound.io --kubeconfig {{ kubeconfig }} >/dev/null 2>&1 && break; sleep 5; done
               kubectl wait --for=condition=established crd/clusterproviderconfigs.vault.m.upbound.io --timeout=180s --kubeconfig {{ kubeconfig }}
-            when: vault_provider_enabled | bool
 
           - name: Create the Vault PKI CA bundle Secrets
             ansible.builtin.shell: |
@@ -2870,7 +3057,7 @@ playbooks:
                 | kubectl apply --server-side --force-conflicts --field-manager=kind-machinery --kubeconfig {{ kubeconfig }} -f -
               {% endif %}
               {% endfor %}
-            when: vault_provider_enabled | bool and vault_provider_configs | length > 0
+            when: vault_provider_configs | length > 0 and (vault_provider_enabled | default(true) | bool)
             no_log: true    # never echo the AppRole credentials
 
           - name: Apply provider-vault ClusterProviderConfigs
@@ -2896,7 +3083,7 @@ playbooks:
                     key: credentials
               {% endfor %}
               EOF
-            when: vault_provider_enabled | bool and vault_provider_configs | length > 0
+            when: vault_provider_configs | length > 0 and (vault_provider_enabled | default(true) | bool)
 
           - name: Deploy per-environment capability charts
             ansible.builtin.command: >
