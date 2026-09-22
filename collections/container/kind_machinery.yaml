@@ -485,6 +485,15 @@ playbooks:
             # subject that does not exist — and RBAC does not validate subjects,
             # so it would look like it worked.
             - bootstrap/ip-reservation/examples/rbac.yaml
+            # `delete` on clusterproviderconfigs.kubernetes.m.crossplane.io.
+            # rancher-cluster composes an Object that MANAGES a
+            # ClusterProviderConfig; the rbac-manager-generated provider role
+            # can create it but not delete it, so every rancher-mode ClusterStack
+            # teardown wedges on `cannot delete resource "clusterproviderconfigs"`.
+            # It was hand-applied on u26-kind3 and missing on machinery-kind4/5
+            # until a rehearsal teardown hit it (2026-09-22). Binds the
+            # crossplane-system SA group, so provider upgrades keep it working.
+            - machinery/rancher-cluster/examples/rbac.yaml
 
           # Providers that no Configuration carries. Every other provider on a
           # machinery cluster arrives through some Configuration's dependsOn —
@@ -2094,6 +2103,15 @@ playbooks:
             # subject that does not exist — and RBAC does not validate subjects,
             # so it would look like it worked.
             - bootstrap/ip-reservation/examples/rbac.yaml
+            # `delete` on clusterproviderconfigs.kubernetes.m.crossplane.io.
+            # rancher-cluster composes an Object that MANAGES a
+            # ClusterProviderConfig; the rbac-manager-generated provider role
+            # can create it but not delete it, so every rancher-mode ClusterStack
+            # teardown wedges on `cannot delete resource "clusterproviderconfigs"`.
+            # It was hand-applied on u26-kind3 and missing on machinery-kind4/5
+            # until a rehearsal teardown hit it (2026-09-22). Binds the
+            # crossplane-system SA group, so provider upgrades keep it working.
+            - machinery/rancher-cluster/examples/rbac.yaml
 
           # Providers that no Configuration carries. Every other provider on a
           # machinery cluster arrives through some Configuration's dependsOn —
