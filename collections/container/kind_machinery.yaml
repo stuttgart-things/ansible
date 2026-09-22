@@ -604,6 +604,18 @@ playbooks:
           # on so the capability charts can reference it; omit when the package
           # pulls no provider beyond the ones already waited on above.
           # ansible-run is NOT listed: vspherevm and proxmoxvm both pull it.
+          # NAMES ARE THE DERIVED ONES (stuttgart-things/flux#506): what Crossplane
+          # itself calls a package it installed from a dependsOn. An explicit CR
+          # and a dependsOn-derived one are then the SAME Lock node rather than
+          # two, and the machinery profile in stuttgart-things/flux installs the
+          # same list under the same names -- so a cluster built either way is
+          # the same cluster.
+          #
+          # NOT in derived_name_packages, and that is the difference to the
+          # providers: the install task below resolves an existing CR BY SOURCE
+          # before applying, so on a cluster that has `cluster` it keeps using
+          # `cluster`. Nothing to stop, nothing to duplicate -- the derived name
+          # is what a FRESH cluster gets.
           machinery_packages:
             # v0.9.1 reicht den environmentConfig an den Ansible-Teil durch statt
             # Defaults zu raten — derselbe Fix wie bei proxmoxvm v0.12.1 unten,
@@ -627,7 +639,7 @@ playbooks:
             # Ab v0.9.2 bleibt der Default `default` stehen; wer eine
             # ansible-run-<env> hat, waehlt sie ueber spec.ansible.environmentConfig.
             # crossplane-configurations#347.
-            - name: vspherevm
+            - name: stuttgart-things-crossplane-configurations-vspherevm
               package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.12.0"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
             # v0.10.0 added spec.vm.cloneDatastore, v0.11.0 its `none` opt-out
@@ -654,11 +666,11 @@ playbooks:
             # v0.12.2 nimmt den environmentConfig-Durchreicher wieder heraus —
             # dieselbe Korrektur wie vspherevm v0.9.2 oben, gleiche Begruendung.
             # crossplane-configurations#347.
-            - name: proxmoxvm
+            - name: stuttgart-things-crossplane-configurations-proxmoxvm
               package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.16.0"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             # Tekton-backed Packer builder — only provider-kubernetes, already up.
-            - name: packer-build
+            - name: stuttgart-things-crossplane-configurations-packer-build
               package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.4.1"
             # Build -> test -> promote. Its dependsOn floor of packer-build
             # >=v0.3.0 is why the pin above had to move: against v0.2.0 the
@@ -674,7 +686,7 @@ playbooks:
             # EnvironmentConfig, so the `vaultSecretName: vault-labda` the
             # packer chart sets for LabDA is dead config and a LabDA promotion
             # has to restate it on the XR (crossplane-configurations#225).
-            - name: packer-release
+            - name: stuttgart-things-crossplane-configurations-packer-release
               package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-release:v0.4.2"
             # Scheduled encrypted state export to an OCI registry. Only
             # provider-kubernetes (already up), like the packer packages, so no
@@ -684,24 +696,24 @@ playbooks:
             # SA, the provider-kubernetes RBAC from the Configuration's README
             # (fleet GitOps, same place as provider-kubernetes-flux) - neither
             # is required just to install this.
-            - name: cluster-backup
+            - name: stuttgart-things-crossplane-configurations-cluster-backup
               package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster-backup:v0.2.0"
             # Cron-driven re-apply of an arbitrary XR (an AnsibleRun, a
             # PackerBuild). Only provider-kubernetes, so no provider_crd wait.
             # Its EnvironmentConfig comes from the scheduled-run capability
             # chart deployed below, not from the raw examples.
-            - name: scheduled-run
+            - name: stuttgart-things-crossplane-configurations-scheduled-run
               package: "ghcr.io/stuttgart-things/crossplane-configurations/scheduled-run:v0.1.1"
             # storage/minio (crossplane-configurations#481): buckets, policies and
             # users as managed resources instead of mc. Needs provider-minio, which
             # provider_packages installs, and a minio.crossplane.io ProviderConfig,
             # which is per environment and comes from the exec vars.
-            - name: minio
+            - name: stuttgart-things-crossplane-configurations-minio
               package: "ghcr.io/stuttgart-things/crossplane-configurations/minio:v0.1.0"
             # Runs a tofu module as a Workspace. Pulls provider-opentofu, which
             # the packer-release test VM also needs at RUN time — but nothing
             # installed here consumes its CRD at apply time, so no wait.
-            - name: tofu-run
+            - name: stuttgart-things-crossplane-configurations-tofu-run
               package: "ghcr.io/stuttgart-things/crossplane-configurations/tofu-run:v0.1.0"
             # Harvester / KubeVirt VMs. Third hypervisor next to vSphere and
             # Proxmox — crossplane-configurations#258 Block B wants a ClusterStack
@@ -717,7 +729,7 @@ playbooks:
             # here — same reason as flux-apps below: the same ghcr path under both
             # a short CR name and a dependsOn is the Lock collision from
             # crossplane-configurations#247.
-            - name: harvester-vm
+            - name: stuttgart-things-crossplane-configurations-harvester-vm
               package: "ghcr.io/stuttgart-things/crossplane-configurations/harvester-vm:v0.1.12"
 
           # Fleet-manager half. `platform` pulls cni, flux-init, flux-apps and
@@ -781,7 +793,7 @@ playbooks:
             # v0.6.2: bound ServiceAccounts for additional Vault auths,
             # clusterSecrets (the cluster's own observability entry), cni.gatewayAPI
             # passthrough, no generated webhook token. Floors unchanged.
-            - name: platform
+            - name: stuttgart-things-crossplane-configurations-platform
               package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.8.0"
             # flux-apps is NOT listed. platform has declared the dependency
             # since v0.3.1, so an explicit pin would put the same ghcr path
@@ -868,16 +880,16 @@ playbooks:
             # rancher environment so the distro is checkable (#491) and takes
             # xplane-cluster 0.20.0, which refuses a mismatched pair (#492).
             # Left at v0.11.8 here, a play run DOWNGRADED the live cluster.
-            - name: cluster
+            - name: stuttgart-things-crossplane-configurations-cluster
               package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.10"
             # capability and argocd-cluster: nothing dependsOn them, so they only
             # exist where someone installs them. On u26-kind3 that was by hand
             # (2026-08-17/18), each with a live XR (seed-labda-1-capability,
             # homerun2-test1); a machinery cluster rebuilt from Git lacked both
             # XRDs (found by the u26-kindtest rebuild, 2026-09-19).
-            - name: capability
+            - name: stuttgart-things-crossplane-configurations-capability
               package: "ghcr.io/stuttgart-things/crossplane-configurations/capability:v0.7.2"
-            - name: argocd-cluster
+            - name: stuttgart-things-crossplane-configurations-argocd-cluster
               package: "ghcr.io/stuttgart-things/crossplane-configurations/argocd-cluster:v0.2.1"
 
           configuration_packages: >-
@@ -2311,6 +2323,18 @@ playbooks:
           #     pki_mount: pki          # default
           vault_pki_ca_secrets: []
 
+          # NAMES ARE THE DERIVED ONES (stuttgart-things/flux#506): what Crossplane
+          # itself calls a package it installed from a dependsOn. An explicit CR
+          # and a dependsOn-derived one are then the SAME Lock node rather than
+          # two, and the machinery profile in stuttgart-things/flux installs the
+          # same list under the same names -- so a cluster built either way is
+          # the same cluster.
+          #
+          # NOT in derived_name_packages, and that is the difference to the
+          # providers: the install task below resolves an existing CR BY SOURCE
+          # before applying, so on a cluster that has `cluster` it keeps using
+          # `cluster`. Nothing to stop, nothing to duplicate -- the derived name
+          # is what a FRESH cluster gets.
           machinery_packages:
             # v0.9.1 reicht den environmentConfig an den Ansible-Teil durch statt
             # Defaults zu raten — derselbe Fix wie bei proxmoxvm v0.12.1 unten,
@@ -2334,7 +2358,7 @@ playbooks:
             # Ab v0.9.2 bleibt der Default `default` stehen; wer eine
             # ansible-run-<env> hat, waehlt sie ueber spec.ansible.environmentConfig.
             # crossplane-configurations#347.
-            - name: vspherevm
+            - name: stuttgart-things-crossplane-configurations-vspherevm
               package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.12.0"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
             # v0.10.0 added spec.vm.cloneDatastore, v0.11.0 its `none` opt-out
@@ -2361,10 +2385,10 @@ playbooks:
             # v0.12.2 nimmt den environmentConfig-Durchreicher wieder heraus —
             # dieselbe Korrektur wie vspherevm v0.9.2 oben, gleiche Begruendung.
             # crossplane-configurations#347.
-            - name: proxmoxvm
+            - name: stuttgart-things-crossplane-configurations-proxmoxvm
               package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.16.0"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
-            - name: packer-build
+            - name: stuttgart-things-crossplane-configurations-packer-build
               package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.4.1"
             # Build -> test -> promote. Its dependsOn floor of packer-build
             # >=v0.3.0 is why the pin above had to move: against v0.2.0 the
@@ -2380,7 +2404,7 @@ playbooks:
             # EnvironmentConfig, so the `vaultSecretName: vault-labda` the
             # packer chart sets for LabDA is dead config and a LabDA promotion
             # has to restate it on the XR (crossplane-configurations#225).
-            - name: packer-release
+            - name: stuttgart-things-crossplane-configurations-packer-release
               package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-release:v0.4.2"
             # Scheduled encrypted state export to an OCI registry. Only
             # provider-kubernetes (already up), like the packer packages, so no
@@ -2390,24 +2414,24 @@ playbooks:
             # SA, the provider-kubernetes RBAC from the Configuration's README
             # (fleet GitOps, same place as provider-kubernetes-flux) - neither
             # is required just to install this.
-            - name: cluster-backup
+            - name: stuttgart-things-crossplane-configurations-cluster-backup
               package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster-backup:v0.2.0"
             # Cron-driven re-apply of an arbitrary XR (an AnsibleRun, a
             # PackerBuild). Only provider-kubernetes, so no provider_crd wait.
             # Its EnvironmentConfig comes from the scheduled-run capability
             # chart deployed below, not from the raw examples.
-            - name: scheduled-run
+            - name: stuttgart-things-crossplane-configurations-scheduled-run
               package: "ghcr.io/stuttgart-things/crossplane-configurations/scheduled-run:v0.1.1"
             # storage/minio (crossplane-configurations#481): buckets, policies and
             # users as managed resources instead of mc. Needs provider-minio, which
             # provider_packages installs, and a minio.crossplane.io ProviderConfig,
             # which is per environment and comes from the exec vars.
-            - name: minio
+            - name: stuttgart-things-crossplane-configurations-minio
               package: "ghcr.io/stuttgart-things/crossplane-configurations/minio:v0.1.0"
             # Runs a tofu module as a Workspace. Pulls provider-opentofu, which
             # the packer-release test VM also needs at RUN time — but nothing
             # installed here consumes its CRD at apply time, so no wait.
-            - name: tofu-run
+            - name: stuttgart-things-crossplane-configurations-tofu-run
               package: "ghcr.io/stuttgart-things/crossplane-configurations/tofu-run:v0.1.0"
             # Harvester / KubeVirt VMs. Third hypervisor next to vSphere and
             # Proxmox — crossplane-configurations#258 Block B wants a ClusterStack
@@ -2423,7 +2447,7 @@ playbooks:
             # here — same reason as flux-apps below: the same ghcr path under both
             # a short CR name and a dependsOn is the Lock collision from
             # crossplane-configurations#247.
-            - name: harvester-vm
+            - name: stuttgart-things-crossplane-configurations-harvester-vm
               package: "ghcr.io/stuttgart-things/crossplane-configurations/harvester-vm:v0.1.12"
 
           platform_packages:
@@ -2473,7 +2497,7 @@ playbooks:
             # v0.6.2: bound ServiceAccounts for additional Vault auths,
             # clusterSecrets (the cluster's own observability entry), cni.gatewayAPI
             # passthrough, no generated webhook token. Floors unchanged.
-            - name: platform
+            - name: stuttgart-things-crossplane-configurations-platform
               package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.8.0"
             # flux-apps is NOT listed. platform has declared the dependency
             # since v0.3.1, so an explicit pin would put the same ghcr path
@@ -2560,16 +2584,16 @@ playbooks:
             # rancher environment so the distro is checkable (#491) and takes
             # xplane-cluster 0.20.0, which refuses a mismatched pair (#492).
             # Left at v0.11.8 here, a play run DOWNGRADED the live cluster.
-            - name: cluster
+            - name: stuttgart-things-crossplane-configurations-cluster
               package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.10"
             # capability and argocd-cluster: nothing dependsOn them, so they only
             # exist where someone installs them. On u26-kind3 that was by hand
             # (2026-08-17/18), each with a live XR (seed-labda-1-capability,
             # homerun2-test1); a machinery cluster rebuilt from Git lacked both
             # XRDs (found by the u26-kindtest rebuild, 2026-09-19).
-            - name: capability
+            - name: stuttgart-things-crossplane-configurations-capability
               package: "ghcr.io/stuttgart-things/crossplane-configurations/capability:v0.7.2"
-            - name: argocd-cluster
+            - name: stuttgart-things-crossplane-configurations-argocd-cluster
               package: "ghcr.io/stuttgart-things/crossplane-configurations/argocd-cluster:v0.2.1"
 
           configuration_packages: >-
