@@ -33,7 +33,7 @@ vars:
       xpdig_version: 1.25.0 # datasource=github-tags depName=brunoluiz/xpdig
       dagger_version: 0.21.9 # datasource=github-tags depName=dagger/dagger
       tkn_version: 0.46.0 # datasource=github-tags depName=tektoncd/cli
-      vcluster_version: 0.37.1 # datasource=github-tags depName=loft-sh/vcluster
+      vcluster_version: 0.37.2 # datasource=github-tags depName=loft-sh/vcluster
       vals_version: 0.47.0 # datasource=github-tags depName=helmfile/vals
 
       bin:
