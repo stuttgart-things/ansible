@@ -15,6 +15,19 @@
       "semanticCommitScope": "roles",
       "separateMajorMinor": false,
       "separateMinorPatch": false
+    },
+    {
+      "description": "CROSSPLANE PACKAGES IN THE MACHINERY PLAY ARE NOT BUMPED HERE. THEIR ONE PIN SOURCE IS THE KCL CATALOG (stuttgart-things/kcl, crossplane/xplane-crossplane-catalog), WHICH ALSO GENERATES THE FLUX machinery PROFILE. RENOVATE MOVING THEM IN THIS REPO ON ITS OWN (#1247, #1249) LEFT A KIND CLUSTER AND A FLUX-BUILT ONE ON DIFFERENT PACKAGES. BUMP THEM BY HAND TO WHAT THE CATALOG PINS. REMOVE THIS RULE, AND THE MANAGER, ONCE THE PLAY INSTALLS THE FLUX PROFILE INSTEAD OF ITS OWN LIST (stuttgart-things/stuttgart-things#3136). stuttgart-things/flux#521",
+      "matchFileNames": [
+        "collections/*/*.yaml"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "ghcr.io/stuttgart-things/crossplane-configurations/**"
+      ],
+      "enabled": false
     }
   ],
   "customManagers": [
