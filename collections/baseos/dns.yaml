@@ -59,6 +59,11 @@ playbooks:
           # more than it should have.
           dns_verify_public_name: github.com
           dns_dropin_path: /etc/systemd/resolved.conf.d/lab-zones.conf
+          # Also forward the zones in the CoreDNS of a k3s server that has not
+          # been installed yet -- see the task below. Off by default: it writes
+          # into /var/lib/rancher/k3s, which only means something on a k3s node.
+          dns_k3s_coredns: false
+          dns_k3s_manifest_path: /var/lib/rancher/k3s/server/manifests/lab-zones-coredns.yaml
 
         tasks:
           - name: Fail when no zones were given
@@ -151,6 +156,53 @@ playbooks:
             when:
               - dns_control_before.rc == 0
               - dns_control_after.rc != 0
+
+          # THE POD HALF, for a k3s node that does not exist yet. The drop-in
+          # above fixes the node, not the pods (see the header): CoreDNS reads
+          # the flat resolv.conf. On a cluster that already runs, Flux's
+          # coredns-lab-zone fixes that -- but a RANCHER-provisioned k3s needs
+          # it before anything can be deployed, because cattle-cluster-agent is
+          # an ordinary pod and has to resolve the Rancher to register at all
+          # (crossplane-configurations#508: the LabDA Rancher answers only under
+          # 4sthings.tiab.ssc.sva.de).
+          #
+          # So it goes where k3s itself picks it up: every file in
+          # server/manifests is applied by the k3s server on start, and the k3s
+          # CoreDNS imports /etc/coredns/custom/*.server from the optional
+          # ConfigMap kube-system/coredns-custom. Written before k3s is
+          # installed, it is there on the first start. One key per zone.
+          #
+          # k3s ONLY. rke2's CoreDNS is a Helm chart configured through a
+          # HelmChartConfig (flux coredns-lab-zone) and ignores coredns-custom.
+          - name: Forward the zones in the k3s CoreDNS
+            when: dns_k3s_coredns | bool
+            block:
+              - name: Ensure the k3s manifests directory exists
+                ansible.builtin.file:
+                  path: "{{ dns_k3s_manifest_path | dirname }}"
+                  state: directory
+                  mode: "0700"
+
+              - name: Write the coredns-custom manifest
+                ansible.builtin.copy:
+                  dest: "{{ dns_k3s_manifest_path }}"
+                  mode: "0600"
+                  content: |
+                    # Managed by sthings.baseos.dns_zones -- do not edit by hand.
+                    apiVersion: v1
+                    kind: ConfigMap
+                    metadata:
+                      name: coredns-custom
+                      namespace: kube-system
+                    data:
+                    {% for z in dns_forward_zones %}
+                      {{ z.zone }}.server: |
+                        {{ z.zone }}:53 {
+                            errors
+                            cache 30
+                            forward . {{ z.server }}
+                        }
+                    {% endfor %}
 
         handlers:
           - name: Restart systemd-resolved
