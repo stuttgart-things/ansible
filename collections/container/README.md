@@ -72,7 +72,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `sthings.container.provision_edge` | Full edge cluster provisioning (KIND or K3s + Headlamp + Loki + Promtail + Grafana + Homerun + Redis) |
 | `sthings.container.send_events_homerun` | Send mock events to Homerun app and probe test URLs |
 | `sthings.container.redis_setup` | Setup Redis port-forward and create RedisSearch index |
-| `sthings.container.homerun2_led_catcher_pi` | Install homerun2-led-catcher on a Raspberry Pi with a HUB75 matrix: boot config, audio blacklist, venv with rpi-rgb-led-matrix, systemd unit, `/healthz` check. Needs `-e led_api_token=…` (standalone) or `led_redis_addr` (led/full/web) |
+| `sthings.container.homerun2_led_catcher_pi` | Install homerun2-led-catcher on a Raspberry Pi with a HUB75 matrix: boot config, audio blacklist, venv with rpi-rgb-led-matrix, systemd unit, `/healthz` check. Needs `-e led_api_token=…` (standalone) or `led_redis_addr` (led/full/web). Optional: `led_profile_src` (a profile on the controller, kept in sync) and `led_ui_stream_presets` (the simulator's stream buttons) |
 
 ### Tools
 

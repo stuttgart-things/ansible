@@ -42,6 +42,12 @@ playbooks:
       #     -e led_mode=full -e led_redis_addr=redis.example.com \
       #     -e led_api_token=change-me -e led_redis_password=secret
       #
+      #   # with a profile of your own, and buttons to switch the panel onto a
+      #   # scoreboard stream (POST /streams) and back
+      #   ansible-playbook -i inventory.ini sthings.container.homerun2_led_catcher_pi \
+      #     -e led_mode=full -e led_redis_addr=redis.example.com \
+      #     -e led_profile_src=$PWD/profile.yaml -e led_ui_stream_presets=messages,tabletennis
+      #
       #   # behind https://matrix.sthings.lab, with a certificate from the OpenBao PKI
       #   # (VAULT_TOKEN on the controller), and the clock between displays
       #   VAULT_TOKEN=... ansible-playbook -i inventory.ini sthings.container.homerun2_led_catcher_pi \
@@ -110,6 +116,8 @@ playbooks:
           led_redis_stream: messages
           led_redis_password: ""
           led_consumer_group: homerun2-led-catcher
+          led_ui_stream_presets: ""             # e.g. messages,tabletennis: the simulator's stream buttons; empty: only led_redis_stream
+          led_profile_src: ""                   # a profile.yaml on the controller, installed and kept in sync; empty: the repo's tests/profile.yaml, once
 
           # --- Boot ---
           led_isolate_cpu: true                 # isolcpus=3 on boards with 4+ cores
@@ -417,6 +425,10 @@ playbooks:
                 Environment=REDIS_STREAM={{ led_redis_stream }}
                 Environment=CONSUMER_GROUP={{ led_consumer_group }}
                 Environment=PROFILE_PATH={{ led_dir }}/profile.yaml
+                {% if led_ui_stream_presets | length > 0 %}
+                # the simulator's stream switch: comma-separated presets, streams in one joined by |
+                Environment=UI_STREAM_PRESETS={{ led_ui_stream_presets }}
+                {% endif %}
                 {% endif %}
                 # LED_API_TOKEN and REDIS_PASSWORD
                 EnvironmentFile=/etc/default/led-catcher
@@ -440,7 +452,20 @@ playbooks:
               owner: "{{ led_user }}"
               group: "{{ led_user }}"
               mode: "0644"
-            when: led_mode != 'standalone'
+            when: led_mode != 'standalone' and led_profile_src | length == 0
+            notify: Restart led-catcher
+            tags: service
+
+          # The catcher reads the profile at startup only, hence the restart.
+          # Overwrites on every run: the file on the controller is the truth.
+          - name: The profile from the controller (led_profile_src)
+            ansible.builtin.copy:
+              src: "{{ led_profile_src }}"
+              dest: "{{ led_dir }}/profile.yaml"
+              owner: "{{ led_user }}"
+              group: "{{ led_user }}"
+              mode: "0644"
+            when: led_mode != 'standalone' and led_profile_src | length > 0
             notify: Restart led-catcher
             tags: service
 
