@@ -32,6 +32,18 @@ playbooks:
           runner_scope: repo
           runner_instances:
             - name: "{{ ansible_hostname }}"
+          # The PAT from the environment by default -- which is how the
+          # execute-ansible pipeline hands it over (a Secret named by the VM
+          # XR's spec.ansible.extraEnvSecretName, key GITHUB_TOKEN). A vars file
+          # may still set github_pat itself.
+          github_pat: "{{ lookup('env', 'GITHUB_TOKEN') }}"
+          # Every task that handles the PAT, a registration token or a removal
+          # token runs with no_log. The pipeline logs at -vv, which prints task
+          # results: without it the registration token (valid for an hour, good
+          # for registering a runner in the org) lands in the PipelineRun log.
+          # Set false only to debug a failing registration, and never in a
+          # shared pipeline.
+          runner_no_log: true
 
         pre_tasks:
           - name: Include vars
@@ -43,8 +55,12 @@ playbooks:
               that:
                 - github_owner is defined
                 - github_pat is defined
+                - github_pat | length > 0
                 - runner_scope == 'org' or github_repo is defined
-              fail_msg: "Required variables: github_owner, github_pat, github_repo (repo scope)"
+              fail_msg: >-
+                Required: github_owner, a non-empty github_pat (or GITHUB_TOKEN in
+                the environment -- in the execute-ansible pipeline, the Secret named
+                by extraEnvSecretName), and github_repo for repo scope
 
           - name: Validate runner group requires org scope
             ansible.builtin.assert:
@@ -96,10 +112,12 @@ playbooks:
               status_code: 201
               validate_certs: true
             register: runner_token_response
+            no_log: "{{ runner_no_log }}"
 
           - name: Set runner token fact
             ansible.builtin.set_fact:
               runner_token: "{{ runner_token_response.json.token }}"
+            no_log: "{{ runner_no_log }}"
 
           - name: Download GitHub Actions runner tarball
             ansible.builtin.get_url:
@@ -163,6 +181,7 @@ playbooks:
               status_code: 201
               validate_certs: true
             register: _runner_remove_token_response
+            no_log: "{{ runner_no_log }}"
             when:
               - runner_force_reconfigure | bool
               - _runner_configs.results | selectattr('stat.exists') | list | length > 0
@@ -193,6 +212,7 @@ playbooks:
             when:
               - runner_force_reconfigure | bool
               - item.stat.exists
+            no_log: "{{ runner_no_log }}"
 
           - name: Re-check runner configuration state after force_reconfigure
             ansible.builtin.stat:
@@ -221,6 +241,7 @@ playbooks:
             loop_control:
               label: "{{ item.item.name }}"
             when: not item.stat.exists
+            no_log: "{{ runner_no_log }}"
 
           - name: Install runner instances as systemd services
             ansible.builtin.command: ./svc.sh install {{ runner_user }}
