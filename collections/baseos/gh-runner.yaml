@@ -214,14 +214,19 @@ playbooks:
               - item.stat.exists
             no_log: "{{ runner_no_log }}"
 
-          - name: Re-check runner configuration state after force_reconfigure
+          # Always, not only after force_reconfigure: a SKIPPED task still
+          # overwrites its register, with results that carry no `stat`, and
+          # "Configure runner instances" then failed on every first
+          # registration with runner_force_reconfigure false ("'dict' object
+          # has no attribute 'stat'"). Re-stating is cheap and correct in
+          # both cases.
+          - name: Re-check runner configuration state
             ansible.builtin.stat:
               path: "{{ runner_base_dir }}-{{ item.name }}/.runner"
             loop: "{{ runner_instances }}"
             loop_control:
               label: "{{ item.name }}"
             register: _runner_configs
-            when: runner_force_reconfigure | bool
 
           - name: Configure runner instances
             ansible.builtin.command: >-
