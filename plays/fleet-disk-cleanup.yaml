@@ -2,7 +2,9 @@
 # =============================================================================
 # Fleet Disk Cleanup
 # -----------------------------------------------------------------------------
-# Cleans up /home and /var on the GitHub runner and SOAR hosts.
+# Cleans up /home and /var on the GitHub runner and SOAR hosts, and on the
+# dev VMs used over VS Code Remote-SSH (set cleanup_runner_user to the
+# login user there, e.g. -e cleanup_runner_user=sthings).
 #
 # SAFE BY DESIGN:
 #   * removes ONLY caches, logs and disposable build artifacts
@@ -18,8 +20,11 @@
 #   ansible-playbook -i inventory.ini plays/fleet-disk-cleanup.yaml --tags docker,apt
 #   ansible-playbook -i inventory.ini plays/fleet-disk-cleanup.yaml -e cleanup_force=true
 #   ansible-playbook -i inventory.ini plays/fleet-disk-cleanup.yaml -e prune_docker_volumes=true
+#   ansible-playbook -i inventory.ini plays/fleet-disk-cleanup.yaml -e cleanup_runner_user=sthings \
+#     -e stop_crossplane_render_containers=true -e prune_docker_all_images=true   # dev VM, full
 #
-# Tags: journal, trivy, go, runner, snap, vscode, docker, apt, logs, diagnose
+# Tags: journal, trivy, go, runner, snap, vscode, docker, apt, logs, devcaches,
+#       buildah, diagnose
 #       (preflight and the before/after report always run)
 # =============================================================================
 
@@ -56,6 +61,10 @@
     clean_runner_work_temp: true  # _work/_temp (job scratch, recreated on demand)
     clean_trivy_cache: true
     clean_vscode_server: false    # disconnects active remote sessions -> opt-in
+    clean_vscode_old_servers: true  # ~/.vscode-server/cli/servers/Stable-* not currently running
+    clean_dev_caches: true        # uv, npm/_npx, pip, puppeteer, node-gyp, golangci-lint (cleanup user)
+    clean_buildah_cache: true     # /var/tmp/buildah-cache-* (skipped while buildah runs)
+    clean_dagger_engine_volumes: true  # unattached volumes holding an old Dagger engine's state
     clean_snap: true
     clean_apt: true               # apt clean + autoremove --purge (old kernels)
     clean_old_logs: true          # rotated archives in /var/log (*.gz, *.1, ...)
@@ -65,6 +74,10 @@
     # DANGEROUS -> enable explicitly with -e only
     prune_docker_volumes: false     # removes *unused* volumes (may be real data!)
     prune_docker_all_images: false  # docker system prune -a (also tagged images)
+    # `crossplane render` leaves its function containers running; they pin
+    # their images, so enable this together with prune_docker_all_images.
+    stop_crossplane_render_containers: false
+    crossplane_function_image_pattern: 'crossplane-contrib/function-'
 
   handlers:
     - name: Restart systemd-journald
@@ -364,6 +377,85 @@
       when: clean_vscode_server and cleanup_user_exists
       tags: vscode
 
+    # Every VS Code update drops a new ~650M server next to the old ones.
+    # The ones a connected client is running are kept.
+    - name: Old VS Code servers
+      tags: vscode
+      when: clean_vscode_old_servers and cleanup_user_exists
+      block:
+
+        - name: Find installed VS Code servers
+          ansible.builtin.find:
+            paths: "{{ cleanup_home }}/.vscode-server/cli/servers"
+            patterns: 'Stable-*'
+            file_type: directory
+          register: vscode_servers
+          check_mode: false
+
+        - name: Find VS Code servers in use
+          ansible.builtin.shell:
+            cmd: "ps -eo args | grep -o 'Stable-[0-9a-f]\\{40\\}' | sort -u"
+            executable: /bin/bash
+          register: vscode_running
+          changed_when: false
+          failed_when: false
+          check_mode: false
+
+        - name: Remove VS Code servers not in use
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: absent
+          loop: "{{ vscode_servers.files | rejectattr('path', 'search', vscode_running.stdout_lines | join('|') | default('^$', true)) | list }}"
+          loop_control:
+            label: "{{ item.path | basename }}"
+
+    # Download caches in the cleanup user's home. Each tool refills its
+    # own on the next run.
+    - name: Remove developer tool caches
+      ansible.builtin.file:
+        path: "{{ cleanup_home }}/{{ item }}"
+        state: absent
+      loop:
+        - .cache/uv
+        - .cache/pip
+        - .cache/puppeteer
+        - .cache/node-gyp
+        - .cache/golangci-lint
+        - .npm/_cacache
+        - .npm/_npx
+      when: clean_dev_caches and cleanup_user_exists
+      tags: devcaches
+
+    - name: Buildah cache
+      tags: buildah
+      when: clean_buildah_cache
+      block:
+
+        - name: Check whether buildah is running
+          ansible.builtin.command: pgrep -x buildah
+          register: buildah_running
+          changed_when: false
+          failed_when: false
+          check_mode: false
+
+        - name: Find buildah caches
+          ansible.builtin.find:
+            paths: /var/tmp
+            patterns: 'buildah-cache-*'
+            file_type: directory
+          register: buildah_caches
+          check_mode: false
+          when: buildah_running.rc != 0
+
+        - name: Remove buildah caches
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: absent
+          loop: "{{ buildah_caches.files | default([]) }}"
+          loop_control:
+            label: "{{ item.path }}"
+          when: buildah_running.rc != 0
+
     # ------------------------------------------------------------- DOCKER
     # Default: stopped containers + dangling images + build cache.
     # NO volumes, NO tagged images.
@@ -371,6 +463,24 @@
       tags: docker
       when: docker_available
       block:
+
+        # Runs before the prunes so the images these containers pin are
+        # unused by the time prune -a looks at them.
+        - name: Find leftover crossplane render function containers
+          ansible.builtin.shell:
+            cmd: "docker ps -a | awk -v p={{ crossplane_function_image_pattern | quote }} 'NR > 1 && index($2, p) { print $1 }'"
+            executable: /bin/bash
+          register: xp_render_containers
+          changed_when: false
+          check_mode: false
+          when: stop_crossplane_render_containers
+
+        - name: Remove leftover crossplane render function containers
+          ansible.builtin.command: "docker rm -f {{ xp_render_containers.stdout_lines | join(' ') }}"
+          changed_when: true
+          when:
+            - stop_crossplane_render_containers
+            - xp_render_containers.stdout_lines | default([]) | length > 0
 
         - name: Docker safe prune
           ansible.builtin.command: docker system prune -f
@@ -395,6 +505,32 @@
           register: docker_vol_prune
           changed_when: "'Total reclaimed space: 0B' not in docker_vol_prune.stdout"
           when: prune_docker_volumes
+
+        # A Dagger engine upgrade starts a new engine container with a new
+        # anonymous state volume and leaves the old one behind (several GB
+        # each). Only unattached volumes holding dagger-engine.lock are
+        # removed, so the current engine's volume stays even when it is
+        # stopped.
+        - name: Find state volumes of old Dagger engines
+          ansible.builtin.shell:
+            cmd: |
+              for v in $(docker volume ls -q -f dangling=true); do
+                mp=$(docker volume inspect "$v" | grep -o '"Mountpoint": *"[^"]*"' | cut -d'"' -f4)
+                [ -e "$mp/dagger-engine.lock" ] && echo "$v"
+              done
+              exit 0
+            executable: /bin/bash
+          register: dagger_old_volumes
+          changed_when: false
+          check_mode: false
+          when: clean_dagger_engine_volumes and not prune_docker_volumes
+
+        - name: Remove state volumes of old Dagger engines
+          ansible.builtin.command: "docker volume rm {{ dagger_old_volumes.stdout_lines | join(' ') }}"
+          changed_when: true
+          when:
+            - clean_dagger_engine_volumes and not prune_docker_volumes
+            - dagger_old_volumes.stdout_lines | default([]) | length > 0
 
     # ----------------------------------------------------------------- AFTER
     - name: Report
