@@ -54,7 +54,7 @@ vars:
           source_url: "https://github.com/loft-sh/vcluster/releases/download/v{{ vcluster_version }}/vcluster-linux-amd64"
           bin_to_copy: vcluster-linux-amd64
           to_remove: ""
-          bin_dir: "/usr/bin"
+          bin_dir: "/usr/bin/vcluster"
           version_cmd: "version"
           target_version: "{{ vcluster_version }}"
         tkn:
@@ -84,7 +84,7 @@ vars:
           source_url: "https://github.com/argoproj/argo-cd/releases/download/v{{ argocd_version }}/argocd-linux-amd64"
           bin_to_copy: argocd-linux-amd64
           to_remove: ""
-          bin_dir: "/usr/bin"
+          bin_dir: "/usr/bin/argocd"
           version_cmd: "version"
           target_version: "{{ argocd_version }}"
         kind:
@@ -94,7 +94,7 @@ vars:
           source_url: "https://github.com/kubernetes-sigs/kind/releases/download/v{{ kind_version }}/kind-linux-amd64"
           bin_to_copy: kind-linux-amd64
           to_remove: ""
-          bin_dir: "/usr/bin"
+          bin_dir: "/usr/bin/kind"
           version_cmd: "version"
           target_version: "{{ kind_version }}"
         skopeo:
@@ -104,7 +104,7 @@ vars:
           source_url: "https://github.com/lework/skopeo-binary/releases/download/v{{ skopeo_version }}/skopeo-linux-amd64"
           bin_to_copy: skopeo-linux-amd64
           to_remove: ""
-          bin_dir: "/usr/bin"
+          bin_dir: "/usr/bin/skopeo"
           version_cmd: "version"
           target_version: "v{{ skopeo_version }}"
         helm:
