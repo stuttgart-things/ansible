@@ -702,8 +702,12 @@ playbooks:
             # PackerBuild). Only provider-kubernetes, so no provider_crd wait.
             # Its EnvironmentConfig comes from the scheduled-run capability
             # chart deployed below, not from the raw examples.
+            # v0.2.0 (crossplane-configurations#531): one ServiceAccount + Role
+            # per XR. Up to v0.1.1 every XR defaulted to one shared
+            # `scheduled-run` SA that several XRs composed -- deleting one XR
+            # removed it for all the others. Do not go back below v0.2.0.
             - name: stuttgart-things-crossplane-configurations-scheduled-run
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/scheduled-run:v0.1.1"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/scheduled-run:v0.2.0"
             # storage/minio (crossplane-configurations#481): buckets, policies and
             # users as managed resources instead of mc. Needs provider-minio, which
             # provider_packages installs, and a minio.crossplane.io ProviderConfig,
@@ -2420,8 +2424,12 @@ playbooks:
             # PackerBuild). Only provider-kubernetes, so no provider_crd wait.
             # Its EnvironmentConfig comes from the scheduled-run capability
             # chart deployed below, not from the raw examples.
+            # v0.2.0 (crossplane-configurations#531): one ServiceAccount + Role
+            # per XR. Up to v0.1.1 every XR defaulted to one shared
+            # `scheduled-run` SA that several XRs composed -- deleting one XR
+            # removed it for all the others. Do not go back below v0.2.0.
             - name: stuttgart-things-crossplane-configurations-scheduled-run
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/scheduled-run:v0.1.1"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/scheduled-run:v0.2.0"
             # storage/minio (crossplane-configurations#481): buckets, policies and
             # users as managed resources instead of mc. Needs provider-minio, which
             # provider_packages installs, and a minio.crossplane.io ProviderConfig,
