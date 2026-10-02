@@ -290,6 +290,19 @@ playbooks:
           # writing, so until that merges a run needs
           # `-e stuttgart_things_ref=feat/packer-capability-chart`.
           packer_chart_enabled: true
+          # pipelinerun-reaper: a ScheduledRun that deletes a FINISHED Tekton
+          # PipelineRun only when the provider-kubernetes Object wrapping it is
+          # already being deleted. provider-kubernetes v1.2.1 dry-runs the desired
+          # manifest on every observe; once the rendered spec drifts (newer
+          # collection pins), Tekton rejects that for a completed run, and every
+          # AnsibleRun teardown hangs until someone deletes the run by hand.
+          # Applied from the monorepo checkout (same files Flux applies on the
+          # stable machinery: clusters/labda/vsphere/machinery-xrs/), so there is
+          # one copy. Needs scheduled-run (capabilities_enabled).
+          pipelinerun_reaper_enabled: true
+          pipelinerun_reaper_manifests:
+            - clusters/labda/vsphere/machinery-xrs/pipelinerun-reaper-rbac.yaml
+            - clusters/labda/vsphere/machinery-xrs/scheduledrun-pipelinerun-reaper.yaml
 
           # Per-environment capability charts. One Helm release per entry in
           # `envs`, named `<chart>-<env>`, credentials read from
@@ -421,7 +434,8 @@ playbooks:
           stuttgart_things_repo: "https://github.com/stuttgart-things/stuttgart-things.git"
           stuttgart_things_ref: main
           # Shallow checkout shared by every chart that is not on OCI (packer,
-          # provider-kubeconfig-vault). Cloned once, when either needs it.
+          # provider-kubeconfig-vault) and the pipelinerun-reaper manifests.
+          # Cloned once, when any of them needs it.
           stuttgart_things_checkout: "/tmp/stuttgart-things-baseline"
           # The PipelineRun namespace. Both packer pipelines run here, and it is
           # where the packer CA bundle and the tekton-ci sops Secrets must land —
@@ -1617,6 +1631,7 @@ playbooks:
             no_log: true    # never echo the git token
             when: >-
               (capabilities_enabled | bool and packer_chart_enabled | bool)
+              or (capabilities_enabled | bool and pipelinerun_reaper_enabled | bool)
               or vault_kubeconfigs_enabled | bool
 
           # The packer runtime: the two Configurations' EnvironmentConfigs
@@ -1771,6 +1786,20 @@ playbooks:
                 --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
             become_user: "{{ ansible_user }}"
             when: vault_kubeconfigs_enabled | bool
+
+          # After scheduled-run (its XRD must be Established) and before the
+          # settle gate. The reaper's first Job runs within 10 min and ends
+          # Completed, which the settle gate counts as healthy.
+          - name: Deploy pipelinerun-reaper (ScheduledRun + RBAC, from the monorepo)
+            ansible.builtin.shell: |
+              set -euo pipefail
+              kubectl wait crd/scheduledruns.resources.stuttgart-things.com \
+                --for=condition=Established --timeout=300s --kubeconfig {{ kubeconfig }}
+              {% for m in pipelinerun_reaper_manifests %}
+              kubectl apply --kubeconfig {{ kubeconfig }} -f {{ stuttgart_things_checkout }}/{{ m }}
+              {% endfor %}
+            become_user: "{{ ansible_user }}"
+            when: capabilities_enabled | bool and pipelinerun_reaper_enabled | bool
 
           # Installing ~24 Configuration packages registers a large number of CRDs.
           # Each burst forces the apiserver to rebuild discovery and OpenAPI, etcd
@@ -2017,6 +2046,19 @@ playbooks:
           # writing, so until that merges a run needs
           # `-e stuttgart_things_ref=feat/packer-capability-chart`.
           packer_chart_enabled: true
+          # pipelinerun-reaper: a ScheduledRun that deletes a FINISHED Tekton
+          # PipelineRun only when the provider-kubernetes Object wrapping it is
+          # already being deleted. provider-kubernetes v1.2.1 dry-runs the desired
+          # manifest on every observe; once the rendered spec drifts (newer
+          # collection pins), Tekton rejects that for a completed run, and every
+          # AnsibleRun teardown hangs until someone deletes the run by hand.
+          # Applied from the monorepo checkout (same files Flux applies on the
+          # stable machinery: clusters/labda/vsphere/machinery-xrs/), so there is
+          # one copy. Needs scheduled-run (capabilities_enabled).
+          pipelinerun_reaper_enabled: true
+          pipelinerun_reaper_manifests:
+            - clusters/labda/vsphere/machinery-xrs/pipelinerun-reaper-rbac.yaml
+            - clusters/labda/vsphere/machinery-xrs/scheduledrun-pipelinerun-reaper.yaml
 
           # Per-environment capability charts. One Helm release per entry in
           # `envs`, named `<chart>-<env>`, credentials read from
@@ -2150,7 +2192,8 @@ playbooks:
           stuttgart_things_repo: "https://github.com/stuttgart-things/stuttgart-things.git"
           stuttgart_things_ref: main
           # Shallow checkout shared by every chart that is not on OCI (packer,
-          # provider-kubeconfig-vault). Cloned once, when either needs it.
+          # provider-kubeconfig-vault) and the pipelinerun-reaper manifests.
+          # Cloned once, when any of them needs it.
           stuttgart_things_checkout: "/tmp/stuttgart-things-baseline"
           # The PipelineRun namespace. Both packer pipelines run here, and it is
           # where the packer CA bundle and the tekton-ci sops Secrets must land —
@@ -3185,6 +3228,7 @@ playbooks:
             no_log: true    # never echo the git token
             when: >-
               (capabilities_enabled | bool and packer_chart_enabled | bool)
+              or (capabilities_enabled | bool and pipelinerun_reaper_enabled | bool)
               or vault_kubeconfigs_enabled | bool
 
           # Emits packer-build-defaults, packer-release-defaults,
@@ -3293,6 +3337,19 @@ playbooks:
               kubectl wait provider.pkg.crossplane.io/{{ kubeconfig_provider_name }} \
                 --for=condition=Healthy --timeout=300s --kubeconfig {{ kubeconfig }}
             when: vault_kubeconfigs_enabled | bool
+
+          # After scheduled-run (its XRD must be Established) and before the
+          # settle gate. The reaper's first Job runs within 10 min and ends
+          # Completed, which the settle gate counts as healthy.
+          - name: Deploy pipelinerun-reaper (ScheduledRun + RBAC, from the monorepo)
+            ansible.builtin.shell: |
+              set -euo pipefail
+              kubectl wait crd/scheduledruns.resources.stuttgart-things.com \
+                --for=condition=Established --timeout=300s --kubeconfig {{ kubeconfig }}
+              {% for m in pipelinerun_reaper_manifests %}
+              kubectl apply --kubeconfig {{ kubeconfig }} -f {{ stuttgart_things_checkout }}/{{ m }}
+              {% endfor %}
+            when: capabilities_enabled | bool and pipelinerun_reaper_enabled | bool
 
           # Installing ~24 Configuration packages registers a large number of CRDs.
           # Each burst forces the apiserver to rebuild discovery and OpenAPI, etcd
