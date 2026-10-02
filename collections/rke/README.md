@@ -15,7 +15,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 | Role | Version | Description |
 |------|---------|-------------|
-| deploy-configure-rke | 2026.06.07 | Main RKE/K3s deployment orchestration |
+| deploy-configure-rke | 2026.10.01 | Main RKE/K3s deployment orchestration |
 | configure-rke-node | 2025.12.13 | Node configuration |
 | install-requirements | 2026.04.13 | Prerequisites installation |
 | download-install-binary | 2025.03.27 | Binary download utilities |
