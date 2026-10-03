@@ -14,9 +14,9 @@ playbooks:
         vars:
           rke_state: present #absent
           rke_version: 2
-          rke2_k8s_version: 1.36.1
+          rke2_k8s_version: 1.36.5
           rke2_airgapped_installation: true
-          rke2_release_kind: rke2r2 #rke2r1
+          rke2_release_kind: rke2r1 # v1.36.5 exists only as +rke2r1
           prepare_rancher_ha_nodes: true #false
           cluster_setup: singlenode
           disableKubeProxy: true
@@ -141,9 +141,9 @@ playbooks:
         vars:
           rke_state: present #absent
           rke_version: 2
-          rke2_k8s_version: 1.36.1
+          rke2_k8s_version: 1.36.5
           rke2_airgapped_installation: true
-          rke2_release_kind: rke2r2 #rke2r1
+          rke2_release_kind: rke2r1 # v1.36.5 exists only as +rke2r1
           prepare_rancher_ha_nodes: true #false
           cluster_setup: multinode
           disableKubeProxy: true

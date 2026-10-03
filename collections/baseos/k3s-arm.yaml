@@ -39,10 +39,10 @@ playbooks:
           system_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
 
           # BINARIES
-          kubectl_version: v1.35.1
-          helm_version: "3.18.2"
+          kubectl_version: v1.35.9
+          helm_version: "3.22.0"
           helmfile_version: "0.171.0"
-          k9s_version: "0.50.6"
+          k9s_version: "0.50.18"
 
           kubectl_binary:
             kubectl:
@@ -97,7 +97,7 @@ playbooks:
             - https://vault.infra.sthings.lab
 
           # K3S
-          k3s_k8s_version: "1.35.1"
+          k3s_k8s_version: "1.35.9"
           k3s_release_kind: k3s1
           k3s_version: "v{{ k3s_k8s_version }}+{{ k3s_release_kind }}"
           k3s_installscript_url: https://get.k3s.io
