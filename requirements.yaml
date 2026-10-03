@@ -30,5 +30,5 @@ collections:
   # Current tags do not carry it.
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-26.812.1209/sthings-awx-26.812.1209.tar.gz
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-26.1002.1398/sthings-container-26.1002.1398.tar.gz
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-rke-26.1003.1399/sthings-rke-26.1003.1399.tar.gz
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-rke-26.1003.1401/sthings-rke-26.1003.1401.tar.gz
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-26.1003.1399/sthings-baseos-26.1003.1399.tar.gz
