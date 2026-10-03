@@ -27,8 +27,8 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 | Playbook | Description |
 |----------|-------------|
-| `sthings.rke.rke2` | Deploy multi-node RKE2 cluster (default k8s v1.36.1) with Cilium, registry mirrors, and LB IP pool |
-| `sthings.rke.rke2_cluster` | Deploy single-node RKE2 cluster (default k8s v1.36.1) with airgapped installation |
+| `sthings.rke.rke2` | Deploy multi-node RKE2 cluster (default k8s v1.36.5) with Cilium, registry mirrors, and LB IP pool |
+| `sthings.rke.rke2_cluster` | Deploy single-node RKE2 cluster (default k8s v1.36.5) with airgapped installation |
 | `sthings.rke.rke2_workflow` | General RKE2 deployment workflow using vars file |
 | `sthings.rke.upload_kubeconfig_vault` | Fetch kubeconfig from cluster and upload to HashiCorp Vault |
 | `sthings.rke.api_token` | Create Rancher API tokens with configurable TTL |
@@ -37,7 +37,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 | Playbook | Description |
 |----------|-------------|
-| `sthings.rke.k3s` | Deploy single-node K3s cluster (default k8s v1.36.1) with Cilium, ingress-nginx (v4.14.1), cert-manager (v1.19.1), and LB IP pool |
+| `sthings.rke.k3s` | Deploy single-node K3s cluster (default k8s v1.36.5) with Cilium, ingress-nginx (v4.14.5), cert-manager (v1.19.6), and LB IP pool |
 | `sthings.rke.k3s_cluster` | Deploy single-node K3s cluster (minimal, fetches kubeconfig) |
 
 ### Rancher
@@ -53,8 +53,8 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `rke_state` | `present` | Set to `absent` to destroy the cluster |
-| `rke2_k8s_version` | `1.36.1` | Kubernetes version |
-| `rke2_release_kind` | `rke2r2` | Release kind (rke2r1 or rke2r2) |
+| `rke2_k8s_version` | `1.36.5` | Kubernetes version |
+| `rke2_release_kind` | `rke2r1` | Release kind; must form a real tag with the version (`v1.36.5+rke2r1`) |
 | `cluster_setup` | `multinode` | Cluster mode: `singlenode` or `multinode` |
 | `rke2_airgapped_installation` | `true` | Enable airgapped installation |
 | `install_cilium` | `true` | Install Cilium CNI |
@@ -71,13 +71,16 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `k3s_state` | `present` | Set to `absent` to destroy the cluster |
-| `k3s_k8s_version` | `1.36.1` | Kubernetes version |
+| `k3s_k8s_version` | `1.36.5` | Kubernetes version |
 | `k3s_release_kind` | `k3s1` | Release kind |
 | `cluster_setup` | `singlenode` | Cluster mode |
 | `deploy_helm_charts` | `true` | Deploy ingress-nginx and cert-manager |
 | `install_helm_diff` | `true` | Install helm-diff plugin |
 | `cilium_lbrange_start_ip` | `192.168.1.10` | Cilium LB IP pool start |
 | `cilium_lbrange_stop_ip` | `192.168.1.20` | Cilium LB IP pool end |
+| `cilium_version` | `0.19.7` | **cilium-cli** version. Without `cilium_chart_version` it installs the CLI's default Cilium (0.19.4 -> 1.19.3, 0.19.7 -> 1.19.5, 0.20.1 -> 1.20.1) |
+| `cilium_chart_version` | `""` | Optional Cilium version (quoted, e.g. `"1.19.8"`) passed as `--version` to install and upgrade |
+| `cilium_gateway_api_crds_version` | `v1.4.1` | Gateway API CRDs applied before Cilium; Cilium 1.19 supports v1.4.1 |
 
 ### Cilium Air-Gapped Images (optional, off by default)
 
@@ -234,8 +237,8 @@ mkdir -p /home/sthings/.kube/
 ansible-playbook sthings.rke.rke2 \
 -i rke2 \
 -e rke2_fetched_kubeconfig_path=/home/sthings/.kube/${CLUSTER_NAME} \
--e rke2_k8s_version=1.36.1 \
--e rke2_release_kind=rke2r2 \
+-e rke2_k8s_version=1.36.5 \
+-e rke2_release_kind=rke2r1 \
 -vv
 
 # TEST CLUSTER CONNECTION
@@ -305,7 +308,7 @@ mkdir -p /home/sthings/.kube/
 # CHECK FOR K3s RELEASES: https://github.com/k3s-io/k3s/releases
 
 ansible-playbook sthings.rke.k3s \
--e k3s_k8s_version=1.36.1 \
+-e k3s_k8s_version=1.36.5 \
 -i k3s \
 -e cilium_lbrange_start_ip=192.168.5.10 \
 -e cilium_lbrange_stop_ip=192.168.5.20 \
