@@ -20,8 +20,17 @@ playbooks:
           prepare_rancher_ha_nodes: true #false
           k3s_k8s_version: 1.36.5
           cilium_version: 0.19.7 # cilium-cli; installs Cilium 1.19.5 unless cilium_chart_version is set
-          # cilium_chart_version: "1.19.8"   # pin Cilium itself (quoted); keep
-          # cilium_gateway_api_crds_version (role default v1.4.1) on what that Cilium supports
+          # === optional: pin Cilium itself / opt in to Cilium 1.20 ===========
+          # cilium_chart_version is passed as --version to install AND upgrade.
+          # Gateway API CRDs must match the Cilium minor: 1.19 -> v1.4.1 (role
+          # default), 1.20 -> v1.6.1 (server-side applied; one-way, no going back
+          # below v1.5.0).
+          # cilium_version: 0.20.1
+          # cilium_chart_version: "1.20.2"                 # quoted
+          # cilium_gateway_api_crds_version: v1.6.1
+          # k3s datastore: true (default) = embedded etcd, false = sqlite/kine
+          # (single-node/edge, can't grow to HA; choose before the first install):
+          # k3s_cluster_init: false
           k3s_release_kind: k3s1
           cluster_setup: singlenode
           install_cilium: true

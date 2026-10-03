@@ -80,7 +80,8 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `cilium_lbrange_stop_ip` | `192.168.1.20` | Cilium LB IP pool end |
 | `cilium_version` | `0.19.7` | **cilium-cli** version. Without `cilium_chart_version` it installs the CLI's default Cilium (0.19.4 -> 1.19.3, 0.19.7 -> 1.19.5, 0.20.1 -> 1.20.1) |
 | `cilium_chart_version` | `""` | Optional Cilium version (quoted, e.g. `"1.19.8"`) passed as `--version` to install and upgrade |
-| `cilium_gateway_api_crds_version` | `v1.4.1` | Gateway API CRDs applied before Cilium; Cilium 1.19 supports v1.4.1 |
+| `cilium_gateway_api_crds_version` | `v1.4.1` | Gateway API CRDs applied server-side before Cilium. Cilium 1.19 -> `v1.4.1`, Cilium 1.20 -> `v1.6.1` (one-way) |
+| `k3s_cluster_init` | `true` | `true` = embedded etcd, `false` = sqlite/kine (single-node edge). Choose before the first install |
 
 ### Cilium Air-Gapped Images (optional, off by default)
 
