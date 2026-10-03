@@ -34,6 +34,11 @@ playbooks:
           k3s_release_kind: k3s1
           cluster_setup: singlenode
           install_cilium: true
+          # No self-signed root CA / cert-manager root-ca secret here: this play
+          # installs no cert-manager or ClusterIssuer, so nothing consumes it, and
+          # PKI usually comes via Flux. The `k3s` play (ca-issuer) keeps the role
+          # default (true). Set create_root_cert: true in your vars file to opt in.
+          create_root_cert: false
 
           # === optional new k3s features (uncomment to enable) ==============
           # air-gapped IMAGES from a mirror (images-only; binary/script upstream):

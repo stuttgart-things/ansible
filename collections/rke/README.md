@@ -82,6 +82,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `cilium_chart_version` | `""` | Optional Cilium version (quoted, e.g. `"1.19.8"`) passed as `--version` to install and upgrade |
 | `cilium_gateway_api_crds_version` | `v1.4.1` | Gateway API CRDs applied server-side before Cilium. Cilium 1.19 -> `v1.4.1`, Cilium 1.20 -> `v1.6.1` (one-way) |
 | `k3s_cluster_init` | `true` | `true` = embedded etcd, `false` = sqlite/kine (single-node edge). Choose before the first install |
+| `create_root_cert` | `true` (`k3s`), `false` (`k3s_cluster`) | Self-signed root CA on the initial master, added to the node trust store and stored as the `cert-manager/root-ca` secret (used by the `k3s` play's `ca-issuer`). Generated once, then idempotent |
 
 ### Cilium Air-Gapped Images (optional, off by default)
 
