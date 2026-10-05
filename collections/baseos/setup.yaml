@@ -213,8 +213,9 @@ playbooks:
           # only install from the instances that actually serve the CA.
           # Build marker (stuttgart-things/stuttgart-things#3439): how, from where
           # and when this VM was built -- create-vm passes sthings_build_* in the
-          # order's varsFile (source, order XR, use case, lab, management
-          # cluster). The login banner (sthings-motd) shows it as BUILT. Written
+          # order's varsFile (source, method, order XR, use case, lab,
+          # management cluster and its lab). The login banner (sthings-motd)
+          # shows it as BUILD / MANAGEMENT. Written
           # on the FIRST setup run only (force: false), so a later run keeps the
           # build date. Nothing is written when the order passes nothing.
           - name: Create /etc/sthings
@@ -236,6 +237,8 @@ playbooks:
                 use_case: {{ sthings_build_use_case | default('') }}
                 lab: {{ sthings_build_lab | default('') }}
                 management_cluster: {{ sthings_build_management_cluster | default('') }}
+                management_lab: {{ sthings_build_management_lab | default('') }}
+                method: {{ sthings_build_method | default('') }}
                 built: {{ now(utc=true, fmt='%Y-%m-%d') }}
             when: sthings_build_source is defined
 

@@ -24,11 +24,10 @@ requirements: |
       version: 2026.07.22
     - src: https://github.com/stuttgart-things/install-requirements.git
       scm: git
-      # 2026.10.05-5 -- sthings-motd: facts in two columns with BUILT (the
-      # build marker sthings.baseos.setup writes), SYSTEM gauges for CPU,
-      # memory and partitions, tool versions, tmux and Claude Code sessions,
-      # dev-status (stuttgart-things/stuttgart-things#3439).
-      version: 2026.10.05-5
+      # 2026.10.05-6 -- sthings-motd: facts in two columns with BUILD |
+      # MANAGEMENT from the build marker, SYSTEM gauges, tool versions, tmux and
+      # Claude Code sessions, dev-status (stuttgart-things/stuttgart-things#3439).
+      version: 2026.10.05-6
     - src: https://github.com/stuttgart-things/manage-filesystem.git
       scm: git
       version: 2026.13.04
