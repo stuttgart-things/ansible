@@ -280,7 +280,7 @@ playbooks:
           # short `ansible-run`. See the adopt task below for why this matters.
           ansible_run_configuration_name: stuttgart-things-crossplane-configurations-ansible-run
           cluster_backup_chart_version: "0.1.0" # datasource=docker depName=ghcr.io/stuttgart-things/charts/cluster-backup
-          scheduled_run_chart_version: "0.2.1" # datasource=docker depName=ghcr.io/stuttgart-things/charts/scheduled-run
+          scheduled_run_chart_version: "0.2.2" # datasource=docker depName=ghcr.io/stuttgart-things/charts/scheduled-run
           cert_manager_version: 1.21.2 # datasource=github-releases depName=cert-manager/cert-manager
           # The packer capability chart is NOT on OCI — it is installed from a
           # path in the monorepo, like provider-kubeconfig-vault below. Move it
@@ -2040,7 +2040,7 @@ playbooks:
           # short `ansible-run`. See the adopt task below for why this matters.
           ansible_run_configuration_name: stuttgart-things-crossplane-configurations-ansible-run
           cluster_backup_chart_version: "0.1.0" # datasource=docker depName=ghcr.io/stuttgart-things/charts/cluster-backup
-          scheduled_run_chart_version: "0.2.1" # datasource=docker depName=ghcr.io/stuttgart-things/charts/scheduled-run
+          scheduled_run_chart_version: "0.2.2" # datasource=docker depName=ghcr.io/stuttgart-things/charts/scheduled-run
           cert_manager_version: 1.21.2 # datasource=github-releases depName=cert-manager/cert-manager
           # The packer capability chart is NOT on OCI — it is installed from a
           # path in the monorepo, like provider-kubeconfig-vault below. Move it
