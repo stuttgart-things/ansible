@@ -820,9 +820,12 @@ playbooks:
       #     to the LATEST release; engine containers of other versions are
       #     stopped (their volumes go with sthings.baseos.disk_cleanup).
       #     A VM without dagger is left alone.
-      #   * Disks: /, /home and /var against disk_warn / disk_crit; anything
-      #     over is pitched to homerun2 (omni-pitcher, Grafana alert format) --
-      #     one message per VM, nothing when all is fine.
+      #   * Disks: /, /home and /var. A VM with a mount at or over disk_warn
+      #     (85%) gets sthings.baseos.disk_cleanup (incl. unused images,
+      #     never volumes), then is measured again; only what is STILL over
+      #     disk_warn is pitched to homerun2 (omni-pitcher, Grafana alert
+      #     format; critical from disk_crit, 95%) -- one message per VM,
+      #     nothing when all is fine.
       # Pitcher URL and token from the environment (PITCHER_URL, PITCHER_TOKEN:
       # the AnsibleRun's extraEnvSecretName). Without them the check still runs
       # and fails the play, so a full disk is never silently "green".
@@ -916,6 +919,7 @@ playbooks:
             ansible.builtin.shell: df -P {{ disk_mounts | join(' ') }} 2>/dev/null | awk 'NR>1 && !seen[$6]++ {sub("%","",$5); print $6, $5}'
             register: disk_usage
             changed_when: false
+            check_mode: false   # read-only; --check must still see the disks
 
           - name: Mounts over the threshold
             ansible.builtin.set_fact:
@@ -927,8 +931,59 @@ playbooks:
                 {%- endfor -%}
                 {{ out }}
 
-          - name: Pitch full disks to homerun2
+          - name: VMs over the threshold get a cleanup
+            ansible.builtin.group_by:
+              key: dev_disk_full
             when: disk_over | length > 0
+
+      - name: Clean up full dev VMs
+        ansible.builtin.import_playbook: sthings.baseos.disk_cleanup
+        vars:
+          target_host: dev_disk_full
+          cleanup_runner_user: sthings
+          # Unused images too -- the disk is at the threshold; volumes stay.
+          prune_docker_all_images: true
+
+      - name: Measure again and pitch what is still full
+        hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: false
+
+        vars:
+          disk_mounts: [/, /home, /var]
+          disk_warn: 85
+          disk_crit: 95
+          pitcher_url: "{{ lookup('env', 'PITCHER_URL') }}"
+          pitcher_token: "{{ lookup('env', 'PITCHER_TOKEN') }}"
+
+        pre_tasks:
+          - name: Include vars
+            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
+            when: path_to_vars_file is defined
+
+        tasks:
+          - name: Disk usage after the cleanup
+            ansible.builtin.shell: df -P {{ disk_mounts | join(' ') }} 2>/dev/null | awk 'NR>1 && !seen[$6]++ {sub("%","",$5); print $6, $5}'
+            register: disk_usage
+            changed_when: false
+            check_mode: false   # read-only; --check must still see the disks
+            when: "'dev_disk_full' in group_names"
+
+          - name: Mounts still over the threshold
+            ansible.builtin.set_fact:
+              disk_over: >-
+                {%- set out = [] -%}
+                {%- for l in disk_usage.stdout_lines -%}
+                {%-   set m, p = l.split() -%}
+                {%-   if p | int >= disk_warn | int -%}{{ out.append([m, p | int]) }}{%- endif -%}
+                {%- endfor -%}
+                {{ out }}
+            when: "'dev_disk_full' in group_names"
+
+          - name: Pitch full disks to homerun2
+            when:
+              - "'dev_disk_full' in group_names"
+              - disk_over | length > 0
             vars:
               worst: "{{ disk_over | map(attribute=1) | max }}"
               severity: "{{ 'critical' if worst | int >= disk_crit | int else 'warning' }}"
@@ -952,7 +1007,7 @@ playbooks:
                     receiver: dev-maintenance
                     status: firing
                     title: "{{ summary }}"
-                    message: "{{ summary }}. Free space, or run sthings.baseos.disk_cleanup."
+                    message: "{{ summary }} -- still, after sthings.baseos.disk_cleanup ran (unused images pruned). Needs a look by hand."
                     alerts:
                       - status: firing
                         labels:

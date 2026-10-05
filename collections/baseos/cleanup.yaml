@@ -33,7 +33,9 @@ playbooks:
       # =============================================================================
 
       - name: Fleet disk cleanup
-        hosts: all
+        # target_host narrows it (sthings.baseos.dev_maintenance passes the
+        # group of dev VMs over the threshold); unset = all, as before.
+        hosts: "{{ target_host | default('all') }}"
         become: true
         gather_facts: true
 
