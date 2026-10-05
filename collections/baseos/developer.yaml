@@ -143,6 +143,43 @@ playbooks:
           # install_requirements >= 2026.10.05-2: the CHECK rows, from
           # `dev-status --raw`). The block this task used to write would show it
           # a second time, so it is removed -- also from VMs that already have it.
+          # Claude Code sessions on this VM start with dev-status in their
+          # context (SessionStart hook): a session found `gh` logged out only
+          # when a PR merge failed (stuttgart-things/stuttgart-things#3439).
+          # Merged into ~/.claude/settings.json with jq -- the user's other
+          # settings stay; added once, recognised by its exact command.
+          - name: Ensure jq is installed
+            ansible.builtin.package:
+              name: jq
+              state: present
+
+          - name: Create ~/.claude
+            ansible.builtin.file:
+              path: "{{ developer_user_dir }}/.claude"
+              state: directory
+              owner: "{{ developer }}"
+              group: "{{ developer }}"
+              mode: "0755"
+
+          - name: Register dev-status as a Claude Code SessionStart hook
+            ansible.builtin.shell: |
+              set -euo pipefail
+              f="$HOME/.claude/settings.json"
+              [ -s "$f" ] || echo '{}' > "$f"
+              jq -e --arg c "$HOOK" '[.hooks.SessionStart[]?.hooks[]?.command] | index($c)' "$f" >/dev/null && exit 0
+              jq --arg c "$HOOK" '.hooks.SessionStart += [{"matcher": "startup", "hooks": [{"type": "command", "command": $c}]}]' "$f" > "$f.tmp"
+              mv "$f.tmp" "$f"
+              echo added
+            args:
+              executable: /bin/bash
+            environment:
+              HOME: "{{ developer_user_dir }}"
+              HOOK: 'command -v dev-status >/dev/null && { echo "Status of this dev VM (dev-status; ✗/! = needs attention before work):"; dev-status --raw; } || true'
+            become: true
+            become_user: "{{ developer }}"
+            register: claude_hook
+            changed_when: "'added' in claude_hook.stdout"
+
           - name: Drop the separate dev-status login block
             ansible.builtin.blockinfile:
               path: "{{ developer_user_dir }}/.bashrc"
@@ -772,6 +809,166 @@ playbooks:
                 eval "$(fzf --bash)"
                 eval "$(zoxide init bash)"
                 eval "$(atuin init bash --disable-up-arrow)"
+
+  - name: dev_maintenance
+    play: |
+      ---
+      # Nightly upkeep of the dev VMs (stuttgart-things/stuttgart-things#3439),
+      # run by the ScheduledRun dev-maintenance on machinery against every VM
+      # with an EnvironmentConfig labelled stuttgart-things.com/dev-machine.
+      #   * Dagger: the developer's `dagger` (wherever it is installed) is brought
+      #     to the LATEST release; engine containers of other versions are
+      #     stopped (their volumes go with sthings.baseos.disk_cleanup).
+      #     A VM without dagger is left alone.
+      #   * Disks: /, /home and /var against disk_warn / disk_crit; anything
+      #     over is pitched to homerun2 (omni-pitcher, Grafana alert format) --
+      #     one message per VM, nothing when all is fine.
+      # Pitcher URL and token from the environment (PITCHER_URL, PITCHER_TOKEN:
+      # the AnsibleRun's extraEnvSecretName). Without them the check still runs
+      # and fails the play, so a full disk is never silently "green".
+      - name: Dev VM maintenance
+        hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: false
+
+        vars:
+          developer: sthings
+          developer_user_dir: "/home/{{ developer }}"
+          dagger_update: true
+          # Stops running engines of other versions after an update. They may be
+          # mid-build, so the ScheduledRun runs at night.
+          dagger_stop_old_engines: true
+          disk_mounts: [/, /home, /var]
+          disk_warn: 85
+          disk_crit: 95
+          pitcher_url: "{{ lookup('env', 'PITCHER_URL') }}"
+          pitcher_token: "{{ lookup('env', 'PITCHER_TOKEN') }}"
+
+        pre_tasks:
+          - name: Include vars
+            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
+            when: path_to_vars_file is defined
+
+        tasks:
+          # ------------------------------------------------------------ dagger
+          - name: Latest Dagger release
+            ansible.builtin.uri:
+              url: https://api.github.com/repos/dagger/dagger/releases/latest
+              return_content: true
+            register: dagger_release
+            delegate_to: localhost
+            become: false
+            run_once: true
+            when: dagger_update | bool
+
+          - name: Installed Dagger (the developer's PATH)
+            ansible.builtin.shell: |
+              export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:$PATH"
+              p=$(command -v dagger) || exit 0
+              printf '%s %s\n' "$(readlink -f "$p")" "$("$p" version 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+            args:
+              executable: /bin/bash
+            environment:
+              HOME: "{{ developer_user_dir }}"
+            become_user: "{{ developer }}"
+            register: dagger_installed
+            changed_when: false
+            when: dagger_update | bool
+
+          - name: Update Dagger to {{ dagger_release.json.tag_name | default('latest') }}
+            when:
+              - dagger_update | bool
+              - dagger_installed.stdout | length > 0
+              - dagger_installed.stdout.split()[1] | default('') != dagger_release.json.tag_name
+            vars:
+              dagger_path: "{{ dagger_installed.stdout.split()[0] }}"
+              dagger_tag: "{{ dagger_release.json.tag_name }}"
+            block:
+              - name: Download and unpack Dagger {{ dagger_tag }}
+                ansible.builtin.unarchive:
+                  src: "https://github.com/dagger/dagger/releases/download/{{ dagger_tag }}/dagger_{{ dagger_tag }}_linux_amd64.tar.gz"
+                  dest: /tmp
+                  remote_src: true
+                  include: [dagger]
+
+              - name: Replace {{ dagger_path }}
+                ansible.builtin.copy:
+                  src: /tmp/dagger
+                  dest: "{{ dagger_path }}"
+                  remote_src: true
+                  mode: "0755"
+                  owner: "{{ omit if dagger_path.startswith('/usr') else developer }}"
+
+              - name: Stop Dagger engines of other versions
+                ansible.builtin.shell: |
+                  docker ps --filter name=dagger-engine --format '{{ '{{' }}.ID{{ '}}' }} {{ '{{' }}.Image{{ '}}' }}' \
+                    | awk -v want=":{{ dagger_tag }}" 'index($2, want) == 0 {print $1}' \
+                    | xargs -r docker stop
+                args:
+                  executable: /bin/bash
+                register: engines_stopped
+                changed_when: engines_stopped.stdout | length > 0
+                failed_when: false
+                when: dagger_stop_old_engines | bool
+
+          # ------------------------------------------------------------- disks
+          - name: Disk usage
+            ansible.builtin.shell: df -P {{ disk_mounts | join(' ') }} 2>/dev/null | awk 'NR>1 && !seen[$6]++ {sub("%","",$5); print $6, $5}'
+            register: disk_usage
+            changed_when: false
+
+          - name: Mounts over the threshold
+            ansible.builtin.set_fact:
+              disk_over: >-
+                {%- set out = [] -%}
+                {%- for l in disk_usage.stdout_lines -%}
+                {%-   set m, p = l.split() -%}
+                {%-   if p | int >= disk_warn | int -%}{{ out.append([m, p | int]) }}{%- endif -%}
+                {%- endfor -%}
+                {{ out }}
+
+          - name: Pitch full disks to homerun2
+            when: disk_over | length > 0
+            vars:
+              worst: "{{ disk_over | map(attribute=1) | max }}"
+              severity: "{{ 'critical' if worst | int >= disk_crit | int else 'warning' }}"
+              summary: >-
+                Disk {{ 'nearly ' if severity == 'warning' else '' }}full on {{ inventory_hostname }}:
+                {{ disk_over | map('join', ' ') | map('regex_replace', '$', '%') | join(', ') }}
+            block:
+              - name: Pitcher configured
+                ansible.builtin.assert:
+                  that: [pitcher_url | length > 0, pitcher_token | length > 0]
+                  fail_msg: "{{ summary }} -- and no PITCHER_URL/PITCHER_TOKEN to report it"
+
+              - name: Pitch
+                ansible.builtin.uri:
+                  url: "{{ pitcher_url }}"
+                  method: POST
+                  headers:
+                    Authorization: "Bearer {{ pitcher_token }}"
+                  body_format: json
+                  body:
+                    receiver: dev-maintenance
+                    status: firing
+                    title: "{{ summary }}"
+                    message: "{{ summary }}. Free space, or run sthings.baseos.disk_cleanup."
+                    alerts:
+                      - status: firing
+                        labels:
+                          alertname: DevVmDiskFull
+                          severity: "{{ severity }}"
+                          job: dev-maintenance
+                          host: "{{ inventory_hostname }}"
+                        annotations:
+                          summary: "{{ summary }}"
+                        startsAt: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+                  status_code: [200, 201, 202, 204]
+                  # The lab CA is not in the AnsibleRun image.
+                  validate_certs: false
+                delegate_to: localhost
+                become: false
+                no_log: true
 
   - name: chezmoi
     play: |
