@@ -28,6 +28,14 @@ playbooks:
               group: "{{ developer }}"
               mode: '0755'
 
+          - name: Create ~/projects dir for {{ developer }}
+            ansible.builtin.file:
+              path: "{{ developer_user_dir }}/projects"
+              state: directory
+              owner: "{{ developer }}"
+              group: "{{ developer }}"
+              mode: '0775'
+
           - name: Install KCL
             ansible.builtin.shell: |
               wget -q https://kcl-lang.io/script/install-cli.sh -O - | /bin/bash
@@ -466,13 +474,16 @@ playbooks:
                 # Enable OSC52: tmux emits an escape sequence that the terminal emulator
                 # (VS Code integrated terminal, iTerm2, Ghostty, ...) translates into a
                 # system clipboard write. Works over SSH without X-forwarding.
+                # No `Ms` terminal-override: tmux >= 3.2 knows xterm's clipboard
+                # feature itself, and with the override tmux 3.6 (Ubuntu 26) sent no
+                # OSC52 at all -- copy "worked" but the clipboard stayed empty
+                # (stuttgart-things/stuttgart-things#3439).
                 set -s set-clipboard on
-                set -ag terminal-overrides ",*:Ms=\\E]52;c;%p2%s\\7"
 
-                # Vim-style selection and yank (uses OSC52 via load-buffer -w)
+                # Vim-style selection and yank (set-clipboard sends it via OSC52)
                 bind -T copy-mode-vi v send-keys -X begin-selection
-                bind -T copy-mode-vi y send-keys -X copy-pipe-no-clear "tmux load-buffer -w -"
-                bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-no-clear "tmux load-buffer -w -"
+                bind -T copy-mode-vi y send-keys -X copy-selection-no-clear
+                bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-selection-no-clear
 
                 # Escape leaves copy-mode
                 bind -T copy-mode-vi Escape send-keys -X cancel

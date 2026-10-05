@@ -79,6 +79,30 @@ playbooks:
                   version_cmd: " --version"
                   target_version: "{{ sops_version }}"
 
+          # The role writes the kubeconfig to ~/.kube/<kind_cluster_name> only, so a
+          # bare `kubectl` on the VM went to localhost:8080
+          # (stuttgart-things/stuttgart-things#3439). A symlink, not a copy: a
+          # rebuilt cluster brings new certs and the link follows. A real file at
+          # ~/.kube/config is the user's and is left alone.
+          - name: Check ~/.kube/config
+            ansible.builtin.stat:
+              path: "/home/{{ ansible_user }}/.kube/config"
+              follow: false
+            register: default_kubeconfig
+            when: link_default_kubeconfig | default(true) | bool
+
+          - name: Link ~/.kube/config to the kind kubeconfig
+            ansible.builtin.file:
+              src: "/home/{{ ansible_user }}/.kube/{{ kind_cluster_name }}"
+              dest: "/home/{{ ansible_user }}/.kube/config"
+              state: link
+              force: true
+              owner: "{{ ansible_user }}"
+              group: "{{ ansible_user }}"
+            when:
+              - link_default_kubeconfig | default(true) | bool
+              - not default_kubeconfig.stat.exists or default_kubeconfig.stat.islnk
+
           - name: Set stats for deployment
             set_fact:
               path_to_kubeconfig: "{{ path_to_kubeconfig }}"
