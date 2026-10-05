@@ -559,6 +559,150 @@ playbooks:
             ansible.builtin.debug:
               msg: "chezmoi installed: {{ chezmoi_version.stdout }}"
 
+  - name: dotfiles
+    play: |
+      ---
+      # chezmoi dotfiles for the developer, with the secrets they need from Vault
+      # (stuttgart-things/stuttgart-things#3439): afterwards `loadenv <kind> <env>`,
+      # `t secrets:*` and the global Taskfile work on a fresh dev VM.
+      #
+      # Vault: VAULT_ADDR / VAULT_ROLE_ID / VAULT_SECRET_ID from the environment --
+      # in an AnsibleRun its vaultSecretName, for create-vm
+      # tekton-ci/vault-devvm-dotfiles-reader (AppRole devvm-dotfiles-reader, read on
+      # devvm/data/dotfiles only). The entry holds
+      #   sops_age_key  -> ~/.config/sops/age/keys.txt, where sops finds it itself
+      #   deploy_key    -> read-only deploy key of the dotfiles repo
+      - name: Install chezmoi
+        ansible.builtin.import_playbook: sthings.baseos.chezmoi
+
+      - name: Set up chezmoi dotfiles
+        hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: true
+
+        vars:
+          developer: sthings
+          developer_user_dir: "/home/{{ developer }}"
+          dotfiles_repo_path: patrick-hermann-sva/dotfiles
+          # An ssh_config alias, so the deploy key is used for this repo only and
+          # never offered to any other github.com remote of the developer.
+          dotfiles_ssh_host: github.com-dotfiles
+          dotfiles_vault_secret: devvm/data/dotfiles
+          vault_url: "{{ lookup('env', 'VAULT_ADDR') }}"
+          vault_approle_id: "{{ lookup('env', 'VAULT_ROLE_ID') }}"
+          vault_approle_secret: "{{ lookup('env', 'VAULT_SECRET_ID') }}"
+          sops_version: 3.13.3 # datasource=github-tags depName=getsops/sops
+          # GitHub's published ed25519 host key
+          # (https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints).
+          github_host_key: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+
+        pre_tasks:
+          - name: Include vars
+            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
+            when: path_to_vars_file is defined
+
+        tasks:
+          # Same lookup form as setup.yaml / pdns.yaml, which the AnsibleRun
+          # working image is known to carry.
+          - name: Read the dotfiles secrets from Vault
+            ansible.builtin.set_fact:
+              dotfiles_sops_age_key: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=' ~ dotfiles_vault_secret ~ ':sops_age_key validate_certs=false auth_method=approle role_id=' ~ vault_approle_id ~ ' secret_id=' ~ vault_approle_secret ~ ' url=' ~ vault_url) }}"
+              dotfiles_deploy_key: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=' ~ dotfiles_vault_secret ~ ':deploy_key validate_certs=false auth_method=approle role_id=' ~ vault_approle_id ~ ' secret_id=' ~ vault_approle_secret ~ ' url=' ~ vault_url) }}"
+            delegate_to: localhost
+            become: false
+            no_log: true
+
+          - name: Install git
+            ansible.builtin.package:
+              name: git
+              state: present
+
+          - name: Check for sops
+            ansible.builtin.shell: command -v sops
+            register: sops_present
+            changed_when: false
+            failed_when: false
+            args:
+              executable: /bin/bash
+
+          - name: Install sops (loadenv decrypts with it)
+            ansible.builtin.get_url:
+              url: "https://github.com/getsops/sops/releases/download/v{{ sops_version }}/sops-v{{ sops_version }}.linux.amd64"
+              dest: /usr/local/bin/sops
+              mode: "0755"
+            when: sops_present.rc != 0
+
+          - name: Create ~/.config/sops/age and ~/.ssh
+            ansible.builtin.file:
+              path: "{{ item }}"
+              state: directory
+              owner: "{{ developer }}"
+              group: "{{ developer }}"
+              mode: "0700"
+            loop:
+              - "{{ developer_user_dir }}/.config/sops/age"
+              - "{{ developer_user_dir }}/.ssh"
+
+          - name: Write the age identity
+            ansible.builtin.copy:
+              dest: "{{ developer_user_dir }}/.config/sops/age/keys.txt"
+              content: "{{ dotfiles_sops_age_key | trim }}\n"
+              owner: "{{ developer }}"
+              group: "{{ developer }}"
+              mode: "0600"
+            no_log: true
+
+          - name: Write the dotfiles deploy key
+            ansible.builtin.copy:
+              dest: "{{ developer_user_dir }}/.ssh/dotfiles_deploy_key"
+              content: "{{ dotfiles_deploy_key | trim }}\n"
+              owner: "{{ developer }}"
+              group: "{{ developer }}"
+              mode: "0600"
+            no_log: true
+
+          - name: Use the deploy key for the dotfiles host alias only
+            ansible.builtin.blockinfile:
+              path: "{{ developer_user_dir }}/.ssh/config"
+              create: true
+              owner: "{{ developer }}"
+              group: "{{ developer }}"
+              mode: "0600"
+              marker: "# {mark} ANSIBLE MANAGED: dotfiles deploy key"
+              block: |
+                Host {{ dotfiles_ssh_host }}
+                  HostName github.com
+                  User git
+                  IdentityFile {{ developer_user_dir }}/.ssh/dotfiles_deploy_key
+                  IdentitiesOnly yes
+
+          - name: Trust github.com's host key
+            ansible.builtin.known_hosts:
+              path: "{{ developer_user_dir }}/.ssh/known_hosts"
+              name: github.com
+              key: "{{ github_host_key }}"
+            become_user: "{{ developer }}"
+
+          - name: chezmoi init --apply
+            ansible.builtin.command:
+              cmd: "chezmoi init --apply {{ dotfiles_ssh_host }}:{{ dotfiles_repo_path }}.git"
+              creates: "{{ developer_user_dir }}/.local/share/chezmoi/.git"
+            become_user: "{{ developer }}"
+            environment:
+              HOME: "{{ developer_user_dir }}"
+
+          - name: loadenv can decrypt (smoke test)
+            ansible.builtin.shell: |
+              set -o pipefail
+              f=$(find ~/.secrets.d -name '*.env' | head -1)
+              [ -z "$f" ] || sops --decrypt --input-type dotenv --output-type dotenv "$f" >/dev/null
+            args:
+              executable: /bin/bash
+            become_user: "{{ developer }}"
+            environment:
+              HOME: "{{ developer_user_dir }}"
+            changed_when: false
+
 vars:
   - name: dev-vars
     file: |
