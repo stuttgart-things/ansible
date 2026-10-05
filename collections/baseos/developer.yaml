@@ -28,6 +28,14 @@ playbooks:
               group: "{{ developer }}"
               mode: '0755'
 
+          - name: Create ~/projects dir for {{ developer }}
+            ansible.builtin.file:
+              path: "{{ developer_user_dir }}/projects"
+              state: directory
+              owner: "{{ developer }}"
+              group: "{{ developer }}"
+              mode: '0775'
+
           - name: Install KCL
             ansible.builtin.shell: |
               wget -q https://kcl-lang.io/script/install-cli.sh -O - | /bin/bash
