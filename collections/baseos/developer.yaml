@@ -550,14 +550,34 @@ playbooks:
                 # Command-line / messages
                 set -g message-style "bg=#f5c2e7,fg=#1e1e2e,bold"
 
-          - name: Register remote tmux taskfile alias and env in bashrc
+          # Trusted hosts for remote Taskfiles. Task >= 3.53.1 has Remote
+          # Taskfiles on by default and reads this file; the old
+          # TASK_X_REMOTE_TASKFILES only makes every call print "Experiment ...
+          # is released" (stuttgart-things/stuttgart-things#3439). Byte for byte
+          # the dotfiles' dot_taskrc.yml, so a later `chezmoi init --apply`
+          # finds nothing to change -- keep the two identical.
+          - name: Deploy ~/.taskrc.yml
+            ansible.builtin.copy:
+              dest: "{{ developer_user_dir }}/.taskrc.yml"
+              owner: "{{ developer }}"
+              group: "{{ developer }}"
+              mode: '0644'
+              content: |
+                # ~/.taskrc.yml -- go-task settings for every Taskfile on this machine.
+                # Needs task >= 3.53.1: from there Remote Taskfiles are on by default
+                # (TASK_X_REMOTE_TASKFILES only produces a warning) and trusted hosts are read
+                # from here, so no --trusted-hosts wrapper is needed.
+                remote:
+                  trusted-hosts:
+                    - raw.githubusercontent.com
+                    - github.com
+
+          - name: Register remote tmux taskfile alias in bashrc
             ansible.builtin.blockinfile:
               path: "{{ developer_user_dir }}/.bashrc"
               create: true
               marker: "# {mark} ANSIBLE MANAGED: tmux remote taskfile"
               block: |
-                export TASK_X_REMOTE_TASKFILES=1
-                export TASK_REMOTE_TRUSTED_HOSTS="github.com,raw.githubusercontent.com"
                 alias tt='task --taskfile {{ tmux_taskfile_url }}'
             become_user: "{{ developer }}"
 
