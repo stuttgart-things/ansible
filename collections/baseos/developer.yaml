@@ -360,6 +360,11 @@ playbooks:
         vars:
           developer: sthings
           nvm_version: 0.40.1
+          # Node major for nvm: installed, made nvm's default (what a new shell
+          # runs) and the one semantic-release lives under. 24 is the current
+          # LTS -- 20 went EOL in April 2026, and sthings-backstage needs 24
+          # (stuttgart-things/stuttgart-things#3439).
+          node_version: 24
           npm_packages:
             - semantic-release
             - "@semantic-release/commit-analyzer"
@@ -384,19 +389,22 @@ playbooks:
             become: yes
             become_user: "{{ developer }}"
 
-          - name: Install and use Node.js 20
+          - name: Install Node.js {{ node_version }} and make it nvm's default
             ansible.builtin.shell: |
               source ~/.nvm/nvm.sh
-              nvm install 20
-              nvm use 20
+              nvm install {{ node_version }}
+              nvm alias default {{ node_version }}
             args:
               executable: /bin/bash
             become: yes
             become_user: "{{ developer }}"
+            register: nvm_install
+            changed_when: "'is already installed' not in nvm_install.stderr + nvm_install.stdout"
 
           - name: Install NPM packages globally for {{ developer }}
             ansible.builtin.shell: |
               source ~/.nvm/nvm.sh
+              nvm use {{ node_version }} >/dev/null
               npm install -g --save-dev {{ item }}
             loop: "{{ npm_packages }}"
             args:
@@ -407,17 +415,17 @@ playbooks:
           # semantic-release lives under nvm, which only an interactive shell
           # loads: a script, a `task` run or `ssh host semantic-release` did not
           # find it (stuttgart-things/stuttgart-things#3439). A wrapper on the
-          # system PATH runs it with nvm's node 20 -- not /usr/bin/node, whose
+          # system PATH runs it with nvm's node {{ node_version }} -- not /usr/bin/node, whose
           # major differs -- and the plugins installed next to it.
-          - name: Resolve nvm's node 20
+          - name: Resolve nvm's node {{ node_version }}
             ansible.builtin.shell: |
               source ~/.nvm/nvm.sh
-              nvm which 20
+              nvm which {{ node_version }}
             args:
               executable: /bin/bash
             become: yes
             become_user: "{{ developer }}"
-            register: nvm_node20
+            register: nvm_node
             changed_when: false
 
           - name: semantic-release on the system PATH
@@ -427,7 +435,7 @@ playbooks:
               content: |
                 #!/bin/sh
                 # Managed by sthings.baseos.semantic_release
-                exec "{{ nvm_node20.stdout }}" "{{ nvm_node20.stdout | dirname }}/../lib/node_modules/semantic-release/bin/semantic-release.js" "$@"
+                exec "{{ nvm_node.stdout }}" "{{ nvm_node.stdout | dirname }}/../lib/node_modules/semantic-release/bin/semantic-release.js" "$@"
 
   - name: claude_code
     play: |
