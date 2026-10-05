@@ -24,7 +24,9 @@ requirements: |
       version: 2026.07.22
     - src: https://github.com/stuttgart-things/install-requirements.git
       scm: git
-      version: 2026.09.17
+      # 2026.10.05 -- the motd banner only on an interactive login shell, not in
+      # every tmux pane / `bash -ic` (stuttgart-things/stuttgart-things#3439).
+      version: 2026.10.05
     - src: https://github.com/stuttgart-things/manage-filesystem.git
       scm: git
       version: 2026.13.04
