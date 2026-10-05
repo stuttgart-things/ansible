@@ -287,6 +287,31 @@ playbooks:
             become: yes
             become_user: "{{ developer }}"
 
+          # semantic-release lives under nvm, which only an interactive shell
+          # loads: a script, a `task` run or `ssh host semantic-release` did not
+          # find it (stuttgart-things/stuttgart-things#3439). A wrapper on the
+          # system PATH runs it with nvm's node 20 -- not /usr/bin/node, whose
+          # major differs -- and the plugins installed next to it.
+          - name: Resolve nvm's node 20
+            ansible.builtin.shell: |
+              source ~/.nvm/nvm.sh
+              nvm which 20
+            args:
+              executable: /bin/bash
+            become: yes
+            become_user: "{{ developer }}"
+            register: nvm_node20
+            changed_when: false
+
+          - name: semantic-release on the system PATH
+            ansible.builtin.copy:
+              dest: /usr/local/bin/semantic-release
+              mode: "0755"
+              content: |
+                #!/bin/sh
+                # Managed by sthings.baseos.semantic_release
+                exec "{{ nvm_node20.stdout }}" "{{ nvm_node20.stdout | dirname }}/../lib/node_modules/semantic-release/bin/semantic-release.js" "$@"
+
   - name: claude_code
     play: |
       ---
@@ -524,6 +549,81 @@ playbooks:
                 export TASK_REMOTE_TRUSTED_HOSTS="github.com,raw.githubusercontent.com"
                 alias tt='task --taskfile {{ tmux_taskfile_url }}'
             become_user: "{{ developer }}"
+
+  - name: shell_tools
+    play: |
+      ---
+      # fzf, zoxide and atuin for the developer (stuttgart-things/stuttgart-things#3439).
+      # Key bindings in an interactive bash, in this order -- the later one wins:
+      #   fzf    CTRL-T (files), ALT-C (cd), CTRL-R
+      #   zoxide `z <part of a path>`, `zi` (interactive, via fzf)
+      #   atuin  CTRL-R (replaces fzf's: searchable, per-directory history in
+      #          SQLite). The up arrow stays bash's own. No sync: atuin only
+      #          talks to a server after `atuin login`.
+      - name: Install fzf, zoxide and atuin
+        hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: true
+
+        vars:
+          developer: sthings
+          developer_user_dir: "/home/{{ developer }}"
+          # atuin needs bash-preexec under bash; Ubuntu does not package it.
+          bash_preexec_version: 0.7.0 # datasource=github-tags depName=rcaloras/bash-preexec
+          bash_preexec_path: /usr/local/share/bash-preexec/bash-preexec.sh
+
+        pre_tasks:
+          - name: Include vars
+            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
+            when: path_to_vars_file is defined
+
+        tasks:
+          - name: Install fzf, zoxide and atuin
+            ansible.builtin.apt:
+              name:
+                - fzf
+                - zoxide
+                - atuin
+              state: present
+              update_cache: true
+
+          - name: Create the bash-preexec directory
+            ansible.builtin.file:
+              path: "{{ bash_preexec_path | dirname }}"
+              state: directory
+              mode: "0755"
+
+          - name: Download bash-preexec
+            ansible.builtin.get_url:
+              url: "https://raw.githubusercontent.com/rcaloras/bash-preexec/{{ bash_preexec_version }}/bash-preexec.sh"
+              dest: "{{ bash_preexec_path }}"
+              mode: "0644"
+
+          # BEFORE starship's init: starship then hooks into bash-preexec instead
+          # of setting a DEBUG trap of its own that bash-preexec would replace.
+          # Without a starship line the block simply lands at the end.
+          - name: Load bash-preexec before starship
+            ansible.builtin.blockinfile:
+              path: "{{ developer_user_dir }}/.bashrc"
+              create: true
+              owner: "{{ developer }}"
+              group: "{{ developer }}"
+              marker: "# {mark} ANSIBLE MANAGED: bash-preexec"
+              insertbefore: '^eval "\$\(starship init bash\)"'
+              block: |
+                [ -r {{ bash_preexec_path }} ] && . {{ bash_preexec_path }}
+
+          - name: Shell integration for fzf, zoxide and atuin
+            ansible.builtin.blockinfile:
+              path: "{{ developer_user_dir }}/.bashrc"
+              create: true
+              owner: "{{ developer }}"
+              group: "{{ developer }}"
+              marker: "# {mark} ANSIBLE MANAGED: fzf zoxide atuin"
+              block: |
+                eval "$(fzf --bash)"
+                eval "$(zoxide init bash)"
+                eval "$(atuin init bash --disable-up-arrow)"
 
   - name: chezmoi
     play: |
