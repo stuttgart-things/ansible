@@ -211,6 +211,34 @@ playbooks:
           # CA straight from the list made ONE such instance fail the whole
           # play — and therefore every VM build in the fleet. So probe first and
           # only install from the instances that actually serve the CA.
+          # Build marker (stuttgart-things/stuttgart-things#3439): how, from where
+          # and when this VM was built -- create-vm passes sthings_build_* in the
+          # order's varsFile (source, order XR, use case, lab, management
+          # cluster). The login banner (sthings-motd) shows it as BUILT. Written
+          # on the FIRST setup run only (force: false), so a later run keeps the
+          # build date. Nothing is written when the order passes nothing.
+          - name: Create /etc/sthings
+            ansible.builtin.file:
+              path: /etc/sthings
+              state: directory
+              mode: "0755"
+            when: sthings_build_source is defined
+
+          - name: Write the build marker
+            ansible.builtin.copy:
+              dest: /etc/sthings/build.yaml
+              mode: "0644"
+              force: false
+              content: |
+                # Written by sthings.baseos.setup on the first run -- see sthings-motd.
+                source: {{ sthings_build_source }}
+                order: {{ sthings_build_order | default('') }}
+                use_case: {{ sthings_build_use_case | default('') }}
+                lab: {{ sthings_build_lab | default('') }}
+                management_cluster: {{ sthings_build_management_cluster | default('') }}
+                built: {{ now(utc=true, fmt='%Y-%m-%d') }}
+            when: sthings_build_source is defined
+
           - name: Probe vault instances for a reachable PKI CA endpoint
             ansible.builtin.uri:
               url: "{{ vault_instance }}/v1/pki/ca/pem"
