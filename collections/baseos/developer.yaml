@@ -887,20 +887,35 @@ playbooks:
               dagger_path: "{{ dagger_installed.stdout.split()[0] }}"
               dagger_tag: "{{ dagger_release.json.tag_name }}"
             block:
+              # A directory of its own: a fixed /tmp/dagger collided on dev-vm3,
+              # where something else keeps a DIRECTORY of that name -- the
+              # unarchive saw "nothing to do" and the copy failed with
+              # "endswith first arg must be bytes" (#3461).
+              - name: Temporary directory for the download
+                ansible.builtin.tempfile:
+                  state: directory
+                  suffix: -dagger
+                register: dagger_tmp
+
               - name: Download and unpack Dagger {{ dagger_tag }}
                 ansible.builtin.unarchive:
                   src: "https://github.com/dagger/dagger/releases/download/{{ dagger_tag }}/dagger_{{ dagger_tag }}_linux_amd64.tar.gz"
-                  dest: /tmp
+                  dest: "{{ dagger_tmp.path }}"
                   remote_src: true
                   include: [dagger]
 
               - name: Replace {{ dagger_path }}
                 ansible.builtin.copy:
-                  src: /tmp/dagger
+                  src: "{{ dagger_tmp.path }}/dagger"
                   dest: "{{ dagger_path }}"
                   remote_src: true
                   mode: "0755"
                   owner: "{{ omit if dagger_path.startswith('/usr') else developer }}"
+
+              - name: Remove the temporary directory
+                ansible.builtin.file:
+                  path: "{{ dagger_tmp.path }}"
+                  state: absent
 
               - name: Stop Dagger engines of other versions
                 ansible.builtin.shell: |
