@@ -242,6 +242,25 @@ playbooks:
                 built: {{ now(utc=true, fmt='%Y-%m-%d') }}
             when: sthings_build_source is defined
 
+          # inotify limits for dev tooling (kind, VS Code, Go/Node watchers) as a
+          # sysctl.d file, applied at boot -- not `sudo sysctl -w` in ~/.bashrc,
+          # which printed three lines on every login (#3439). Values sized for a
+          # dev VM, not the 2.1 billion found in such .bashrc lines.
+          - name: inotify limits in /etc/sysctl.d
+            ansible.builtin.copy:
+              dest: /etc/sysctl.d/90-sthings-inotify.conf
+              mode: "0644"
+              content: |
+                # Managed by sthings.baseos.setup
+                fs.inotify.max_user_watches = {{ sysctl_inotify_max_user_watches | default(524288) }}
+                fs.inotify.max_user_instances = {{ sysctl_inotify_max_user_instances | default(8192) }}
+                fs.inotify.max_queued_events = {{ sysctl_inotify_max_queued_events | default(16384) }}
+            register: inotify_sysctl
+
+          - name: Apply the inotify limits now
+            ansible.builtin.command: sysctl -p /etc/sysctl.d/90-sthings-inotify.conf
+            when: inotify_sysctl is changed
+
           - name: Probe vault instances for a reachable PKI CA endpoint
             ansible.builtin.uri:
               url: "{{ vault_instance }}/v1/pki/ca/pem"
@@ -644,6 +663,13 @@ templates:
       success_symbol = '{{ starship_config.character_success_symbol }}'
 
       # Disable the package module, hiding it from the prompt completely
+      # Helm 4 prints a version starship cannot parse, so the module showed
+      # only its symbol ("via ⎈ via") in every directory with a Chart.yaml
+      # (stuttgart-things/stuttgart-things#3439). The banner lists helm's
+      # version anyway.
+      [helm]
+      disabled = true
+
       [package]
       disabled = {{ starship_config.package_disabled | lower }}
 
