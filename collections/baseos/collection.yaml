@@ -24,9 +24,9 @@ requirements: |
       version: 2026.07.22
     - src: https://github.com/stuttgart-things/install-requirements.git
       scm: git
-      # 2026.10.07-4 -- sthings-motd: width capped at 160, CHECK beside the sessions,
-      # session columns by priority; ~0.3 s (stuttgart-things/stuttgart-things#3439).
-      version: 2026.10.07-4
+      # 2026.10.07-5 -- sthings-motd: width cap 160, CHECK beside sessions, version refresh with the
+      # login shell\'s node/ansible (stuttgart-things/stuttgart-things#3439, #3510).
+      version: 2026.10.07-5
     - src: https://github.com/stuttgart-things/manage-filesystem.git
       scm: git
       version: 2026.13.04
