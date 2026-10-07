@@ -24,9 +24,9 @@ requirements: |
       version: 2026.07.22
     - src: https://github.com/stuttgart-things/install-requirements.git
       scm: git
-      # 2026.10.07-2 -- sthings-motd: next to the mascot facts, SYSTEM, STATUS and all software;
-      # below the rule CHECK, sessions, hint (stuttgart-things/stuttgart-things#3439).
-      version: 2026.10.07-2
+      # 2026.10.07-3 -- sthings-motd: next to the mascot facts, SYSTEM, STATUS and all software;
+      # below the rule CHECK, sessions, hint; ~0.3 s (stuttgart-things/stuttgart-things#3439).
+      version: 2026.10.07-3
     - src: https://github.com/stuttgart-things/manage-filesystem.git
       scm: git
       version: 2026.13.04
