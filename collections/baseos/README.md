@@ -71,6 +71,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `sthings.baseos.nfs` | Setup NFS server with exports for Kubernetes StorageClass |
 | `sthings.baseos.pdns` | Create PowerDNS A records using Vault for API token |
 | `sthings.baseos.gh_runner` | Install and configure self-hosted GitHub Actions runners (repo or org scope) with optional Docker installation |
+| `sthings.baseos.cockpit` | Install Cockpit (web console: journal, systemd units, resources, terminal, reboot/shutdown) without recommends, write `cockpit.conf` (`cockpit_login_title`, `cockpit_origins`, `cockpit_behind_proxy` for a reverse proxy), optional port drop-in (`cockpit_port`), open the port in ufw from `cockpit_ufw_from` when ufw is active, then check the login page answers |
 
 ### Maintenance
 
