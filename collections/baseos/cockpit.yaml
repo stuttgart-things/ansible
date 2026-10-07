@@ -1,0 +1,159 @@
+---
+playbooks:
+  - name: cockpit
+    play: |
+      ---
+      # Cockpit (https://cockpit-project.org/) on a machine: watch it and shut
+      # it down from the browser -- journal, systemd units, CPU/RAM/disk,
+      # terminal, reboot/shutdown. Made for the edge devices (LattePanda Mu,
+      # the LED-matrix Raspberry Pi), stuttgart-things/harvester#415.
+      #
+      # Usage:
+      #   ansible-playbook sthings.baseos.cockpit -i inventory
+      #   ansible-playbook sthings.baseos.cockpit -i "10.31.102.144," -u sthings \
+      #     -e cockpit_ufw_from=10.31.102.0/24
+      #
+      # WHAT IT IS NOT. Cockpit manages the host it runs on. It does not see
+      # Kubernetes pods, nor KubeVirt/Harvester VMs: cockpit-machines only
+      # handles libvirt VMs on the local host, so it is not installed by
+      # default (add it to cockpit_packages where libvirt VMs run).
+      #
+      # NO RECOMMENDS BY DEFAULT. The metapackage recommends cockpit-storaged,
+      # -networkmanager and -packagekit, which pull in udisks2, NetworkManager
+      # and PackageKit. On a 1 GB Pi that is daemons nobody asked for, and
+      # NetworkManager next to netplan/systemd-networkd is a second owner of
+      # the network config. Opt in with cockpit_install_recommends: true.
+      #
+      # LOGIN IS PAM: a local user with a password. Keep it on the LAN. With
+      # ufw active the play opens cockpit_port from cockpit_ufw_from only
+      # (default: anywhere; narrow it to the LAN).
+      #
+      # BEHIND A REVERSE PROXY (Caddy with a PKI cert): set cockpit_origins to
+      # the public URL(s) -- cockpit-ws rejects the WebSocket otherwise -- and
+      # cockpit_behind_proxy: true so it trusts X-Forwarded-Proto. Origins is
+      # the whole allow-list: keep https://<ip>:<port> in it too if the box
+      # should stay reachable directly.
+
+      - name: Install and configure Cockpit
+        hosts: "{{ target_host | default('all') }}"
+        become: true
+
+        vars:
+          cockpit_packages:
+            - cockpit
+          cockpit_install_recommends: false
+          cockpit_port: 9090
+          cockpit_login_title: "{{ inventory_hostname }}"
+          cockpit_origins: []          # e.g. [https://cockpit.matrix.sthings.lab]
+          cockpit_behind_proxy: false
+          cockpit_ufw_allow: true
+          cockpit_ufw_from: any        # e.g. 192.168.8.0/24
+
+        tasks:
+          - name: Install Cockpit packages
+            ansible.builtin.apt:
+              name: "{{ cockpit_packages }}"
+              state: present
+              install_recommends: "{{ cockpit_install_recommends }}"
+              update_cache: true
+              cache_valid_time: 3600
+
+          - name: Write cockpit.conf
+            ansible.builtin.copy:
+              dest: /etc/cockpit/cockpit.conf
+              owner: root
+              group: root
+              mode: "0644"
+              content: |
+                # MANAGED BY ANSIBLE (sthings.baseos.cockpit)
+                [WebService]
+                LoginTitle = {{ cockpit_login_title }}
+                {% if cockpit_origins | length > 0 %}
+                Origins = {{ cockpit_origins | join(' ') }}
+                {% endif %}
+                {% if cockpit_behind_proxy %}
+                ProtocolHeader = X-Forwarded-Proto
+                {% endif %}
+            notify: Restart cockpit
+
+          # THE SOCKET LISTENS ON 9090. A DIFFERENT PORT IS A DROP-IN THAT
+          # CLEARS THE DEFAULT ListenStream FIRST -- WITHOUT THE EMPTY LINE
+          # SYSTEMD LISTENS ON BOTH
+          - name: Set the Cockpit port
+            ansible.builtin.copy:
+              dest: /etc/systemd/system/cockpit.socket.d/listen.conf
+              owner: root
+              group: root
+              mode: "0644"
+              content: |
+                # MANAGED BY ANSIBLE (sthings.baseos.cockpit)
+                [Socket]
+                ListenStream=
+                ListenStream={{ cockpit_port }}
+            when: cockpit_port | int != 9090
+            notify: Restart cockpit socket
+
+          - name: Remove the port drop-in on the default port
+            ansible.builtin.file:
+              path: /etc/systemd/system/cockpit.socket.d/listen.conf
+              state: absent
+            when: cockpit_port | int == 9090
+            notify: Restart cockpit socket
+
+          - name: Enable and start cockpit.socket
+            ansible.builtin.systemd:
+              name: cockpit.socket
+              state: started
+              enabled: true
+
+          - name: Check whether ufw is active
+            ansible.builtin.command: ufw status
+            register: cockpit_ufw_status
+            changed_when: false
+            failed_when: false
+            when: cockpit_ufw_allow | bool
+
+          - name: Allow the Cockpit port in ufw
+            community.general.ufw:
+              rule: allow
+              port: "{{ cockpit_port | string }}"
+              proto: tcp
+              from_ip: "{{ cockpit_ufw_from }}"
+              comment: cockpit
+            when:
+              - cockpit_ufw_allow | bool
+              - cockpit_ufw_status.rc | default(1) == 0
+              - "'Status: active' in cockpit_ufw_status.stdout | default('')"
+
+          - name: Apply pending restarts
+            ansible.builtin.meta: flush_handlers
+
+          # AND THEN PROVE IT: THE LOGIN PAGE ANSWERS OVER TLS (SELF-SIGNED
+          # CERT FROM cockpit-certificate-ensure, HENCE NO VALIDATION HERE)
+          - name: Wait for the Cockpit login page
+            ansible.builtin.uri:
+              url: "https://127.0.0.1:{{ cockpit_port }}/"
+              validate_certs: false
+              status_code: 200
+            register: cockpit_login_page
+            retries: 10
+            delay: 3
+            until: cockpit_login_page.status == 200
+
+          - name: Cockpit URL
+            ansible.builtin.debug:
+              msg: "Cockpit: https://{{ ansible_host | default(inventory_hostname) }}:{{ cockpit_port }}/ (login: a local user with a password)"
+
+        handlers:
+          - name: Restart cockpit socket
+            ansible.builtin.systemd:
+              name: cockpit.socket
+              state: restarted
+              daemon_reload: true
+
+          # cockpit-ws READS cockpit.conf AT START. try-restart, NOT restarted:
+          # A cockpit.service THAT IS NOT RUNNING STARTS FRESH ON THE NEXT
+          # CONNECTION ANYWAY, AND ITS FIRST START IS THE SOCKET'S JOB
+          - name: Restart cockpit
+            ansible.builtin.command: systemctl try-restart cockpit.service
+            changed_when: true
