@@ -954,7 +954,9 @@ playbooks:
       - name: Clean up full dev VMs
         ansible.builtin.import_playbook: sthings.baseos.disk_cleanup
         vars:
-          target_host: dev_disk_full
+          # cleanup_hosts, not target_host: the AnsibleRun's -e target_host=all
+          # would win and clean every dev VM, full or not.
+          cleanup_hosts: dev_disk_full
           cleanup_runner_user: sthings
           # Unused images too -- the disk is at the threshold; volumes stay.
           prune_docker_all_images: true

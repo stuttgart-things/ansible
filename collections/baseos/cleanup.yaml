@@ -33,9 +33,11 @@ playbooks:
       # =============================================================================
 
       - name: Fleet disk cleanup
-        # target_host narrows it (sthings.baseos.dev_maintenance passes the
-        # group of dev VMs over the threshold); unset = all, as before.
-        hosts: "{{ target_host | default('all') }}"
+        # cleanup_hosts narrows it (sthings.baseos.dev_maintenance passes the
+        # group of dev VMs over the threshold), else target_host, else all.
+        # Not target_host itself: AnsibleRun sets -e target_host=all, and an
+        # extra-var beats the import_playbook vars -- every VM got cleaned.
+        hosts: "{{ cleanup_hosts | default(target_host) | default('all') }}"
         become: true
         gather_facts: true
 
