@@ -24,9 +24,9 @@ requirements: |
       version: 2026.07.22
     - src: https://github.com/stuttgart-things/install-requirements.git
       scm: git
-      # 2026.10.06-2 -- sthings-motd: Claude session table (origin you/agent, ended ones 24h),
-      # wordmark only below 120 columns (stuttgart-things/stuttgart-things#3439).
-      version: 2026.10.06-2
+      # 2026.10.07 -- sthings-motd layout B: mascot next to the machine, software +
+      # sessions below; responsive, UTF-8 widths (stuttgart-things/stuttgart-things#3439).
+      version: 2026.10.07
     - src: https://github.com/stuttgart-things/manage-filesystem.git
       scm: git
       version: 2026.13.04
