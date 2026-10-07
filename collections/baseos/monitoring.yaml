@@ -1,0 +1,198 @@
+---
+playbooks:
+  - name: node_exporter
+    play: |
+      ---
+      # =============================================================================
+      # node_exporter -- host metrics for the central Prometheus
+      # -----------------------------------------------------------------------------
+      # Dev VMs and GitHub runner hosts are scraped by ONE Prometheus (sthings-infra,
+      # LabDA); its Alertmanager pitches disk / reachability alerts to homerun2.
+      # This play only puts the exporter on the host -- no Prometheus here.
+      #
+      # Kept small on purpose: only the collectors the alerts and a host overview
+      # need (filesystem, cpu, memory, load, disks, network), the systemd unit is
+      # capped at 64 MiB and 10 % of a CPU and runs as its own user with a
+      # read-only view of the system. Measured on dev-vm3: 6 MiB (cgroup),
+      # 19 MiB RSS, ~420 series a host.
+      #
+      # Usage:
+      #   ansible-playbook -i inventory sthings.baseos.node_exporter
+      #   ansible-playbook -i inventory sthings.baseos.node_exporter -e node_exporter_allow_from='["10.100.136.160"]'
+      #
+      # The port is open to the lab network (no UFW on these hosts). Where UFW IS
+      # active, 9100 is allowed from node_exporter_allow_from only (the
+      # sthings-infra node by default) -- add a rule there, nothing else.
+      # =============================================================================
+      - name: Install node_exporter
+        hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: true
+
+        vars:
+          node_exporter_version: 1.12.1 # datasource=github-releases depName=prometheus/node_exporter
+          # sha256 of node_exporter-<version>.linux-<arch>.tar.gz (sha256sums.txt
+          # of the release) -- bump together with the version
+          node_exporter_checksums:
+            amd64: b51d8a76aa2a9156a55d501aca6276fae09e262259a5e4e831d2c2222f084e63
+          node_exporter_port: 9100
+          node_exporter_allow_from:
+            - 10.100.136.160   # sthings-infra (LabDA), the central Prometheus
+          node_exporter_collectors:
+            - cpu
+            - diskstats
+            - filesystem
+            - loadavg
+            - meminfo
+            - netdev
+            - pressure
+            - stat
+            - time
+            - uname
+          node_exporter_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+          node_exporter_args: >-
+            {{ ['--web.listen-address=:' ~ node_exporter_port, '--collector.disable-defaults']
+               + node_exporter_collectors | map('regex_replace', '^', '--collector.') | list }}
+
+        tasks:
+          - name: Check the architecture has a checksum
+            ansible.builtin.assert:
+              that: node_exporter_arch in node_exporter_checksums
+              fail_msg: "no checksum for {{ node_exporter_arch }} -- add it to node_exporter_checksums"
+
+          - name: System user node_exporter
+            ansible.builtin.user:
+              name: node_exporter
+              system: true
+              shell: /usr/sbin/nologin
+              create_home: false
+
+          - name: Installed version
+            ansible.builtin.command: /usr/local/bin/node_exporter --version
+            register: node_exporter_installed
+            changed_when: false
+            failed_when: false
+            check_mode: false
+
+          - name: Download and install node_exporter {{ node_exporter_version }}
+            when: >-
+              node_exporter_installed.rc != 0 or
+              ('version ' ~ node_exporter_version ~ ' ') not in node_exporter_installed.stdout
+            block:
+              - name: Temporary directory
+                ansible.builtin.tempfile:
+                  state: directory
+                  suffix: node_exporter
+                register: node_exporter_tmp
+
+              - name: Download the release (checksum verified)
+                ansible.builtin.get_url:
+                  url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-{{ node_exporter_arch }}.tar.gz"
+                  dest: "{{ node_exporter_tmp.path }}/node_exporter.tar.gz"
+                  checksum: "sha256:{{ node_exporter_checksums[node_exporter_arch] }}"
+                  mode: "0644"
+
+              - name: Unpack
+                ansible.builtin.unarchive:
+                  src: "{{ node_exporter_tmp.path }}/node_exporter.tar.gz"
+                  dest: "{{ node_exporter_tmp.path }}"
+                  remote_src: true
+
+              - name: Install the binary
+                ansible.builtin.copy:
+                  src: "{{ node_exporter_tmp.path }}/node_exporter-{{ node_exporter_version }}.linux-{{ node_exporter_arch }}/node_exporter"
+                  dest: /usr/local/bin/node_exporter
+                  remote_src: true
+                  owner: root
+                  group: root
+                  mode: "0755"
+                notify: Restart node_exporter
+
+            always:
+              - name: Remove the temporary directory
+                ansible.builtin.file:
+                  path: "{{ node_exporter_tmp.path }}"
+                  state: absent
+                when: node_exporter_tmp.path is defined
+
+          - name: systemd unit
+            ansible.builtin.copy:
+              dest: /etc/systemd/system/node_exporter.service
+              mode: "0644"
+              content: |
+                # Managed by sthings.baseos.node_exporter
+                [Unit]
+                Description=Prometheus node_exporter (scraped by the central Prometheus)
+                After=network-online.target
+                Wants=network-online.target
+
+                [Service]
+                User=node_exporter
+                Group=node_exporter
+                ExecStart=/usr/local/bin/node_exporter {{ node_exporter_args | join(' ') }}
+                Restart=on-failure
+                RestartSec=5
+                MemoryMax=64M
+                CPUQuota=10%
+                NoNewPrivileges=true
+                ProtectSystem=strict
+                ProtectHome=read-only
+                PrivateTmp=true
+                ProtectKernelTunables=true
+                ProtectControlGroups=true
+                RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+                [Install]
+                WantedBy=multi-user.target
+            notify: Restart node_exporter
+
+          - name: Enable and start node_exporter
+            ansible.builtin.systemd:
+              name: node_exporter
+              enabled: true
+              state: started
+              daemon_reload: true
+
+          - name: UFW state
+            ansible.builtin.command: ufw status
+            register: node_exporter_ufw
+            changed_when: false
+            failed_when: false
+            check_mode: false
+
+          - name: Allow 9100 from the Prometheus hosts (only where UFW is active)
+            community.general.ufw:
+              rule: allow
+              proto: tcp
+              port: "{{ node_exporter_port }}"
+              from_ip: "{{ item }}"
+              comment: node_exporter for the central Prometheus
+            loop: "{{ node_exporter_allow_from }}"
+            when:
+              - node_exporter_ufw.rc == 0
+              - "'Status: active' in node_exporter_ufw.stdout"
+
+          - name: Restart now if anything changed
+            ansible.builtin.meta: flush_handlers
+
+          - name: Scrape localhost
+            ansible.builtin.uri:
+              url: "http://127.0.0.1:{{ node_exporter_port }}/metrics"
+              return_content: true
+            register: node_exporter_metrics
+            retries: 5
+            delay: 2
+            until: node_exporter_metrics.status == 200
+            check_mode: false
+
+          - name: Filesystem metrics present
+            ansible.builtin.assert:
+              that: "'node_filesystem_avail_bytes' in node_exporter_metrics.content"
+              quiet: true
+
+        handlers:
+          - name: Restart node_exporter
+            ansible.builtin.systemd:
+              name: node_exporter
+              state: restarted
+              daemon_reload: true
