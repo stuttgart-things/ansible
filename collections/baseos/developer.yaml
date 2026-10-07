@@ -1086,7 +1086,12 @@ playbooks:
       # Vault: VAULT_ADDR / VAULT_ROLE_ID / VAULT_SECRET_ID from the environment --
       # in an AnsibleRun its vaultSecretName, for create-vm
       # tekton-ci/vault-devvm-dotfiles-reader (AppRole devvm-dotfiles-reader, read on
-      # devvm/data/dotfiles only). The entry holds
+      # devvm/data/dotfiles only). Where VAULT_* already belong to another Vault
+      # (the pr-vm-deploy workflow of create-terraform-vm, stuttgart-things#3510),
+      # DOTFILES_VAULT_ADDR / DOTFILES_VAULT_ROLE_ID / DOTFILES_VAULT_SECRET_ID
+      # take precedence: as a SET -- if DOTFILES_VAULT_ADDR is non-empty all three
+      # come from DOTFILES_*, otherwise all three from VAULT_*; never a mix of two
+      # Vaults' credentials. The entry holds
       #   sops_age_key  -> ~/.config/sops/age/keys.txt, where sops finds it itself
       #   deploy_key    -> read-only deploy key of the dotfiles repo
       - name: Install chezmoi
@@ -1105,9 +1110,11 @@ playbooks:
           # never offered to any other github.com remote of the developer.
           dotfiles_ssh_host: github.com-dotfiles
           dotfiles_vault_secret: devvm/data/dotfiles
-          vault_url: "{{ lookup('env', 'VAULT_ADDR') }}"
-          vault_approle_id: "{{ lookup('env', 'VAULT_ROLE_ID') }}"
-          vault_approle_secret: "{{ lookup('env', 'VAULT_SECRET_ID') }}"
+          # DOTFILES_VAULT_* win as a set when DOTFILES_VAULT_ADDR is set (see above).
+          dotfiles_vault_env_prefix: "{{ 'DOTFILES_' if lookup('env', 'DOTFILES_VAULT_ADDR') | length > 0 else '' }}"
+          vault_url: "{{ lookup('env', dotfiles_vault_env_prefix ~ 'VAULT_ADDR') }}"
+          vault_approle_id: "{{ lookup('env', dotfiles_vault_env_prefix ~ 'VAULT_ROLE_ID') }}"
+          vault_approle_secret: "{{ lookup('env', dotfiles_vault_env_prefix ~ 'VAULT_SECRET_ID') }}"
           sops_version: 3.13.3 # datasource=github-tags depName=getsops/sops
           # GitHub's published ed25519 host key
           # (https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints).

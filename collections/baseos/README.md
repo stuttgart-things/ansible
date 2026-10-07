@@ -48,6 +48,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `sthings.baseos.ai` | Install AI tools via Homebrew (dagger, gemini-cli, crush) |
 | `sthings.baseos.claude_code` | Install Claude Code CLI for the developer user |
 | `sthings.baseos.tmux` | Install tmux, deploy `~/.tmux.conf` (vi copy-mode, OSC52 clipboard, Catppuccin status bar) and register `alias tt` that fetches the `gum`-driven session taskfile from `stuttgart-things/tasks` via task's remote-taskfiles experiment |
+| `sthings.baseos.dotfiles` | chezmoi dotfiles for the developer user; reads `sops_age_key` + `deploy_key` from Vault (`devvm/data/dotfiles`, AppRole `devvm-dotfiles-reader`). Credentials from `DOTFILES_VAULT_ADDR` / `DOTFILES_VAULT_ROLE_ID` / `DOTFILES_VAULT_SECRET_ID` when `DOTFILES_VAULT_ADDR` is set, otherwise from `VAULT_ADDR` / `VAULT_ROLE_ID` / `VAULT_SECRET_ID` (always all three from one set) |
 | `sthings.baseos.uv` | Install UV Python package manager (v0.9.3) |
 
 ### Binaries and Tools
