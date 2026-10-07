@@ -82,6 +82,10 @@ playbooks:
           # DANGEROUS -> enable explicitly with -e only
           prune_docker_volumes: false     # removes *unused* volumes (may be real data!)
           prune_docker_all_images: false  # docker system prune -a (also tagged images)
+          # ... but only when the filesystem holding /var/lib/docker is at least
+          # this full (percent; 0 = always). Disposable CI runners set 85: their
+          # image cache stays warm until the disk needs the room.
+          prune_docker_all_images_min_usage: 0
           # `crossplane render` leaves its function containers running; they pin
           # their images, so enable this together with prune_docker_all_images.
           stop_crossplane_render_containers: false
@@ -180,6 +184,16 @@ playbooks:
                   usage_before: "{{ dict(sel | map(attribute='mount') | zip(sel | map(attribute='size_available'))) }}"
                 vars:
                   sel: "{{ ansible_facts.mounts | selectattr('mount', 'in', monitored_mounts) | list }}"
+
+              # usage of the filesystem /var/lib/docker lives on (the longest of
+              # these mount points that exists), for prune_docker_all_images_min_usage
+              - name: Usage of the Docker filesystem
+                ansible.builtin.set_fact:
+                  docker_fs_usage: "{{ ((m.size_total - m.size_available) * 100 / m.size_total) | int if m else 0 }}"
+                vars:
+                  m: "{{ ansible_facts.mounts
+                         | selectattr('mount', 'in', ['/var/lib/docker', '/var/lib', '/var', '/'])
+                         | sort(attribute='mount', reverse=true) | first | default({}) }}"
 
               - name: Show preflight result
                 ansible.builtin.debug:
@@ -502,11 +516,22 @@ playbooks:
                 changed_when: "'Total reclaimed space: 0B' not in docker_builder.stdout"
                 when: clean_docker
 
+              - name: Docker filesystem below the prune -a threshold
+                ansible.builtin.debug:
+                  msg: >-
+                    prune_docker_all_images skipped: the Docker filesystem is at
+                    {{ docker_fs_usage }}%, below {{ prune_docker_all_images_min_usage }}%
+                when:
+                  - prune_docker_all_images
+                  - docker_fs_usage | int < prune_docker_all_images_min_usage | int
+
               - name: "DANGEROUS: docker system prune -a (also tagged images)"
                 ansible.builtin.command: docker system prune -a -f
                 register: docker_prune_all
                 changed_when: "'Total reclaimed space: 0B' not in docker_prune_all.stdout"
-                when: prune_docker_all_images
+                when:
+                  - prune_docker_all_images
+                  - docker_fs_usage | int >= prune_docker_all_images_min_usage | int
 
               - name: "DANGEROUS: prune unused Docker volumes"
                 ansible.builtin.command: docker volume prune -f
