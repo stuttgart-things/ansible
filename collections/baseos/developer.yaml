@@ -271,6 +271,9 @@ playbooks:
       - name: Install tmux + dev taskfile
         ansible.builtin.import_playbook: sthings.baseos.tmux
 
+      - name: Colour VS Code Remote-SSH windows
+        ansible.builtin.import_playbook: sthings.baseos.vscode_color
+
       - name: Execute dev config
         ansible.builtin.import_playbook: sthings.baseos.dev_config
 
@@ -734,6 +737,148 @@ playbooks:
               block: |
                 alias tt='task --taskfile {{ tmux_taskfile_url }}'
             become_user: "{{ developer }}"
+
+  - name: vscode_color
+    play: |
+      ---
+      # Per-host colour for VS Code Remote-SSH windows: title bar, activity bar and
+      # status bar show at a glance which machine a window is connected to.
+      # VS Code reads ~/.vscode-server/data/Machine/settings.json on the remote for
+      # every window connected to it ("Remote settings"); this play merges
+      # workbench.colorCustomizations into that file and keeps all other settings.
+      # Precedence is Workspace > Remote > User, so a project's .vscode/settings.json
+      # with its own colours still wins. The title bar is only coloured with
+      # "window.titleBarStyle": "custom" in the LOCAL user settings.
+      #
+      #   vscode_color: auto       (default) a theme preset picked from the host name,
+      #                            stable per host, different across the dev VMs
+      #   vscode_color: dev        any preset below, or a hex colour like '#6D28D9'
+      #   vscode_color: reset      removes the colours again
+      #
+      #   ansible-playbook -i inv sthings.baseos.vscode_color -e vscode_color=lab
+      - name: Colour VS Code Remote-SSH windows per host
+        hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: false
+
+        vars:
+          developer: sthings
+          developer_user_dir: "/home/{{ developer }}"
+          vscode_color: auto
+          # .vscode-server-insiders for VS Code Insiders
+          vscode_server_dirs:
+            - .vscode-server
+          vscode_color_presets:
+            # environment traffic light -- keep red for what really is production
+            prod: "#8B0000"
+            staging: "#C2410C"
+            dev: "#166534"
+            lab: "#6D28D9"
+            customer: "#1E3A8A"
+            mgmt: "#0F766E"
+            # theme-inspired
+            nord: "#5E81AC"
+            dracula: "#BD93F9"
+            tokyonight: "#7AA2F7"
+            catppuccin: "#CBA6F7"
+            gruvbox: "#D79921"
+            solarized: "#268BD2"
+            monokai: "#A6E22E"
+            synthwave: "#FF2E97"
+            matrix: "#003B00"
+            rosepine: "#EBBCBA"
+          # `auto` picks from these only: no prod red or customer navy by accident
+          vscode_color_auto_pool: [nord, dracula, tokyonight, catppuccin, gruvbox, solarized, monokai, synthwave, matrix, rosepine]
+          vscode_color_keys:
+            - titleBar.activeBackground
+            - titleBar.activeForeground
+            - titleBar.inactiveBackground
+            - titleBar.inactiveForeground
+            - activityBar.background
+            - activityBar.foreground
+            - statusBar.background
+            - statusBar.foreground
+
+          _vscode_choice: "{{ vscode_color | string | lower }}"
+          _vscode_hex: >-
+            {%- if _vscode_choice == 'auto' -%}
+            {{ vscode_color_presets[vscode_color_auto_pool[((inventory_hostname | hash('md5'))[:8] | int(base=16)) % (vscode_color_auto_pool | length)]] }}
+            {%- elif _vscode_choice in vscode_color_presets -%}
+            {{ vscode_color_presets[_vscode_choice] }}
+            {%- else -%}
+            {{ vscode_color | string }}
+            {%- endif -%}
+          _vscode_rgb: "{{ [_vscode_hex[1:3] | int(base=16), _vscode_hex[3:5] | int(base=16), _vscode_hex[5:7] | int(base=16)] }}"
+          # dark text on light colours (dracula, rosepine, ...), white on dark ones
+          _vscode_fg: "{{ '#1A1A1A' if (0.299 * _vscode_rgb[0] + 0.587 * _vscode_rgb[1] + 0.114 * _vscode_rgb[2]) > 150 else '#FFFFFF' }}"
+          # inactive windows: the same colour at 70 % brightness
+          _vscode_inactive: "{{ '#%02X%02X%02X' | format((_vscode_rgb[0] * 0.7) | int, (_vscode_rgb[1] * 0.7) | int, (_vscode_rgb[2] * 0.7) | int) }}"
+          _vscode_colors:
+            titleBar.activeBackground: "{{ _vscode_hex }}"
+            titleBar.activeForeground: "{{ _vscode_fg }}"
+            titleBar.inactiveBackground: "{{ _vscode_inactive }}"
+            titleBar.inactiveForeground: "{{ _vscode_fg }}"
+            activityBar.background: "{{ _vscode_hex }}"
+            activityBar.foreground: "{{ _vscode_fg }}"
+            statusBar.background: "{{ _vscode_hex }}"
+            statusBar.foreground: "{{ _vscode_fg }}"
+
+        tasks:
+          - name: Check vscode_color
+            ansible.builtin.assert:
+              that: _vscode_choice == 'reset' or _vscode_hex is match('^#[0-9A-Fa-f]{6}$')
+              fail_msg: >-
+                vscode_color={{ vscode_color }} is neither a preset
+                ({{ vscode_color_presets.keys() | join(', ') }}), auto, reset nor a hex colour like '#6D28D9'
+              quiet: true
+
+          - name: Create the Machine settings directory
+            ansible.builtin.file:
+              path: "{{ developer_user_dir }}/{{ item.0 }}{{ item.1 }}"
+              state: directory
+              owner: "{{ developer }}"
+              group: "{{ developer }}"
+              mode: "0755"
+            loop: "{{ vscode_server_dirs | product(['', '/data', '/data/Machine']) | list }}"
+            when: _vscode_choice != 'reset'
+
+          - name: Read the current Machine settings
+            ansible.builtin.slurp:
+              path: "{{ developer_user_dir }}/{{ item }}/data/Machine/settings.json"
+            loop: "{{ vscode_server_dirs }}"
+            register: vscode_settings_raw
+            failed_when: false
+
+          - name: Merge the colours into the Machine settings
+            vars:
+              _current_raw: "{{ (item.content | default('') | b64decode | trim) or '{}' }}"
+              _current: "{{ _current_raw | from_json }}"
+              _custom: "{{ _current['workbench.colorCustomizations'] | default({}) }}"
+              _custom_new: >-
+                {{ (_custom | dict2items | rejectattr('key', 'in', vscode_color_keys) | items2dict)
+                   if _vscode_choice == 'reset' else (_custom | combine(_vscode_colors)) }}
+              _merged: >-
+                {{ (_current | dict2items | rejectattr('key', 'eq', 'workbench.colorCustomizations') | items2dict)
+                   | combine({'workbench.colorCustomizations': _custom_new} if _custom_new else {}) }}
+            ansible.builtin.copy:
+              dest: "{{ developer_user_dir }}/{{ item.item }}/data/Machine/settings.json"
+              content: "{{ _merged | to_nice_json(indent=4) }}\n"
+              owner: "{{ developer }}"
+              group: "{{ developer }}"
+              mode: "0644"
+              backup: true
+            loop: "{{ vscode_settings_raw.results }}"
+            loop_control:
+              label: "{{ item.item }}"
+            # reset on a host that never had the file: nothing to do
+            when: _vscode_choice != 'reset' or item.content is defined
+
+          - name: Show the colour
+            ansible.builtin.debug:
+              msg: >-
+                {{ inventory_hostname }}: {{ 'colours removed' if _vscode_choice == 'reset'
+                else _vscode_hex ~ ' (' ~ vscode_color ~ ')' }} -- picked up live, at the latest after
+                "Developer: Reload Window"
 
   - name: shell_tools
     play: |

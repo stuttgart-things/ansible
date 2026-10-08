@@ -39,7 +39,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 | Playbook | Description |
 |----------|-------------|
-| `sthings.baseos.dev` | Full dev machine setup (setup + binaries + ansible + golang + pre-commit + semantic-release + docker + container tools + nerdctl + podman + vhs + claude-code + starship + kind cluster) |
+| `sthings.baseos.dev` | Full dev machine setup (setup + binaries + ansible + golang + pre-commit + semantic-release + docker + container tools + nerdctl + podman + vhs + claude-code + starship + tmux + vscode-color + kind cluster) |
 | `sthings.baseos.dev_config` | Post-dev configuration: restart containerd, create .kube dir, install KCL |
 | `sthings.baseos.ansible` | Install Python3, virtualenv, Ansible (v12.3.0) and Python packages (kubernetes, openshift, hvac, pyvmomi) |
 | `sthings.baseos.golang` | Install Go (v1.25.1) with golangci-lint, goreleaser (v2.14.3), ko (v0.18.0), cobra-cli, protobuf |
@@ -48,6 +48,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `sthings.baseos.ai` | Install AI tools via Homebrew (dagger, gemini-cli, crush) |
 | `sthings.baseos.claude_code` | Install Claude Code CLI for the developer user |
 | `sthings.baseos.tmux` | Install tmux, deploy `~/.tmux.conf` (vi copy-mode, OSC52 clipboard, Catppuccin status bar) and register `alias tt` that fetches the `gum`-driven session taskfile from `stuttgart-things/tasks` via task's remote-taskfiles experiment |
+| `sthings.baseos.vscode_color` | Per-host colour for VS Code Remote-SSH windows (title, activity and status bar) via `~/.vscode-server/data/Machine/settings.json`, other settings kept. `-e vscode_color=auto` (default: theme preset from the host name), a preset (`prod`, `staging`, `dev`, `lab`, `customer`, `mgmt`, `nord`, `dracula`, `tokyonight`, `catppuccin`, `gruvbox`, `solarized`, `monokai`, `synthwave`, `matrix`, `rosepine`), a hex colour like `'#6D28D9'`, or `reset`. Title bar needs `"window.titleBarStyle": "custom"` locally |
 | `sthings.baseos.dotfiles` | chezmoi dotfiles for the developer user; reads `sops_age_key` + `deploy_key` from Vault (`devvm/data/dotfiles`, AppRole `devvm-dotfiles-reader`). Credentials from `DOTFILES_VAULT_ADDR` / `DOTFILES_VAULT_ROLE_ID` / `DOTFILES_VAULT_SECRET_ID` when `DOTFILES_VAULT_ADDR` is set, otherwise from `VAULT_ADDR` / `VAULT_ROLE_ID` / `VAULT_SECRET_ID` (always all three from one set) |
 | `sthings.baseos.uv` | Install UV Python package manager (v0.9.3) |
 
