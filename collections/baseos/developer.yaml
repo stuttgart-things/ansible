@@ -752,7 +752,8 @@ playbooks:
       #
       #   vscode_color: auto       (default) a theme preset picked from the host name,
       #                            stable per host, different across the dev VMs
-      #   vscode_color: dev        any preset below, or a hex colour like '#6D28D9'
+      #   vscode_color: dev        any preset below, or a hex colour like '#6D28D9';
+      #                            two ('#A855F7,#EC4899') colour the status bar apart
       #   vscode_color: reset      removes the colours again
       #
       #   ansible-playbook -i inv sthings.baseos.vscode_color -e vscode_color=lab
@@ -787,8 +788,20 @@ playbooks:
             synthwave: "#FF2E97"
             matrix: "#003B00"
             rosepine: "#EBBCBA"
+            # two colours, after the gradients of the sthings-motd themes (same
+            # names): title + activity bar take the first, the status bar the second
+            purple: "#A855F7,#EC4899"
+            sunset: "#FF5E62,#FFC371"
+            ocean: "#00C6FF,#0072FF"
+            aurora: "#00F260,#0575E6"
+            fire: "#FF416C,#FF4B2B"
+            mint: "#43E97B,#38F9D7"
+            candy: "#FC5C7D,#6A82FB"
+            gold: "#F7971E,#FFD200"
+            ice: "#8EC5FC,#E0C3FC"
+            forest: "#5AA050,#C8E66E"
           # `auto` picks from these only: no prod red or customer navy by accident
-          vscode_color_auto_pool: [nord, dracula, tokyonight, catppuccin, gruvbox, solarized, monokai, synthwave, matrix, rosepine]
+          vscode_color_auto_pool: [nord, dracula, tokyonight, catppuccin, gruvbox, solarized, synthwave, rosepine, purple, ocean, candy, sunset]
           vscode_color_keys:
             - titleBar.activeBackground
             - titleBar.activeForeground
@@ -800,7 +813,7 @@ playbooks:
             - statusBar.foreground
 
           _vscode_choice: "{{ vscode_color | string | lower }}"
-          _vscode_hex: >-
+          _vscode_value: >-
             {%- if _vscode_choice == 'auto' -%}
             {{ vscode_color_presets[vscode_color_auto_pool[((inventory_hostname | hash('md5'))[:8] | int(base=16)) % (vscode_color_auto_pool | length)]] }}
             {%- elif _vscode_choice in vscode_color_presets -%}
@@ -808,9 +821,14 @@ playbooks:
             {%- else -%}
             {{ vscode_color | string }}
             {%- endif -%}
+          # "#A", or "#A,#B" for a second colour in the status bar
+          _vscode_hex: "{{ (_vscode_value | split(','))[0] | trim }}"
+          _vscode_hex2: "{{ (_vscode_value | split(','))[-1] | trim }}"
           _vscode_rgb: "{{ [_vscode_hex[1:3] | int(base=16), _vscode_hex[3:5] | int(base=16), _vscode_hex[5:7] | int(base=16)] }}"
+          _vscode_rgb2: "{{ [_vscode_hex2[1:3] | int(base=16), _vscode_hex2[3:5] | int(base=16), _vscode_hex2[5:7] | int(base=16)] }}"
           # dark text on light colours (dracula, rosepine, ...), white on dark ones
           _vscode_fg: "{{ '#1A1A1A' if (0.299 * _vscode_rgb[0] + 0.587 * _vscode_rgb[1] + 0.114 * _vscode_rgb[2]) > 150 else '#FFFFFF' }}"
+          _vscode_fg2: "{{ '#1A1A1A' if (0.299 * _vscode_rgb2[0] + 0.587 * _vscode_rgb2[1] + 0.114 * _vscode_rgb2[2]) > 150 else '#FFFFFF' }}"
           # inactive windows: the same colour at 70 % brightness
           _vscode_inactive: "{{ '#%02X%02X%02X' | format((_vscode_rgb[0] * 0.7) | int, (_vscode_rgb[1] * 0.7) | int, (_vscode_rgb[2] * 0.7) | int) }}"
           _vscode_colors:
@@ -820,16 +838,18 @@ playbooks:
             titleBar.inactiveForeground: "{{ _vscode_fg }}"
             activityBar.background: "{{ _vscode_hex }}"
             activityBar.foreground: "{{ _vscode_fg }}"
-            statusBar.background: "{{ _vscode_hex }}"
-            statusBar.foreground: "{{ _vscode_fg }}"
+            statusBar.background: "{{ _vscode_hex2 }}"
+            statusBar.foreground: "{{ _vscode_fg2 }}"
 
         tasks:
           - name: Check vscode_color
             ansible.builtin.assert:
-              that: _vscode_choice == 'reset' or _vscode_hex is match('^#[0-9A-Fa-f]{6}$')
+              that: >-
+                _vscode_choice == 'reset' or
+                (_vscode_hex is match('^#[0-9A-Fa-f]{6}$') and _vscode_hex2 is match('^#[0-9A-Fa-f]{6}$'))
               fail_msg: >-
                 vscode_color={{ vscode_color }} is neither a preset
-                ({{ vscode_color_presets.keys() | join(', ') }}), auto, reset nor a hex colour like '#6D28D9'
+                ({{ vscode_color_presets.keys() | join(', ') }}), auto, reset nor a hex colour like '#6D28D9' (or two: '#A855F7,#EC4899')
               quiet: true
 
           - name: Create the Machine settings directory
@@ -877,7 +897,7 @@ playbooks:
             ansible.builtin.debug:
               msg: >-
                 {{ inventory_hostname }}: {{ 'colours removed' if _vscode_choice == 'reset'
-                else _vscode_hex ~ ' (' ~ vscode_color ~ ')' }} -- picked up live, at the latest after
+                else _vscode_value ~ ' (' ~ vscode_color ~ ')' }} -- picked up live, at the latest after
                 "Developer: Reload Window"
 
   - name: shell_tools
