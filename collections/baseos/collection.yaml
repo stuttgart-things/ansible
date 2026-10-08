@@ -24,9 +24,9 @@ requirements: |
       version: 2026.07.22
     - src: https://github.com/stuttgart-things/install-requirements.git
       scm: git
-      # 2026.10.07-6 -- sthings-motd: mascot from 140 columns, width cap 160, version refresh with the
-      # login shell\'s node/ansible (stuttgart-things/stuttgart-things#3439, #3510).
-      version: 2026.10.07-6
+      # 2026.10.08 -- sthings-motd: TMUX/CLAUDE from claude-sessions --json, KIND +
+      # DOCKER rows, TASKS (stuttgart-things/stuttgart-things#3439).
+      version: 2026.10.08
     - src: https://github.com/stuttgart-things/manage-filesystem.git
       scm: git
       version: 2026.13.04
