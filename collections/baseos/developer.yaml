@@ -800,8 +800,9 @@ playbooks:
             gold: "#F7971E,#FFD200"
             ice: "#8EC5FC,#E0C3FC"
             forest: "#5AA050,#C8E66E"
-          # `auto` picks from these only: no prod red or customer navy by accident
-          vscode_color_auto_pool: [nord, dracula, tokyonight, catppuccin, gruvbox, solarized, synthwave, rosepine, purple, ocean, candy, sunset]
+          # `auto` picks from these only: no prod red or customer navy by accident,
+          # and no red-ish gradient (sunset, fire) -- red is a signal colour
+          vscode_color_auto_pool: [nord, dracula, tokyonight, catppuccin, gruvbox, solarized, synthwave, rosepine, purple, ocean, candy]
           vscode_color_keys:
             - titleBar.activeBackground
             - titleBar.activeForeground
