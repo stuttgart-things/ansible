@@ -67,6 +67,16 @@ playbooks:
           clean_go_cache: true          # go clean -cache -modcache -testcache (as runner user)
           clean_runner_diag: true       # old _diag logs
           clean_runner_work_temp: true  # _work/_temp (job scratch, recreated on demand)
+          # Files in a runner's _work its own user does not own, typically
+          # root-owned leftovers of a container job: the runner cannot delete
+          # them, so every later checkout on it fails with EACCES (seen on
+          # gh-dagger-runner, sthings-orga-runner-2, 2026-10-09).
+          clean_runner_foreign_files: true
+          # Runner installs whose _work is checked; globs. The org runners on the
+          # dagger hosts live under /opt, not in the cleanup user's home.
+          runner_work_dirs:
+            - "{{ cleanup_home | default('') }}/actions-runner/_work"
+            - /opt/actions-runner*/_work
           clean_trivy_cache: true
           clean_vscode_server: false    # disconnects active remote sessions -> opt-in
           clean_vscode_old_servers: true  # ~/.vscode-server/cli/servers/Stable-* not currently running
@@ -309,6 +319,37 @@ playbooks:
                 register: work_temp
                 changed_when: true
                 when: clean_runner_work_temp
+
+          - name: Runner _work owned by someone else
+            tags: runner
+            when: clean_runner_foreign_files
+            block:
+
+              # The owner of each runner install is the user its _work must
+              # belong to. Anything else (root-owned files a container job wrote
+              # through a bind mount) is removed, top entry first. Safe here
+              # because the preflight ended this host if a job is running.
+              - name: Remove files in _work the runner user does not own
+                ansible.builtin.shell:
+                  cmd: |
+                    shopt -s nullglob
+                    for w in {{ runner_work_dirs | join(' ') }}; do
+                      [ -d "$w" ] || continue
+                      owner=$(stat -c %U "$(dirname "$w")")
+                      [ "$owner" = root ] && continue
+                      found=$(find "$w" -mindepth 1 ! -user "$owner" -print -quit)
+                      [ -n "$found" ] || continue
+                      find "$w" -mindepth 1 ! -user "$owner" -prune -exec rm -rf {} +
+                      echo "cleaned $w (owner $owner)"
+                    done
+                  executable: /bin/bash
+                register: runner_foreign
+                changed_when: runner_foreign.stdout | length > 0
+
+              - name: Show runner _work cleanup
+                ansible.builtin.debug:
+                  var: runner_foreign.stdout_lines
+                when: runner_foreign.stdout | length > 0
 
           # --------------------------------------------------------------- SNAP
           - name: Snap
