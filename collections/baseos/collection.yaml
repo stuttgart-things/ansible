@@ -24,9 +24,9 @@ requirements: |
       version: 2026.07.22
     - src: https://github.com/stuttgart-things/install-requirements.git
       scm: git
-      # 2026.10.09 -- sthings-motd: no red gradient themes (sunset, fire) any more;
-      # red stays the signal colour (install-requirements#64).
-      version: 2026.10.09
+      # 2026.10.09-1 -- sthings-motd: `t gcl` (clone repos) in the TASKS row
+      # (install-requirements#65); 2026.10.09: no red gradient themes (#64).
+      version: 2026.10.09-1
     - src: https://github.com/stuttgart-things/manage-filesystem.git
       scm: git
       version: 2026.13.04
