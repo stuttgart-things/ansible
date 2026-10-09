@@ -1,0 +1,173 @@
+---
+version: 3
+vars:
+  DATE:
+    sh: date +"%y.%m%d.%H%M"
+  BRANCH:
+    sh: if [ $(git rev-parse --abbrev-ref HEAD) != "main" ]; then echo $(git rev-parse --abbrev-ref HEAD); else echo main ; fi
+
+tasks:
+  run-validation-stage:
+    desc: Lint/validate multiple technologies (non-interactive, for calling from other taskfiles)
+    vars:
+      MODULE: '{{.MODULE | default "github.com/stuttgart-things/blueprints/repository-linting@v1.21.0"}}'
+      FUNCTION: '{{.FUNCTION | default "validate-multiple-technologies"}}'
+      SRC: '{{.SRC | default .USER_WORKING_DIR}}'
+      EXPORT_PATH: '{{.EXPORT_PATH | default "/tmp/all-findings.txt"}}'
+    cmds:
+      - |
+        dagger call -m {{ .MODULE }} {{ .FUNCTION }} \
+        --src {{ .SRC }} \
+        export --path {{ .EXPORT_PATH }}
+        cat {{ .EXPORT_PATH }}
+
+  run-validation-stage-interactive:
+    desc: Lint/validate multiple technologies (interactive with prompts)
+    vars:
+      MODULE:
+        sh: |
+          gum input --placeholder "Module" --value "github.com/stuttgart-things/blueprints/repository-linting@v1.21.0"
+      FUNCTION:
+        sh: |
+          gum input --placeholder "Function name" --value "validate-multiple-technologies"
+      SRC:
+        sh: |
+          gum input --placeholder "Source code dir" --value $(pwd)
+      EXPORT_PATH:
+        sh: |
+          gum input --placeholder "Export path" --value "/tmp/all-findings.txt"
+    cmds:
+      - |
+        dagger call -m {{ .MODULE }} {{ .FUNCTION }} \
+        --src {{ .SRC }} \
+        export --path {{ .EXPORT_PATH }}
+        cat {{ .EXPORT_PATH }}
+
+  commit:
+    desc: Commit + push code into branch
+    deps:
+      - check
+    cmds:
+      - git branch --set-upstream-to=origin/{{ .BRANCH }}
+      - git pull
+      - git status
+      - |
+        git add *
+        git status
+        if [[ -n $(git status --porcelain) ]]; then
+          echo "Review the changes above."
+          gum confirm "Do you want to commit these changes?" || exit 0
+
+          echo "ENTER COMMIT MESSAGE"
+          COMMIT_MESSAGE=$(gum choose "CUSTOM MESSAGE" "feat: {{ .BRANCH }}" "fix: {{ .BRANCH }}" "BREAKING CHANGE: {{ .BRANCH }}")
+
+          if [ "$COMMIT_MESSAGE" == "CUSTOM MESSAGE" ]; then
+            CHANGED_FILES=$(git status --short | awk '{print $2}' | tr '\n' ' ')
+            COMMIT_MESSAGE=$(gum input --placeholder "Commit message" --value "Changed: $CHANGED_FILES")
+          fi
+
+          git commit --allow-empty -a -m "$COMMIT_MESSAGE"
+        else
+          echo "No changes to commit."
+        fi
+      - git push origin -u {{ .BRANCH }}
+
+  pr:
+    desc: Create pull request into main
+    cmds:
+      - task: commit
+      - gh pr create -t "{{ .BRANCH }}" -b "{{ .BRANCH }} branch into main"
+      - sleep 2s
+      # - gh pr checks $(gh pr list | grep "^[^#;]" | awk '{print $1}') --watch
+      - gh pr merge $(gh pr list | grep "^[^#;]" | grep '{{ .BRANCH }}' | awk '{print $1}') --auto --rebase --delete-branch
+      - git checkout main && git pull
+
+  issue:
+    desc: Create github issue
+    cmds:
+      - |
+        dagger call -m github.com/stuttgart-things/blueprints/repository-linting@v1.21.0 \
+        create-issue \
+        --repository $(gum input --header="REPOSITORY" --value "stuttgart-things/") \
+        --token env:GITHUB_TOKEN \
+        --content "$(gum input --header="CONTENT" --value "add issue for: ")" \
+        --model=$(gum input --header="AI MODEL" --value "gemini-2.5-flash")
+
+  branch:
+    desc: Create branch from main
+    cmds:
+      - git checkout main
+      - git branch
+      - git pull
+      - |
+        echo "Enter to be created (remote) branch:"
+        read BRANCH_NAME;
+        git checkout -b ${BRANCH_NAME}
+        git push origin ${BRANCH_NAME}
+      - git branch
+      - git branch --set-upstream-to=origin/main ${BRANCH_NAME}
+
+  run-pre-commit-hook:
+    deps:
+      - check
+    desc: "Run the pre-commit hook script to replace .example.com with .example.com"
+    cmds:
+      - |
+        # Find all YAML files in the repository recursively, excluding Taskfile.yaml
+        files=$(find . -type f \( -name "*.yaml" -o -name "*.yml" -o -name "*.yml" -o -name "*.md" \) ! -name "Taskfile.yaml")
+
+        # Loop through each file
+        for file in $files; do
+          # Skip binary files
+          if file "$file" | grep -q "text"; then
+            # Replace the string and update the file
+            sed -i 's/\.sva\.de/\.example\.com/g' "$file"
+          fi
+        done
+
+        # Add all modified YAML files back to staging
+        git add $(git ls-files --modified | grep -E '\.ya?ml$')
+
+        exit 0
+    silent: false
+
+  check:
+    desc: "Run pre-commit hooks"
+    cmds:
+      - pre-commit run -a
+
+  release:
+    desc: release new version
+    cmds:
+      - task: git:pr
+      - npx semantic-release --dry-run
+      - npx semantic-release --debug --no-ci
+      - echo released version $(git describe --tags --abbrev=0)
+
+  switch-remote:
+    desc: Switch to remote branch
+    cmds:
+      - |
+        git fetch
+        branches=($(git branch -r | grep -v 'origin/HEAD' | sed 's|origin/||'))
+        branch=$(printf "%s\n" "${branches[@]}" | gum choose)
+        git switch -c ${branch} --track origin/${branch}
+        git branch && git status
+
+  switch-local:
+    desc: Switch to local branch
+    cmds:
+      - |
+        branches=$(git branch -a | grep -v 'remotes')
+        branch=$(printf "%s\n" "${branches[@]}" | gum choose)
+        git checkout ${branch} && git pull
+
+  tag:
+    desc: Tag repo
+    cmds:
+      - task: commit
+      - |
+        echo "Enter to be created (remote) tag on the repository:"
+        read TAG_NAME;
+        git tag -a ${TAG_NAME} -m 'updated for ${TAG_NAME} on {{ .DATE }}'
+        git push origin --tags
