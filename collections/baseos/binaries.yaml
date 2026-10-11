@@ -126,7 +126,10 @@ vars:
       yq_version: 4.54.1 # datasource=github-tags depName=mikefarah/yq
       jq_version: 1.7.1 # datasource=github-tags depName=jqlang/jq
       machineshop_version: 2.11.0 # datasource=github-tags depName=stuttgart-things/machineshop
-      mc_version: RELEASE.2025-04-08T15-39-49Z #
+      # mc (minio client) REMOVED: dl.min.io answers 410 Gone for the pinned
+      # release binary, and the previous source_url was the SOURCE zip, so mc
+      # never installed a working binary here anyway (#1363). Re-add once a
+      # binary source exists again.
       # crossplane/cli, NICHT crossplane/crossplane: die CLI wird seit v2.3.0 aus
       # einem eigenen Repo released. Das alte Repo taggt weiter den Core, was
       # seit dem Split etwas anderes ist — ein Pin darauf folgt der falschen
@@ -169,7 +172,7 @@ vars:
           bin_to_copy: gum_{{ gum_version }}_Linux_x86_64/gum
           to_remove: gum_{{ gum_version }}_Linux_x86_64.tar.gz
           bin_dir: "/usr/local/bin"
-          version_cmd: "-- version"
+          version_cmd: " --version"
           target_version: "{{ gum_version }}"
         gh:
           bin_name: gh
@@ -179,7 +182,7 @@ vars:
           bin_to_copy: gh_{{ gh_version }}_linux_amd64/bin/gh
           to_remove: gh_{{ gh_version }}_linux_amd64.tar.gz
           bin_dir: "/usr/local/bin"
-          version_cmd: "-- version"
+          version_cmd: " --version"
           target_version: "{{ gh_version }}"
         task:
           bin_name: task
@@ -189,7 +192,7 @@ vars:
           bin_to_copy: task
           to_remove: task_linux_amd64.tar.gz
           bin_dir: "/usr/local/bin"
-          version_cmd: "-- version"
+          version_cmd: " --version"
           target_version: "{{ task_version }}"
         hugo:
           bin_name: hugo
@@ -224,14 +227,14 @@ vars:
           #md5_checksum: "374f22185f1f8cb25bc53187a2154ef0"
         jq:
           bin_name: jq
-          bin_version: "v{{ jq_version }}"
+          bin_version: "{{ jq_version }}"
           check_bin_version_before_installing: true
           source_url: "https://github.com/jqlang/jq/releases/download/jq-{{ jq_version }}/jq-linux-amd64"
           bin_to_copy: jq-linux-amd64
           to_remove: ""
           bin_dir: "/usr/bin/jq"
           version_cmd: " --version"
-          target_version: "v{{ jq_version }}"
+          target_version: "{{ jq_version }}"
         yq:
           bin_name: yq
           bin_version: "v{{ yq_version }}"
@@ -252,13 +255,3 @@ vars:
           bin_dir: "/usr/bin"
           version_cmd: " version"
           target_version: "v{{ machineshop_version }}"
-        minio:
-          bin_name: mc
-          bin_version: "{{ mc_version }}"
-          check_bin_version_before_installing: true
-          source_url: https://github.com/minio/mc/archive/refs/tags/{{ mc_version }}.zip
-          bin_to_copy: mc-{{ mc_version }}
-          to_remove: ""
-          bin_dir: "/usr/bin/mc"
-          version_cmd: " version"
-          target_version: "{{ mc_version }}"
