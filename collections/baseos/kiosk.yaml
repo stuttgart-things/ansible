@@ -15,6 +15,7 @@ playbooks:
           kiosk_url: ""
           kiosk_user: kiosk
           edge_role_default: auto       # only written if /etc/edge-role does not exist yet
+          edge_role_wait_seconds: 30    # tty1: max. wait for a default route before deciding the role
           edge_role_gateways:
             tt: 192.168.8.1
             kiosk: 192.168.10.1
@@ -202,6 +203,14 @@ playbooks:
               content: |
                 #!/bin/sh
                 # Called by getty@tty1 on every (re)spawn, so the role is re-evaluated each time.
+                # At boot getty starts before DHCP: in auto mode wait (max. {{ edge_role_wait_seconds }}s) for a default route.
+                mode=$(cat /etc/edge-role 2>/dev/null)
+                if [ -z "$mode" ] || [ "$mode" = "auto" ]; then
+                  i=0
+                  while [ -z "$(ip route show default)" ] && [ "$i" -lt {{ edge_role_wait_seconds }} ]; do
+                    sleep 1; i=$((i + 1))
+                  done
+                fi
                 if /usr/local/bin/edge-role is kiosk; then
                   exec /sbin/agetty --autologin {{ kiosk_user }} --noclear "$1" "$TERM"
                 else
