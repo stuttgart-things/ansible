@@ -136,7 +136,14 @@ jobs:
       collection-directory: ${{ matrix.collection-directory }}
       dagger-module-version: v0.137.3
       dagger-version: v0.21.10
-      branch-name: ${{ github.ref_name }}
+      # BUILD THE PUSHED COMMIT, NOT THE BRANCH TIP. THE INPUT IS PASSED STRAIGHT
+      # TO actions/checkout ref, WHICH TAKES A SHA. WITH THE BRANCH NAME, RUNS OF
+      # A MERGE BURST ALL CHECKED OUT WHATEVER main WAS WHEN THEY STARTED, GOT THE
+      # SAME COMMIT COUNT AND THUS THE SAME TAG - THE FIRST ONE RELEASED, THE REST
+      # FAILED ON "tag ... already exists" (run 38144236189: 19dd341 AND e64d127
+      # BOTH BUILT AS sthings-baseos-26.1011.1459). IT ALSO KEEPS THE RELEASE
+      # NOTE "commit <github.sha>" TRUE
+      branch-name: ${{ github.sha }}
       # THE ONLY PATH THAT PUBLISHES A RELEASE
       publish-release: true
     secrets: inherit # pragma: allowlist secret
