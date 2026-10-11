@@ -56,7 +56,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 | Playbook | Description |
 |----------|-------------|
-| `sthings.baseos.binaries` | Install CLI binaries (gum, gh, task, hugo, terraform, packer, yq, jq, machineshop, minio, sops, crossplane) |
+| `sthings.baseos.binaries` | Install CLI binaries (gum, gh, task, hugo, terraform, packer, yq, jq, machineshop, sops, crossplane) |
 | `sthings.baseos.brew` | Install Homebrew and build dependencies |
 | `sthings.baseos.vhs` | Install VHS terminal recorder with Google Chrome and system dependencies |
 
