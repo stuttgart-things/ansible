@@ -1,0 +1,250 @@
+---
+playbooks:
+  - name: kiosk
+    play: |
+      ---
+      # Edge box: role detection (tt|kiosk) + Firefox kiosk on tty1
+      #   ansible-playbook -i inventory sthings.baseos.kiosk -e target_host=edge \
+      #     -e kiosk_url=https://<start-page>
+      # Gateways per role can be overridden via -e '{"edge_role_gateways": {...}}'
+      - name: Edge box - role detection and kiosk browser
+        hosts: "{{ target_host | default('all') }}"
+        become: true
+
+        vars:
+          kiosk_url: ""
+          kiosk_user: kiosk
+          edge_role_default: auto       # only written if /etc/edge-role does not exist yet
+          edge_role_gateways:
+            tt: 192.168.8.1
+            kiosk: 192.168.10.1
+          kiosk_firefox_policies:
+            policies:
+              DisableAppUpdate: true
+              DisableTelemetry: true
+              DisableFirefoxStudies: true
+              DisablePocket: true
+              DontCheckDefaultBrowser: true
+              NoDefaultBookmarks: true
+              OverrideFirstRunPage: ""
+              OverridePostUpdatePage: ""
+              Preferences:
+                browser.sessionstore.resume_from_crash:
+                  Value: false
+                  Status: locked
+
+        pre_tasks:
+          - name: kiosk_url must be set
+            ansible.builtin.assert:
+              that: kiosk_url | length > 0
+              fail_msg: "Please set -e kiosk_url=https://..."
+
+        tasks:
+          # ------------------------------------------------------------------
+          # Role detection
+          # ------------------------------------------------------------------
+          - name: edge-role script
+            ansible.builtin.copy:
+              dest: /usr/local/bin/edge-role
+              mode: "0755"
+              content: |
+                #!/bin/sh
+                # Usage: edge-role show | edge-role is <role>
+                # Override: /etc/edge-role (auto|tt|kiosk|none)
+                role=$(cat /etc/edge-role 2>/dev/null)
+                if [ -z "$role" ] || [ "$role" = "auto" ]; then
+                  role=none
+                  route=$(ip route show default)
+                {% for name, gateway in edge_role_gateways.items() %}
+                  case "$route" in *"via {{ gateway }} "*) role={{ name }} ;; esac
+                {% endfor %}
+                fi
+                case "$1" in
+                  show) echo "$role" ;;
+                  is)   [ "$role" = "$2" ] ;;
+                  *)    echo "usage: edge-role show | edge-role is <role>" >&2; exit 2 ;;
+                esac
+
+          - name: Create /etc/edge-role (keep an existing override)
+            ansible.builtin.copy:
+              dest: /etc/edge-role
+              content: "{{ edge_role_default }}\n"
+              mode: "0644"
+              force: false
+
+          - name: Drop-in directory for k3s
+            ansible.builtin.file:
+              path: /etc/systemd/system/k3s.service.d
+              state: directory
+              mode: "0755"
+
+          - name: Start k3s only in role "tt"
+            ansible.builtin.copy:
+              dest: /etc/systemd/system/k3s.service.d/edge-role.conf
+              mode: "0644"
+              content: |
+                [Service]
+                ExecCondition=/usr/local/bin/edge-role is tt
+            notify: Reload systemd
+
+          # ------------------------------------------------------------------
+          # Packages + kiosk user
+          # ------------------------------------------------------------------
+          - name: Install cage, Mesa and Xwayland
+            ansible.builtin.apt:
+              name: [cage, mesa-utils, xwayland]
+              state: present
+              update_cache: true
+
+          - name: Kiosk user
+            ansible.builtin.user:
+              name: "{{ kiosk_user }}"
+              shell: /bin/bash
+              password_lock: true
+              groups: [video, render]
+              append: true
+              create_home: true
+
+          # ------------------------------------------------------------------
+          # Firefox as .deb from the Mozilla repo (instead of snap)
+          # ------------------------------------------------------------------
+          - name: Keyring directory
+            ansible.builtin.file:
+              path: /etc/apt/keyrings
+              state: directory
+              mode: "0755"
+
+          - name: Mozilla signing key
+            ansible.builtin.get_url:
+              url: https://packages.mozilla.org/apt/repo-signing-key.gpg
+              dest: /etc/apt/keyrings/packages.mozilla.org.asc
+              mode: "0644"
+
+          - name: Mozilla APT source
+            ansible.builtin.copy:
+              dest: /etc/apt/sources.list.d/mozilla.sources
+              mode: "0644"
+              content: |
+                Types: deb
+                URIs: https://packages.mozilla.org/apt
+                Suites: mozilla
+                Components: main
+                Signed-By: /etc/apt/keyrings/packages.mozilla.org.asc
+
+          - name: Prefer Mozilla packages (otherwise Ubuntu pulls the snap transitional package)
+            ansible.builtin.copy:
+              dest: /etc/apt/preferences.d/mozilla
+              mode: "0644"
+              content: |
+                Package: *
+                Pin: origin packages.mozilla.org
+                Pin-Priority: 1000
+
+          - name: Check whether Firefox is installed as a snap
+            ansible.builtin.command: snap list firefox
+            register: firefox_snap
+            changed_when: false
+            failed_when: false
+
+          - name: Remove snap Firefox
+            ansible.builtin.command: snap remove firefox
+            when: firefox_snap.rc == 0
+
+          - name: Install Firefox (.deb)
+            ansible.builtin.apt:
+              name: firefox
+              state: present
+              update_cache: true
+
+          - name: Policy directory
+            ansible.builtin.file:
+              path: /etc/firefox/policies
+              state: directory
+              mode: "0755"
+
+          - name: Firefox policies (no updates, no session restore, no first-run pages)
+            ansible.builtin.copy:
+              dest: /etc/firefox/policies/policies.json
+              mode: "0644"
+              content: "{{ kiosk_firefox_policies | to_nice_json }}\n"
+
+          # ------------------------------------------------------------------
+          # Cleanup: earlier kiosk.service approach
+          # ------------------------------------------------------------------
+          - name: Check for old kiosk.service
+            ansible.builtin.stat:
+              path: /etc/systemd/system/kiosk.service
+            register: old_kiosk_unit
+
+          - name: Stop and disable old kiosk.service
+            ansible.builtin.systemd_service:
+              name: kiosk.service
+              state: stopped
+              enabled: false
+            when: old_kiosk_unit.stat.exists
+
+          - name: Remove old kiosk.service and its drop-ins
+            ansible.builtin.file:
+              path: "{{ item }}"
+              state: absent
+            loop:
+              - /etc/systemd/system/kiosk.service
+              - /etc/systemd/system/kiosk.service.d
+            notify: Reload systemd
+
+          # ------------------------------------------------------------------
+          # Kiosk start via tty1 autologin
+          # ------------------------------------------------------------------
+          - name: tty1 getty wrapper (autologin only in role kiosk)
+            ansible.builtin.copy:
+              dest: /usr/local/bin/tty1-getty
+              mode: "0755"
+              content: |
+                #!/bin/sh
+                # Called by getty@tty1 on every (re)spawn, so the role is re-evaluated each time.
+                if /usr/local/bin/edge-role is kiosk; then
+                  exec /sbin/agetty --autologin {{ kiosk_user }} --noclear "$1" "$TERM"
+                else
+                  exec /sbin/agetty -o '-p -- \u' --noclear "$1" "$TERM"
+                fi
+
+          - name: Drop-in directory for getty@tty1
+            ansible.builtin.file:
+              path: /etc/systemd/system/getty@tty1.service.d
+              state: directory
+              mode: "0755"
+
+          - name: getty@tty1 uses the wrapper
+            ansible.builtin.copy:
+              dest: /etc/systemd/system/getty@tty1.service.d/kiosk.conf
+              mode: "0644"
+              content: |
+                [Service]
+                ExecStart=
+                ExecStart=-/usr/local/bin/tty1-getty %I
+            notify: Restart getty tty1
+
+          - name: Kiosk login starts cage + Firefox (logs to journal, tag "kiosk")
+            ansible.builtin.copy:
+              dest: "/home/{{ kiosk_user }}/.bash_profile"
+              owner: "{{ kiosk_user }}"
+              group: "{{ kiosk_user }}"
+              mode: "0644"
+              content: |
+                # Managed by Ansible (kiosk.yaml)
+                # MOZ_ENABLE_WAYLAND=0: Firefox runs via Xwayland. Native Wayland triggers an
+                # assertion in cage 0.2.1 (wlr_xdg_surface_schedule_configure: surface->initialized).
+                if [ "$(tty)" = "/dev/tty1" ] && /usr/local/bin/edge-role is kiosk; then
+                  exec env MOZ_ENABLE_WAYLAND=0 systemd-cat -t kiosk /usr/bin/cage -s -- /usr/bin/firefox --kiosk {{ kiosk_url | quote }}
+                fi
+
+        handlers:
+          - name: Reload systemd
+            ansible.builtin.systemd_service:
+              daemon_reload: true
+
+          - name: Restart getty tty1
+            ansible.builtin.systemd_service:
+              name: getty@tty1.service
+              state: restarted
+              daemon_reload: true
