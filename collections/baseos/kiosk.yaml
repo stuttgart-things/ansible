@@ -6,6 +6,9 @@ playbooks:
       # Edge box: role detection (tt|kiosk) + Firefox kiosk on tty1
       #   ansible-playbook -i inventory sthings.baseos.kiosk -e target_host=edge \
       #     -e kiosk_url=https://<start-page>
+      # Several pages, one tab each, switching to the next tab every 30s:
+      #   ansible-playbook -i inventory sthings.baseos.kiosk -e target_host=edge \
+      #     -e kiosk_urls=https://<page-1>,https://<page-2> -e kiosk_rotate_seconds=30
       # Gateways per role can be overridden via -e '{"edge_role_gateways": {...}}'
       - name: Edge box - role detection and kiosk browser
         hosts: "{{ target_host | default('all') }}"
@@ -13,6 +16,9 @@ playbooks:
 
         vars:
           kiosk_url: ""
+          kiosk_urls: []                # one tab per URL (list or comma separated), wins over kiosk_url
+          kiosk_rotate_seconds: 0       # > 0: switch to the next tab every N seconds (xdotool ctrl+Tab)
+          kiosk_tabs: "{{ (kiosk_urls.split(',') if kiosk_urls is string else kiosk_urls) | map('trim') | select | list if kiosk_urls | length > 0 else ([kiosk_url] if kiosk_url | length > 0 else []) }}"
           kiosk_user: kiosk
           edge_role_default: auto       # only written if /etc/edge-role does not exist yet
           edge_role_wait_seconds: 30    # tty1: max. wait for a default route before deciding the role
@@ -33,12 +39,17 @@ playbooks:
                 browser.sessionstore.resume_from_crash:
                   Value: false
                   Status: locked
+                browser.ctrlTab.sortByRecentlyUsed:   # ctrl+Tab (rotation) goes strictly left to right
+                  Value: false
+                  Status: locked
 
         pre_tasks:
-          - name: kiosk_url must be set
+          - name: kiosk_url or kiosk_urls must be set
             ansible.builtin.assert:
-              that: kiosk_url | length > 0
-              fail_msg: "Please set -e kiosk_url=https://..."
+              that:
+                - kiosk_tabs | length > 0
+                - kiosk_rotate_seconds | int >= 0
+              fail_msg: "Please set -e kiosk_url=https://... or -e kiosk_urls=https://...,https://... (kiosk_rotate_seconds >= 0)"
 
         tasks:
           # ------------------------------------------------------------------
@@ -96,6 +107,12 @@ playbooks:
               name: [cage, mesa-utils, xwayland]
               state: present
               update_cache: true
+
+          - name: Install xdotool (tab rotation)
+            ansible.builtin.apt:
+              name: xdotool
+              state: present
+            when: kiosk_rotate_seconds | int > 0
 
           - name: Kiosk user
             ansible.builtin.user:
@@ -233,6 +250,27 @@ playbooks:
                 ExecStart=-/usr/local/bin/tty1-getty %I
             notify: Restart getty tty1
 
+          - name: Kiosk session (Firefox, one tab per URL, optional tab rotation)
+            ansible.builtin.copy:
+              dest: /usr/local/bin/kiosk-session
+              mode: "0755"
+              content: |
+                #!/bin/sh
+                # Managed by Ansible (kiosk.yaml). Runs inside cage; the session ends when Firefox exits.
+                /usr/bin/firefox --kiosk {{ kiosk_tabs | map('quote') | join(' ') }} &
+                firefox=$!
+                {% if kiosk_rotate_seconds | int > 0 %}
+                # Firefox runs via Xwayland, so xdotool (XTEST) reaches it without a Wayland protocol
+                (
+                  sleep {{ kiosk_rotate_seconds | int }}
+                  while kill -0 "$firefox" 2>/dev/null; do
+                    xdotool key --clearmodifiers ctrl+Tab
+                    sleep {{ kiosk_rotate_seconds | int }}
+                  done
+                ) &
+                {% endif %}
+                wait "$firefox"
+
           - name: Kiosk login starts cage + Firefox (logs to journal, tag "kiosk")
             ansible.builtin.copy:
               dest: "/home/{{ kiosk_user }}/.bash_profile"
@@ -244,7 +282,7 @@ playbooks:
                 # MOZ_ENABLE_WAYLAND=0: Firefox runs via Xwayland. Native Wayland triggers an
                 # assertion in cage 0.2.1 (wlr_xdg_surface_schedule_configure: surface->initialized).
                 if [ "$(tty)" = "/dev/tty1" ] && /usr/local/bin/edge-role is kiosk; then
-                  exec env MOZ_ENABLE_WAYLAND=0 systemd-cat -t kiosk /usr/bin/cage -s -- /usr/bin/firefox --kiosk {{ kiosk_url | quote }}
+                  exec env MOZ_ENABLE_WAYLAND=0 systemd-cat -t kiosk /usr/bin/cage -s -- /usr/local/bin/kiosk-session
                 fi
 
         handlers:
