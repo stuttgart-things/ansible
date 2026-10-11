@@ -35,6 +35,16 @@
         "jqlang/jq"
       ],
       "extractVersion": "^jq-(?<version>.*)$"
+    },
+    {
+      "description": "PYTHON FOR MOLECULE / AWX STAYS ON WHAT ansible-core SUPPORTS. #1362 MOVED setup-python TO 3.15 WHILE ansible-core 2.21 SUPPORTS UP TO 3.14 - ansible-config dump DIED ON dataclasses._is_type AND EVERY COLLECTION PR FAILED MOLECULE. RAISE THIS CAP WHEN ansible-core LISTS 3.15",
+      "matchDepNames": [
+        "python"
+      ],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "allowedVersions": "<3.15"
     }
   ],
   "customManagers": [
