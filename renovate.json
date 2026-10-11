@@ -28,6 +28,13 @@
         "ghcr.io/stuttgart-things/crossplane-configurations/**"
       ],
       "enabled": false
+    },
+    {
+      "description": "JQ TAGS ARE jq-<version> (jq-1.8.1), NOT v<version>. THE GENERIC *_version MANAGER STRIPS ONLY A LEADING v, SO THE TAG STAYED jq-1.8.1, FAILED SEMVER AND jq WAS NEVER BUMPED. THE URL IN baseos/binaries.yaml ADDS THE jq- PREFIX ITSELF",
+      "matchDepNames": [
+        "jqlang/jq"
+      ],
+      "extractVersion": "^jq-(?<version>.*)$"
     }
   ],
   "customManagers": [
