@@ -9,6 +9,8 @@ playbooks:
       # Several pages, one tab each, switching to the next tab every 30s:
       #   ansible-playbook -i inventory sthings.baseos.kiosk -e target_host=edge \
       #     -e kiosk_urls=https://<page-1>,https://<page-2> -e kiosk_rotate_seconds=30
+      # Private CAs Firefox must trust (PEM files on the controller):
+      #     -e kiosk_ca_certs=/path/ca-1.crt,/path/ca-2.crt
       # Gateways per role can be overridden via -e '{"edge_role_gateways": {...}}'
       - name: Edge box - role detection and kiosk browser
         hosts: "{{ target_host | default('all') }}"
@@ -19,6 +21,10 @@ playbooks:
           kiosk_urls: []                # one tab per URL (list or comma separated), wins over kiosk_url
           kiosk_rotate_seconds: 0       # > 0: switch to the next tab every N seconds (xdotool ctrl+Tab)
           kiosk_tabs: "{{ (kiosk_urls.split(',') if kiosk_urls is string else kiosk_urls) | map('trim') | select | list if kiosk_urls | length > 0 else ([kiosk_url] if kiosk_url | length > 0 else []) }}"
+          kiosk_ca_certs: []            # PEM CA files on the controller (list or comma separated)
+          kiosk_ca_dir: /usr/local/share/ca-certificates/kiosk
+          kiosk_ca_list: "{{ (kiosk_ca_certs.split(',') if kiosk_ca_certs is string else kiosk_ca_certs) | map('trim') | select | list }}"
+          kiosk_ca_paths: "{{ kiosk_ca_list | map('basename') | map('regex_replace', '\\.(crt|pem)$', '') | map('regex_replace', '^(.*)$', kiosk_ca_dir ~ '/\\1.crt') | list }}"
           kiosk_user: kiosk
           edge_role_default: auto       # only written if /etc/edge-role does not exist yet
           edge_role_wait_seconds: 30    # tty1: max. wait for a default route before deciding the role
@@ -180,11 +186,42 @@ playbooks:
               state: directory
               mode: "0755"
 
-          - name: Firefox policies (no updates, no session restore, no first-run pages)
+          # Firefox on Linux does not read the system trust store; it installs
+          # the CAs from policies.json (Certificates.Install, absolute paths).
+          # The same files go into the system store for curl & co.
+          - name: CA directory
+            ansible.builtin.file:
+              path: "{{ kiosk_ca_dir }}"
+              state: directory
+              mode: "0755"
+
+          - name: Private CAs (kiosk_ca_certs)
+            ansible.builtin.copy:
+              src: "{{ item.0 }}"
+              dest: "{{ item.1 }}"
+              mode: "0644"
+            loop: "{{ kiosk_ca_list | zip(kiosk_ca_paths) | list }}"
+            notify: Update CA certificates
+
+          - name: Find CAs no longer listed
+            ansible.builtin.find:
+              paths: "{{ kiosk_ca_dir }}"
+              patterns: "*.crt"
+            register: kiosk_ca_found
+
+          - name: Remove CAs no longer listed
+            ansible.builtin.file:
+              path: "{{ item.path }}"
+              state: absent
+            loop: "{{ kiosk_ca_found.files | rejectattr('path', 'in', kiosk_ca_paths) | list }}"
+            notify: Update CA certificates
+
+          - name: Firefox policies (no updates, no session restore, no first-run pages, private CAs)
             ansible.builtin.copy:
               dest: /etc/firefox/policies/policies.json
               mode: "0644"
-              content: "{{ kiosk_firefox_policies | to_nice_json }}\n"
+              content: "{{ (kiosk_firefox_policies | combine({'policies': {'Certificates': {'Install': kiosk_ca_paths}}}, recursive=True) if kiosk_ca_paths | length > 0 else kiosk_firefox_policies) | to_nice_json }}\n"
+            notify: Restart getty tty1   # a running kiosk Firefox reads policies only at start
 
           # ------------------------------------------------------------------
           # Cleanup: earlier kiosk.service approach
@@ -286,6 +323,10 @@ playbooks:
                 fi
 
         handlers:
+          - name: Update CA certificates
+            ansible.builtin.command: update-ca-certificates
+            changed_when: true
+
           - name: Reload systemd
             ansible.builtin.systemd_service:
               daemon_reload: true
