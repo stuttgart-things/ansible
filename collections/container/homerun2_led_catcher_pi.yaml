@@ -124,6 +124,21 @@ playbooks:
           led_redis_port: 6379
           led_redis_stream: messages
           led_redis_password: ""
+          # One Pi, several LANs -- e.g. a panel that travels with an edge box between two networks.
+          # Per LAN: the default gateway that identifies it, the Redis to consume from there, and
+          # optionally a Wi-Fi to join. At every start the catcher waits for a default route, picks
+          # the LAN by gateway and takes its Redis; a NetworkManager hook restarts it when the LAN
+          # changes. No match: led_redis_* as before. Empty list: unchanged behaviour.
+          #   - name: sthings              # [a-z0-9-]
+          #     gateway: 192.168.10.1
+          #     redis_addr: 192.168.10.179
+          #     redis_port: 6379           # optional, default led_redis_port
+          #     redis_password: secret
+          #     wifi_ssid: sthings         # optional: a NetworkManager connection led-<name>
+          #     wifi_psk: secret
+          #     wifi_priority: 10          # optional: preferred over lower ones when both are in range
+          led_networks: []
+          led_network_wait_seconds: 30     # max. wait for a default route before picking the LAN
           led_consumer_group: homerun2-led-catcher
           led_ui_stream_presets: ""             # e.g. messages,tabletennis: the simulator's stream buttons; empty: only led_redis_stream
           led_profile_src: ""                   # a profile.yaml on the controller, installed and kept in sync; empty: the repo's tests/profile.yaml, once
@@ -394,6 +409,158 @@ playbooks:
             notify: Restart led-catcher
             tags: service
 
+          # ---- several LANs (led_networks) -----------------------------------------
+          - name: Settings per LAN directory
+            ansible.builtin.file:
+              path: /etc/led-catcher
+              state: directory
+              owner: root
+              group: root
+              mode: "0700"
+            when: led_networks | length > 0
+            tags: service
+
+          - name: Redis per LAN (/etc/led-catcher/<name>.env)
+            ansible.builtin.copy:
+              dest: "/etc/led-catcher/{{ item.name }}.env"
+              content: |
+                REDIS_ADDR={{ item.redis_addr | quote }}
+                REDIS_PORT={{ item.redis_port | default(led_redis_port) | quote }}
+                {% if (item.redis_password | default('')) | length > 0 %}
+                REDIS_PASSWORD={{ item.redis_password | quote }}
+                {% endif %}
+              owner: root
+              group: root
+              mode: "0600"
+            loop: "{{ led_networks }}"
+            loop_control:
+              label: "{{ item.name }}"
+            no_log: true
+            notify: Restart led-catcher
+            tags: service
+
+          - name: Find LANs no longer listed
+            ansible.builtin.find:
+              paths: /etc/led-catcher
+              patterns: "*.env"
+            register: led_network_envs
+            when: led_networks | length > 0
+            tags: service
+
+          - name: Remove LANs no longer listed
+            ansible.builtin.file:
+              path: "{{ item.path }}"
+              state: absent
+            loop: "{{ led_network_envs.files | default([]) | rejectattr('path', 'in', led_networks | map(attribute='name') | map('regex_replace', '^(.*)$', '/etc/led-catcher/\\1.env') | list) | list }}"
+            loop_control:
+              label: "{{ item.path }}"
+            when: led_networks | length > 0
+            notify: Restart led-catcher
+            tags: service
+
+          - name: Which LAN (led-catcher-net, by default gateway)
+            ansible.builtin.copy:
+              dest: /usr/local/bin/led-catcher-net
+              mode: "0755"
+              content: |
+                #!/bin/sh
+                # Managed by stuttgart-things/ansible sthings.container.homerun2_led_catcher_pi
+                # Prints the LAN this Pi is in, by its default gateway (led_networks); exit 1 if none matches.
+                route=$(ip route show default)
+                {% for n in led_networks %}
+                case "$route" in *"via {{ n.gateway }} "*) echo {{ n.name }}; exit 0 ;; esac
+                {% endfor %}
+                exit 1
+            when: led_networks | length > 0
+            notify: Restart led-catcher
+            tags: service
+
+          - name: Start wrapper (led-catcher-start, takes the Redis of the LAN)
+            ansible.builtin.copy:
+              dest: /usr/local/bin/led-catcher-start
+              mode: "0755"
+              content: |
+                #!/bin/sh
+                # Managed by stuttgart-things/ansible sthings.container.homerun2_led_catcher_pi
+                # At boot the unit may start before DHCP: wait for a default route, then pick the LAN.
+                i=0
+                while [ -z "$(ip route show default)" ] && [ "$i" -lt {{ led_network_wait_seconds | int }} ]; do
+                  sleep 1; i=$((i + 1))
+                done
+                net=$(/usr/local/bin/led-catcher-net) || net=""
+                mkdir -p /run/led-catcher
+                echo "$net" > /run/led-catcher/net
+                if [ -n "$net" ] && [ -f "/etc/led-catcher/$net.env" ]; then
+                  set -a; . "/etc/led-catcher/$net.env"; set +a
+                  echo "led-catcher: LAN $net, Redis $REDIS_ADDR:$REDIS_PORT"
+                else
+                  echo "led-catcher: no known LAN, Redis ${REDIS_ADDR:-none} (led_redis_addr)"
+                fi
+                exec {{ led_dir }}/.venv/bin/python -m led_catcher
+            when: led_networks | length > 0
+            notify: Restart led-catcher
+            tags: service
+
+          - name: Restart the catcher when the LAN changes (NetworkManager hook)
+            ansible.builtin.copy:
+              dest: /etc/NetworkManager/dispatcher.d/90-led-catcher
+              mode: "0755"
+              content: |
+                #!/bin/sh
+                # Managed by stuttgart-things/ansible sthings.container.homerun2_led_catcher_pi
+                # A new LAN (other default gateway) means another Redis: restart led-catcher.
+                case "$2" in up|dhcp4-change) ;; *) exit 0 ;; esac
+                now=$(/usr/local/bin/led-catcher-net) || exit 0
+                [ "$now" = "$(cat /run/led-catcher/net 2>/dev/null)" ] && exit 0
+                # one restart per move: NetworkManager reports up and dhcp4-change for it
+                echo "$now" > /run/led-catcher/net
+                logger -t led-catcher "LAN changed to $now, restarting"
+                systemctl restart led-catcher
+            when: led_networks | length > 0
+            tags: service
+
+          - name: Remove the LAN helpers (led_networks empty)
+            ansible.builtin.file:
+              path: "{{ item }}"
+              state: absent
+            loop:
+              - /usr/local/bin/led-catcher-net
+              - /usr/local/bin/led-catcher-start
+              - /etc/NetworkManager/dispatcher.d/90-led-catcher
+              - /etc/led-catcher
+            when: led_networks | length == 0
+            notify: Restart led-catcher
+            tags: service
+
+          - name: Wi-Fi per LAN (NetworkManager connection led-<name>)
+            ansible.builtin.shell: |
+              set -eu
+              con="led-$NAME"
+              if ! nmcli -t -f NAME con show | grep -qx "$con"; then
+                nmcli con add type wifi ifname wlan0 con-name "$con" ssid "$SSID" \
+                  wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$PSK" connection.autoconnect yes \
+                  connection.autoconnect-priority "$PRIO" >/dev/null
+                echo changed
+              elif [ "$(nmcli -g 802-11-wireless.ssid con show "$con")" != "$SSID" ] || \
+                   [ "$(nmcli -s -g 802-11-wireless-security.psk con show "$con")" != "$PSK" ] || \
+                   [ "$(nmcli -g connection.autoconnect-priority con show "$con")" != "$PRIO" ]; then
+                nmcli con modify "$con" 802-11-wireless.ssid "$SSID" wifi-sec.key-mgmt wpa-psk \
+                  wifi-sec.psk "$PSK" connection.autoconnect-priority "$PRIO"
+                echo changed
+              fi
+            environment:
+              NAME: "{{ item.name }}"
+              SSID: "{{ item.wifi_ssid }}"
+              PSK: "{{ item.wifi_psk | default('') }}"
+              PRIO: "{{ item.wifi_priority | default(0) | int }}"
+            register: led_wifi
+            changed_when: "'changed' in led_wifi.stdout"
+            loop: "{{ led_networks | selectattr('wifi_ssid', 'defined') | list }}"
+            loop_control:
+              label: "{{ item.name }}: {{ item.wifi_ssid }}"
+            no_log: true
+            tags: service
+
           - name: Systemd unit
             ansible.builtin.copy:
               dest: /etc/systemd/system/led-catcher.service
@@ -445,7 +612,12 @@ playbooks:
                 {% endif %}
                 # LED_API_TOKEN and REDIS_PASSWORD
                 EnvironmentFile=/etc/default/led-catcher
+                {% if led_networks | length > 0 %}
+                # picks the Redis of the LAN (led_networks), then execs the catcher
+                ExecStart=/usr/local/bin/led-catcher-start
+                {% else %}
                 ExecStart={{ led_dir }}/.venv/bin/python -m led_catcher
+                {% endif %}
                 Restart=always
                 RestartSec=5
                 KillSignal=SIGTERM
