@@ -9,6 +9,8 @@ playbooks:
       # Several pages, one tab each, switching to the next tab every 30s:
       #   ansible-playbook -i inventory sthings.baseos.kiosk -e target_host=edge \
       #     -e kiosk_urls=https://<page-1>,https://<page-2> -e kiosk_rotate_seconds=30
+      # ... and hold the current tab while someone uses keyboard/mouse (here: 60s):
+      #     -e kiosk_rotate_pause_seconds=60
       # Private CAs Firefox must trust (PEM files on the controller):
       #     -e kiosk_ca_certs=/path/ca-1.crt,/path/ca-2.crt
       # Gateways per role can be overridden via -e '{"edge_role_gateways": {...}}'
@@ -20,6 +22,7 @@ playbooks:
           kiosk_url: ""
           kiosk_urls: []                # one tab per URL (list or comma separated), wins over kiosk_url
           kiosk_rotate_seconds: 0       # > 0: switch to the next tab every N seconds (xdotool ctrl+Tab)
+          kiosk_rotate_pause_seconds: 0 # > 0: no switch while keyboard/mouse were used in the last N seconds
           kiosk_tabs: "{{ (kiosk_urls.split(',') if kiosk_urls is string else kiosk_urls) | map('trim') | select | list if kiosk_urls | length > 0 else ([kiosk_url] if kiosk_url | length > 0 else []) }}"
           kiosk_ca_certs: []            # PEM CA files on the controller (list or comma separated)
           kiosk_ca_dir: /usr/local/share/ca-certificates/kiosk
@@ -119,6 +122,12 @@ playbooks:
               name: xdotool
               state: present
             when: kiosk_rotate_seconds | int > 0
+
+          - name: Install xinput (rotation pause on keyboard/mouse input)
+            ansible.builtin.apt:
+              name: xinput
+              state: present
+            when: kiosk_rotate_seconds | int > 0 and kiosk_rotate_pause_seconds | int > 0
 
           - name: Kiosk user
             ansible.builtin.user:
@@ -297,16 +306,50 @@ playbooks:
                 /usr/bin/firefox --kiosk {{ kiosk_tabs | map('quote') | join(' ') }} &
                 firefox=$!
                 {% if kiosk_rotate_seconds | int > 0 %}
+                {% if kiosk_rotate_pause_seconds | int > 0 %}
+                # Last keyboard/mouse input (epoch seconds). xinput reads the raw XI2 events
+                # ("device: <master> (<source>)"); the XTEST devices are left out, they carry
+                # our own ctrl+Tab. xprintidle does not work: Xwayland has no screen saver extension.
+                last_input="${XDG_RUNTIME_DIR:-/tmp}/kiosk-last-input"
+                echo 0 > "$last_input"
+                (
+                  sleep 3   # Xwayland is up once Firefox started
+                  xtest=" $(xinput list --id-only 'Virtual core XTEST pointer' 2>/dev/null) $(xinput list --id-only 'Virtual core XTEST keyboard' 2>/dev/null) "
+                  prev=0
+                  stdbuf -oL xinput test-xi2 --root 2>/dev/null | while read -r k v rest; do
+                    case "$k" in
+                      EVENT) case "$rest" in *Raw*) raw=1 ;; *) raw=0 ;; esac ;;
+                      device:)
+                        if [ "${raw:-0}" = 1 ]; then
+                          src=${rest#(}; src=${src%)}
+                          case "$xtest" in
+                            *" $src "*) ;;
+                            *) now=$(date +%s); [ "$now" != "$prev" ] && echo "$now" > "$last_input" && prev=$now ;;
+                          esac
+                          raw=0
+                        fi ;;
+                    esac
+                  done
+                ) &
+                {% endif %}
                 # Firefox runs via Xwayland, so xdotool (XTEST) reaches it without a Wayland protocol
                 (
                   sleep {{ kiosk_rotate_seconds | int }}
                   while kill -0 "$firefox" 2>/dev/null; do
+                {% if kiosk_rotate_pause_seconds | int > 0 %}
+                    # hold the tab while someone uses keyboard/mouse
+                    if [ $(( $(date +%s) - $(cat "$last_input" 2>/dev/null || echo 0) )) -ge {{ kiosk_rotate_pause_seconds | int }} ]; then
+                      xdotool key --clearmodifiers ctrl+Tab
+                    fi
+                {% else %}
                     xdotool key --clearmodifiers ctrl+Tab
+                {% endif %}
                     sleep {{ kiosk_rotate_seconds | int }}
                   done
                 ) &
                 {% endif %}
                 wait "$firefox"
+            notify: Restart getty tty1   # a running kiosk keeps the old session script otherwise
 
           - name: Kiosk login starts cage + Firefox (logs to journal, tag "kiosk")
             ansible.builtin.copy:
