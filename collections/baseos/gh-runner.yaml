@@ -44,6 +44,13 @@ playbooks:
           # Set false only to debug a failing registration, and never in a
           # shared pipeline.
           runner_no_log: true
+          # Job-started hook that hands each runner's _work back to the runner
+          # user before every job. A job with `container:` runs as root and
+          # leaves root-owned files there; the next plain checkout on that
+          # runner then fails with EACCES (rmdir .../source/...), and so does
+          # every job after it, reruns included.
+          runner_workspace_hook: true
+          runner_hook_dir: /opt/runner-hooks
 
         pre_tasks:
           - name: Include vars
@@ -248,6 +255,71 @@ playbooks:
             when: not item.stat.exists
             no_log: "{{ runner_no_log }}"
 
+          # One fixed sudo line per instance, no wildcard: in sudoers a `*`
+          # also matches `../`, so `chown -R ... /opt/actions-runner-*` would
+          # let the runner user chown any path on the host.
+          - name: Allow the runner user to reclaim its own workspaces
+            ansible.builtin.copy:
+              dest: /etc/sudoers.d/gh-runner-workspace
+              owner: root
+              group: root
+              mode: '0440'
+              validate: /usr/sbin/visudo -cf %s
+              content: |
+                # Managed by sthings.baseos.gh_runner (runner_workspace_hook)
+                {% for r in runner_instances %}
+                {{ runner_user }} ALL=(root) NOPASSWD: /usr/bin/chown -R {{ runner_user }}\:{{ runner_linux_group }} {{ runner_base_dir }}-{{ r.name }}/_work
+                {% endfor %}
+            when: runner_workspace_hook | bool
+
+          - name: Create runner hook directory
+            ansible.builtin.file:
+              path: "{{ runner_hook_dir }}"
+              state: directory
+              owner: root
+              group: root
+              mode: '0755'
+            when: runner_workspace_hook | bool
+
+          # Root-owned and not writable by the runner user: the runner executes
+          # it, so it must not be able to change what it does.
+          - name: Write job-started hook per runner instance
+            ansible.builtin.copy:
+              dest: "{{ runner_hook_dir }}/job-started-{{ item.name }}.sh"
+              owner: root
+              group: root
+              mode: '0755'
+              content: |
+                #!/bin/sh
+                # Managed by sthings.baseos.gh_runner (runner_workspace_hook).
+                # Hand _work back to {{ runner_user }} before the job: a previous
+                # `container:` job ran as root and may have left root-owned
+                # files that break the checkout. Never fails the job.
+                sudo -n /usr/bin/chown -R {{ runner_user }}:{{ runner_linux_group }} {{ runner_base_dir }}-{{ item.name }}/_work 2>/dev/null || true
+                exit 0
+            loop: "{{ runner_instances }}"
+            loop_control:
+              label: "{{ item.name }}"
+            when: runner_workspace_hook | bool
+
+          # The runner reads .env only at start: a changed line restarts the
+          # service (on a host that is already running jobs, that cancels the
+          # job in flight).
+          - name: Register job-started hook in each runner's .env
+            ansible.builtin.lineinfile:
+              path: "{{ runner_base_dir }}-{{ item.name }}/.env"
+              regexp: '^ACTIONS_RUNNER_HOOK_JOB_STARTED='
+              line: "ACTIONS_RUNNER_HOOK_JOB_STARTED={{ runner_hook_dir }}/job-started-{{ item.name }}.sh"
+              create: true
+              owner: "{{ runner_user }}"
+              group: "{{ runner_linux_group }}"
+              mode: '0644'
+            loop: "{{ runner_instances }}"
+            loop_control:
+              label: "{{ item.name }}"
+            when: runner_workspace_hook | bool
+            notify: Restart runner instances
+
           - name: Install runner instances as systemd services
             ansible.builtin.command: ./svc.sh install {{ runner_user }}
             args:
@@ -273,6 +345,15 @@ playbooks:
               msg: >-
                 Runner '{{ item.name }}' is running
                 (scope={{ runner_scope }}, owner={{ github_owner }}{{ ', repo=' + github_repo if runner_scope == 'repo' else '' }}{{ ', group=' + runner_github_group if runner_github_group is defined else '' }})
+            loop: "{{ runner_instances }}"
+            loop_control:
+              label: "{{ item.name }}"
+
+        handlers:
+          - name: Restart runner instances
+            ansible.builtin.shell: ./svc.sh stop && ./svc.sh start
+            args:
+              chdir: "{{ runner_base_dir }}-{{ item.name }}"
             loop: "{{ runner_instances }}"
             loop_control:
               label: "{{ item.name }}"
@@ -307,6 +388,10 @@ vars:
       # Force unregister + re-register existing runners (use when changing
       # labels, runner group, name, or scope after the initial deploy).
       runner_force_reconfigure: false
+
+      # Job-started hook: chown each runner's _work back to the runner user
+      # before every job (root `container:` jobs leave root-owned files).
+      runner_workspace_hook: true
 
       # Runner settings
       runner_version: "2.334.0"
