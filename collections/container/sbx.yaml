@@ -1,0 +1,203 @@
+---
+playbooks:
+  - name: sbx
+    play: |
+      ---
+      # Docker Sandboxes (sbx): one KVM microVM per sandbox. Needs Ubuntu
+      # 24.04+ and /dev/kvm -- on a VM that means nested virtualization on the
+      # hypervisor node and a CPU type that passes VMX/SVM through (Proxmox:
+      # cpuType host). Docker Engine is NOT required; sbx brings its own
+      # containerd shim, kernel and rootfs.
+      #
+      # Signing in stays manual (or via a PAT in CI) -- every sbx command but
+      # the daemon refuses to work until it is done:
+      #   sbx login
+      #   echo "$DOCKER_PAT" | sbx login --username <user> --password-stdin
+      - hosts: "{{ target_host | default('all') }}"
+        become: true
+        vars:
+          sbx_users:
+            - sthings
+          # '' = newest from the Docker apt repo, otherwise e.g. 0.48.0
+          sbx_version: ''
+          sbx_package_state: present
+          # sandboxd per user as a systemd service (sbx-daemon@<user>)
+          sbx_daemon_service: true
+          # '' keeps the state in ~/.local/state/sandboxes. Set e.g.
+          # /var/lib/sbx to move it off /home (the sthings LVM layout gives
+          # /home ~30G but /var ~100G) -- the user dir becomes a symlink to
+          # <sbx_state_dir>/<user>.
+          sbx_state_dir: ''
+          sbx_apt_gpg_key: https://download.docker.com/linux/ubuntu/gpg
+          # same keyring + repo line as the install_configure_docker role, so
+          # both can run on one host without a duplicate apt source
+          sbx_apt_gpg_key_dest: /etc/apt/keyrings/docker.asc
+          sbx_apt_repository: "deb [arch=amd64 signed-by={{ sbx_apt_gpg_key_dest }}] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+
+        handlers:
+          - name: Restart sbx daemons
+            ansible.builtin.systemd:
+              name: "sbx-daemon@{{ item }}"
+              state: restarted
+              daemon_reload: true
+            loop: "{{ sbx_users }}"
+            when: sbx_daemon_service | bool
+
+        tasks:
+          - name: Assert supported OS (Ubuntu 24.04 or later)
+            ansible.builtin.assert:
+              that:
+                - ansible_distribution == 'Ubuntu'
+                - ansible_distribution_version is version('24.04', '>=')
+              fail_msg: "sbx supports Ubuntu 24.04+ only, found {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+          - name: Check for /dev/kvm
+            ansible.builtin.stat:
+              path: /dev/kvm
+            register: sbx_kvm_dev
+
+          - name: Fail without KVM
+            ansible.builtin.fail:
+              msg: >-
+                /dev/kvm is missing, so sbx cannot start sandboxes. On a VM,
+                enable nested virtualization on the hypervisor node and use a
+                CPU type that passes VMX/SVM through (Proxmox: cpuType host).
+            when: not sbx_kvm_dev.stat.exists
+
+          - name: Ensure keyrings directory exists
+            ansible.builtin.file:
+              path: /etc/apt/keyrings
+              state: directory
+              mode: "0755"
+
+          - name: Add Docker apt key
+            ansible.builtin.get_url:
+              url: "{{ sbx_apt_gpg_key }}"
+              dest: "{{ sbx_apt_gpg_key_dest }}"
+              mode: "0644"
+
+          - name: Add Docker apt repository
+            ansible.builtin.apt_repository:
+              repo: "{{ sbx_apt_repository }}"
+              state: present
+              update_cache: true
+
+          - name: Install docker-sbx and cpu-checker (kvm-ok)
+            ansible.builtin.apt:
+              name:
+                - "docker-sbx{{ ('=' + sbx_version + '*') if sbx_version | length > 0 else '' }}"
+                - cpu-checker
+              state: "{{ sbx_package_state }}"
+            notify: Restart sbx daemons
+
+          - name: Add sbx users to the kvm group
+            ansible.builtin.user:
+              name: "{{ item }}"
+              groups: kvm
+              append: true
+            loop: "{{ sbx_users }}"
+
+          - name: Relocate sbx state
+            when: sbx_state_dir | length > 0
+            block:
+              - name: Stop sbx daemons before moving state
+                ansible.builtin.systemd:
+                  name: "sbx-daemon@{{ item }}"
+                  state: stopped
+                loop: "{{ sbx_users }}"
+                failed_when: false
+
+              - name: Create state directory per user
+                ansible.builtin.file:
+                  path: "{{ sbx_state_dir }}/{{ item }}"
+                  state: directory
+                  owner: "{{ item }}"
+                  group: "{{ item }}"
+                  mode: "0700"
+                loop: "{{ sbx_users }}"
+
+              - name: Ensure ~/.local/state exists
+                ansible.builtin.file:
+                  path: "/home/{{ item }}/.local/state"
+                  state: directory
+                  owner: "{{ item }}"
+                  group: "{{ item }}"
+                  mode: "0755"
+                loop: "{{ sbx_users }}"
+
+              - name: Check existing state path
+                ansible.builtin.stat:
+                  path: "/home/{{ item }}/.local/state/sandboxes"
+                loop: "{{ sbx_users }}"
+                register: sbx_state_stat
+
+              - name: Move existing state into the new location
+                ansible.builtin.shell: |
+                  set -e
+                  cp -a "/home/{{ item.item }}/.local/state/sandboxes/." "{{ sbx_state_dir }}/{{ item.item }}/"
+                  rm -rf "/home/{{ item.item }}/.local/state/sandboxes"
+                loop: "{{ sbx_state_stat.results }}"
+                when: item.stat.exists and item.stat.isdir
+
+              - name: Link state path to the new location
+                ansible.builtin.file:
+                  src: "{{ sbx_state_dir }}/{{ item }}"
+                  dest: "/home/{{ item }}/.local/state/sandboxes"
+                  state: link
+                  owner: "{{ item }}"
+                  group: "{{ item }}"
+                  force: true
+                loop: "{{ sbx_users }}"
+                notify: Restart sbx daemons
+
+          - name: Install sbx-daemon@ systemd unit
+            ansible.builtin.copy:
+              dest: /etc/systemd/system/sbx-daemon@.service
+              mode: "0644"
+              content: |
+                [Unit]
+                Description=Docker Sandboxes daemon (sandboxd) for %i
+                After=network-online.target
+                Wants=network-online.target
+
+                [Service]
+                Type=simple
+                User=%i
+                Group=%i
+                SupplementaryGroups=kvm
+                Environment=HOME=/home/%i
+                WorkingDirectory=/home/%i
+                ExecStart=/usr/bin/sbx daemon start
+                ExecStop=/usr/bin/sbx daemon stop
+                Restart=on-failure
+                RestartSec=5
+
+                [Install]
+                WantedBy=multi-user.target
+            when: sbx_daemon_service | bool
+            notify: Restart sbx daemons
+
+          - name: Enable and start sbx daemons
+            ansible.builtin.systemd:
+              name: "sbx-daemon@{{ item }}"
+              state: started
+              enabled: true
+              daemon_reload: true
+            loop: "{{ sbx_users }}"
+            when: sbx_daemon_service | bool
+
+          - name: Flush handlers
+            ansible.builtin.meta: flush_handlers
+
+          - name: Run kvm-ok
+            ansible.builtin.command: kvm-ok
+            changed_when: false
+
+          - name: Read sbx version
+            ansible.builtin.command: sbx version
+            register: sbx_version_out
+            changed_when: false
+
+          - name: Show sbx version
+            ansible.builtin.debug:
+              msg: "{{ sbx_version_out.stdout }} -- sign in with 'sbx login' as each of {{ sbx_users | join(', ') }}"

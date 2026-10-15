@@ -15,7 +15,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 | Role | Version | Description |
 |------|---------|-------------|
-| install-configure-docker | 2026.01.07-1 | Docker installation and configuration |
+| install-configure-docker | 2026.10.15 | Docker installation and configuration |
 | install-requirements | 2025.12.12 | General requirements installation |
 | install-configure-vault | 2026.09.01 | Vault integration |
 | create-send-webhook | 2022.01.01 | Webhook creation |
@@ -30,6 +30,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `sthings.container.docker` | Install and configure Docker (with compose) |
 | `sthings.container.podman` | Install Podman on Debian/Ubuntu and RHEL |
 | `sthings.container.nerdctl` | Install nerdctl (v2.2.1) with containerd and buildkit |
+| `sthings.container.sbx` | Install Docker Sandboxes (`docker-sbx`), add users to `kvm`, run `sandboxd` as `sbx-daemon@<user>`. Ubuntu 24.04+ with `/dev/kvm` only. Optional `sbx_state_dir` moves state off `/home`. `sbx login` stays manual |
 
 ### KIND Cluster(s)
 
@@ -153,6 +154,13 @@ ansible-playbook sthings.container.podman -vv \
 ansible-playbook sthings.container.nerdctl -vv \
 -e target_host=all \
 -i /tmp/hosts
+
+# Install Docker Sandboxes (sbx), state on /var instead of /home
+ansible-playbook sthings.container.sbx -vv \
+-e target_host=all \
+-e sbx_state_dir=/var/lib/sbx \
+-i /tmp/hosts
+# then, as the user on the host: sbx login
 ```
 
 </details>

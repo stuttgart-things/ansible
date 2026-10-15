@@ -18,7 +18,7 @@ requirements: |
   roles:
     - src: https://github.com/stuttgart-things/install-configure-docker.git
       scm: git
-      version: 2026.07.19
+      version: 2026.10.15
     - src: https://github.com/stuttgart-things/install-requirements.git
       scm: git
       version: 2026.10.09-1
