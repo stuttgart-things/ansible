@@ -21,7 +21,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | manage-filesystem | 2026.13.04 | LVM filesystem management |
 | install-configure-vault | 2026.09.01 | Vault integration and CA certificates |
 | create-send-webhook | 2024.09.06 | Webhook creation |
-| install-configure-docker | 2026.05.09 | Docker installation |
+| install-configure-docker | 2026.10.15 | Docker installation |
 
 ## PLAYBOOKS
 

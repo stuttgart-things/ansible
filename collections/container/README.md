@@ -15,7 +15,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 | Role | Version | Description |
 |------|---------|-------------|
-| install-configure-docker | 2026.01.07-1 | Docker installation and configuration |
+| install-configure-docker | 2026.10.15 | Docker installation and configuration |
 | install-requirements | 2025.12.12 | General requirements installation |
 | install-configure-vault | 2026.09.01 | Vault integration |
 | create-send-webhook | 2022.01.01 | Webhook creation |

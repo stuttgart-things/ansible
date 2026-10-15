@@ -58,7 +58,7 @@ requirements: |
       version: 2024.09.06
     - src: https://github.com/stuttgart-things/install-configure-docker.git
       scm: git
-      version: 2026.07.19
+      version: 2026.10.15
     # PINNED BY COMMIT, not by a dated tag like its siblings: the role repo has
     # never been tagged, and its main branch has not moved since 2023-05-10.
     # A SHA is at least as reproducible; swap it for a tag once the repo has one.
