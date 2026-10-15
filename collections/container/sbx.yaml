@@ -100,13 +100,6 @@ playbooks:
           - name: Relocate sbx state
             when: sbx_state_dir | length > 0
             block:
-              - name: Stop sbx daemons before moving state
-                ansible.builtin.systemd:
-                  name: "sbx-daemon@{{ item }}"
-                  state: stopped
-                loop: "{{ sbx_users }}"
-                failed_when: false
-
               - name: Create state directory per user
                 ansible.builtin.file:
                   path: "{{ sbx_state_dir }}/{{ item }}"
@@ -131,6 +124,16 @@ playbooks:
                 loop: "{{ sbx_users }}"
                 register: sbx_state_stat
 
+              # only while the state is still a real directory -- stopping on
+              # every run made the start task below report changed each time
+              - name: Stop sbx daemons before moving state
+                ansible.builtin.systemd:
+                  name: "sbx-daemon@{{ item.item }}"
+                  state: stopped
+                loop: "{{ sbx_state_stat.results }}"
+                when: item.stat.exists and item.stat.isdir
+                failed_when: false
+
               - name: Move existing state into the new location
                 ansible.builtin.shell: |
                   set -e
@@ -146,6 +149,8 @@ playbooks:
                   state: link
                   owner: "{{ item }}"
                   group: "{{ item }}"
+                  # owner/group on the link itself, not on its target
+                  follow: false
                   force: true
                 loop: "{{ sbx_users }}"
                 notify: Restart sbx daemons
