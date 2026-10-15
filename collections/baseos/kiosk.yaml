@@ -29,7 +29,12 @@ playbooks:
           kiosk_tab_zoom: []            # zoom per tab in percent, same order as the tabs (list or comma separated; missing = 100)
           kiosk_tab_zoom_delay_seconds: 8   # wait for the pages before zooming
           kiosk_tab_zoom_list: "{{ (kiosk_tab_zoom.split(',') if kiosk_tab_zoom is string else kiosk_tab_zoom) | map('string') | map('trim') | select | map('int') | list }}"
-          kiosk_input_watch: "{{ (kiosk_rotate_seconds | int > 0 and kiosk_rotate_pause_seconds | int > 0) or kiosk_reset_idle_seconds | int > 0 }}"
+          # The same settings from a file at a URL (e.g. a GitHub raw URL of a repo): YAML/JSON with
+          # tabs (url, zoom), rotate_seconds, rotate_pause_seconds, reset_idle_seconds. Wins over the
+          # vars above when it can be fetched and is valid; checked every kiosk_config_interval_seconds,
+          # a change restarts the kiosk. The vars stay the fallback for a first start without network.
+          kiosk_config_url: ""
+          kiosk_config_interval_seconds: 300
           kiosk_tabs: "{{ (kiosk_urls.split(',') if kiosk_urls is string else kiosk_urls) | map('trim') | select | list if kiosk_urls | length > 0 else ([kiosk_url] if kiosk_url | length > 0 else []) }}"
           kiosk_ca_certs: []            # PEM CA files on the controller (list or comma separated)
           kiosk_ca_dir: /usr/local/share/ca-certificates/kiosk
@@ -60,12 +65,12 @@ playbooks:
                   Status: locked
 
         pre_tasks:
-          - name: kiosk_url or kiosk_urls must be set
+          - name: kiosk_url, kiosk_urls or kiosk_config_url must be set
             ansible.builtin.assert:
               that:
-                - kiosk_tabs | length > 0
+                - kiosk_tabs | length > 0 or kiosk_config_url | length > 0
                 - kiosk_rotate_seconds | int >= 0
-              fail_msg: "Please set -e kiosk_url=https://... or -e kiosk_urls=https://...,https://... (kiosk_rotate_seconds >= 0)"
+              fail_msg: "Please set -e kiosk_url=https://..., -e kiosk_urls=https://...,https://... or -e kiosk_config_url=https://... (kiosk_rotate_seconds >= 0)"
 
         tasks:
           # ------------------------------------------------------------------
@@ -124,23 +129,12 @@ playbooks:
               state: present
               update_cache: true
 
-          - name: Install xdotool (tab rotation)
+          # xdotool: tab switch + zoom keys; xinput: keyboard/mouse input watch; curl + python3-yaml:
+          # kiosk-config. Always installed: a config at kiosk_config_url can switch these on later.
+          - name: Install the kiosk session tools
             ansible.builtin.apt:
-              name: xdotool
+              name: [xdotool, xinput, curl, python3-yaml]
               state: present
-            when: kiosk_rotate_seconds | int > 0
-
-          - name: Install xdotool (per-tab zoom)
-            ansible.builtin.apt:
-              name: xdotool
-              state: present
-            when: kiosk_tab_zoom_list | length > 0 or kiosk_reset_idle_seconds | int > 0
-
-          - name: Install xinput (rotation pause / reset on keyboard/mouse input)
-            ansible.builtin.apt:
-              name: xinput
-              state: present
-            when: kiosk_input_watch | bool
 
           - name: Kiosk user
             ansible.builtin.user:
@@ -309,94 +303,253 @@ playbooks:
                 ExecStart=-/usr/local/bin/tty1-getty %I
             notify: Restart getty tty1
 
-          - name: Kiosk session (Firefox, one tab per URL, optional tab rotation, zoom, reset)
+          - name: Kiosk config directories
+            ansible.builtin.file:
+              path: "{{ item }}"
+              state: directory
+              mode: "0755"
+            loop: [/etc/kiosk, /usr/local/lib/kiosk]
+
+          - name: kiosk-config (validates the settings, turns them into shell for kiosk-session)
+            ansible.builtin.copy:
+              dest: /usr/local/lib/kiosk/kiosk-config
+              mode: "0755"
+              content: |
+                #!/usr/bin/env python3
+                """Kiosk settings for kiosk-session (Managed by Ansible, sthings.baseos.kiosk).
+
+                  kiosk-config normalize < config.yaml   validated JSON on stdout, exit 1 if invalid
+                  kiosk-config shell < config.json       shell assignments for kiosk-session
+
+                Format (YAML or JSON):
+                  tabs:                       # one Firefox tab each, in this order
+                    - url: https://a.example/
+                      zoom: 100               # percent, rounded to Firefox's zoom steps (default 100)
+                    - https://b.example/      # a plain URL is a tab with zoom 100
+                  rotate_seconds: 30          # 0 = no automatic tab switch
+                  rotate_pause_seconds: 60    # hold the tab N s after keyboard/mouse input
+                  reset_idle_seconds: 300     # N s after the last use: back to the start URLs
+                """
+                import json
+                import shlex
+                import sys
+
+                # toolkit.zoomManager.zoomValues of Firefox 157 (percent)
+                ZOOM_STEPS = [20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160,
+                              170, 180, 190, 200, 220, 240, 260, 280, 300, 400, 500]
+                TIMES = ("rotate_seconds", "rotate_pause_seconds", "reset_idle_seconds")
+
+
+                def load(text):
+                    try:
+                        return json.loads(text)
+                    except ValueError:
+                        import yaml
+                        return yaml.safe_load(text)
+
+
+                def normalize(data, require_tabs=True):
+                    if not isinstance(data, dict):
+                        raise ValueError("not a mapping")
+                    tabs = []
+                    for tab in data.get("tabs") or []:
+                        if isinstance(tab, str):
+                            tab = {"url": tab}
+                        url = str(tab.get("url", "")).strip()
+                        if not url.startswith(("https://", "http://")):
+                            raise ValueError("tab url must start with http(s)://: %r" % url)
+                        zoom = int(tab.get("zoom", 100))
+                        if not 20 <= zoom <= 500:
+                            raise ValueError("zoom out of range (20-500): %r" % zoom)
+                        tabs.append({"url": url, "zoom": zoom})
+                    if require_tabs and not tabs:
+                        raise ValueError("no tabs")
+                    out = {"tabs": tabs}
+                    for key in TIMES:
+                        value = int(data.get(key) or 0)
+                        if value < 0:
+                            raise ValueError("%s must be >= 0" % key)
+                        out[key] = value
+                    return out
+
+
+                def zoom_keys(zoom):
+                    best = min(range(len(ZOOM_STEPS)), key=lambda i: abs(ZOOM_STEPS[i] - zoom))
+                    steps = best - ZOOM_STEPS.index(100)
+                    return " ".join(["ctrl+0"] + ["ctrl+equal"] * max(steps, 0) + ["ctrl+minus"] * max(-steps, 0))
+
+
+                def main(mode):
+                    if mode == "normalize":
+                        try:
+                            config = normalize(load(sys.stdin.read()))
+                        except Exception as err:  # any parse or schema error: keep the old config
+                            print("invalid kiosk config: %s" % err, file=sys.stderr)
+                            return 1
+                        print(json.dumps(config, sort_keys=True))
+                        return 0
+                    if mode == "shell":
+                        config = normalize(json.load(sys.stdin), require_tabs=False)
+                        tabs = config["tabs"]
+                        print("KIOSK_URLS=" + shlex.quote(" ".join(shlex.quote(t["url"]) for t in tabs)))
+                        print("KIOSK_ZOOM_KEYS=" + shlex.quote("\n".join(zoom_keys(t["zoom"]) for t in tabs)))
+                        zoom = any(t["zoom"] != 100 for t in tabs) or config["reset_idle_seconds"] > 0
+                        print("KIOSK_ZOOM=%d" % zoom)
+                        for key in TIMES:
+                            print("KIOSK_%s=%d" % (key.upper(), config[key]))
+                        return 0
+                    print(__doc__, file=sys.stderr)
+                    return 2
+
+
+                if __name__ == "__main__":
+                    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else ""))
+
+          - name: Kiosk settings from the vars (fallback when kiosk_config_url is unset or unreachable)
+            ansible.builtin.copy:
+              dest: /etc/kiosk/config.json
+              mode: "0644"
+              content: |-
+                {% set tabs = [] %}
+                {% for url in kiosk_tabs %}
+                {% set _ = tabs.append({'url': url, 'zoom': (kiosk_tab_zoom_list[loop.index0] | default(100)) | int}) %}
+                {% endfor %}
+                {{ {'tabs': tabs,
+                    'rotate_seconds': kiosk_rotate_seconds | int,
+                    'rotate_pause_seconds': kiosk_rotate_pause_seconds | int,
+                    'reset_idle_seconds': kiosk_reset_idle_seconds | int} | to_nice_json }}
+            notify: Restart getty tty1
+
+          - name: Kiosk config source
+            ansible.builtin.copy:
+              dest: /etc/kiosk/kiosk.env
+              mode: "0644"
+              content: |
+                # Managed by Ansible (sthings.baseos.kiosk), read by kiosk-session
+                KIOSK_CONFIG_URL={{ kiosk_config_url | quote }}
+                KIOSK_CONFIG_INTERVAL={{ kiosk_config_interval_seconds | int }}
+                KIOSK_ZOOM_DELAY={{ kiosk_tab_zoom_delay_seconds | int }}
+            notify: Restart getty tty1
+
+          - name: Kiosk session (reads its settings at start, see kiosk-config)
             ansible.builtin.copy:
               dest: /usr/local/bin/kiosk-session
               mode: "0755"
               content: |
                 #!/bin/sh
-                # Managed by Ansible (kiosk.yaml). Runs inside cage; the session ends when Firefox exits.
-                /usr/bin/firefox --kiosk {{ kiosk_tabs | map('quote') | join(' ') }} &
+                # Managed by Ansible (sthings.baseos.kiosk). Runs inside cage; the session ends when Firefox exits.
+                # Settings: the YAML/JSON at KIOSK_CONFIG_URL (/etc/kiosk/kiosk.env) when it can be fetched and is
+                # valid, else the last good copy of it, else /etc/kiosk/config.json (from Ansible). With a URL, a
+                # changed file restarts the kiosk within KIOSK_CONFIG_INTERVAL seconds.
+                . /etc/kiosk/kiosk.env 2>/dev/null
+                helper=/usr/local/lib/kiosk/kiosk-config
+                state="${XDG_RUNTIME_DIR:-/tmp}"
+                cache="$HOME/.cache/kiosk"
+                mkdir -p "$cache"
+
+                fetch() { # $1 = target file; normalized JSON of the remote config, or fail and leave nothing
+                  [ -n "$KIOSK_CONFIG_URL" ] || return 1
+                  if curl -fsSL -m 15 "$KIOSK_CONFIG_URL" | "$helper" normalize > "$1.new"; then
+                    mv "$1.new" "$1"
+                  else
+                    rm -f "$1.new"
+                    echo "kiosk: no usable config from $KIOSK_CONFIG_URL" >&2
+                    return 1
+                  fi
+                }
+
+                config=/etc/kiosk/config.json
+                if [ -n "$KIOSK_CONFIG_URL" ]; then
+                  fetch "$cache/remote.json"
+                  [ -s "$cache/remote.json" ] && config="$cache/remote.json"
+                fi
+                echo "kiosk: config from $config"
+                cp "$config" "$state/kiosk-active.json"
+                eval "$("$helper" shell < "$state/kiosk-active.json")"
+                eval "set -- $KIOSK_URLS"
+                /usr/bin/firefox --kiosk "$@" &
                 firefox=$!
-                {% if kiosk_input_watch | bool %}
-                # Last keyboard/mouse input (epoch seconds, 0 = none since the start). xinput reads
-                # the raw XI2 events ("device: <master> (<source>)"); the XTEST devices are left out,
-                # they carry our own xdotool keys. xprintidle does not work: Xwayland has no screen
-                # saver extension.
-                last_input="${XDG_RUNTIME_DIR:-/tmp}/kiosk-last-input"
+
+                # Last keyboard/mouse input (epoch seconds, 0 = none since the start). xinput reads the raw XI2
+                # events ("device: <master> (<source>)"); the XTEST devices are left out, they carry our own
+                # xdotool keys. xprintidle does not work: Xwayland has no screen saver extension.
+                last_input="$state/kiosk-last-input"
                 echo 0 > "$last_input"
-                (
-                  sleep 3   # Xwayland is up once Firefox started
-                  xtest=" $(xinput list --id-only 'Virtual core XTEST pointer' 2>/dev/null) $(xinput list --id-only 'Virtual core XTEST keyboard' 2>/dev/null) "
-                  prev=0
-                  stdbuf -oL xinput test-xi2 --root 2>/dev/null | while read -r k v rest; do
-                    case "$k" in
-                      EVENT) case "$rest" in *Raw*) raw=1 ;; *) raw=0 ;; esac ;;
-                      device:)
-                        if [ "${raw:-0}" = 1 ]; then
-                          src=${rest#(}; src=${src%)}
-                          case "$xtest" in
-                            *" $src "*) ;;
-                            *) now=$(date +%s); [ "$now" != "$prev" ] && echo "$now" > "$last_input" && prev=$now ;;
-                          esac
-                          raw=0
-                        fi ;;
-                    esac
-                  done
-                ) &
-                {% endif %}
-                {% set zoom_levels = [20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200, 220, 240, 260, 280, 300, 400, 500] %}
-                {% set do_zoom = kiosk_tab_zoom_list | length > 0 or kiosk_reset_idle_seconds | int > 0 %}
-                {% if do_zoom or kiosk_rotate_seconds | int > 0 %}
+                if [ "$KIOSK_RESET_IDLE_SECONDS" -gt 0 ] || { [ "$KIOSK_ROTATE_SECONDS" -gt 0 ] && [ "$KIOSK_ROTATE_PAUSE_SECONDS" -gt 0 ]; }; then
+                  (
+                    sleep 3   # Xwayland is up once Firefox started
+                    xtest=" $(xinput list --id-only 'Virtual core XTEST pointer' 2>/dev/null) $(xinput list --id-only 'Virtual core XTEST keyboard' 2>/dev/null) "
+                    prev=0
+                    stdbuf -oL xinput test-xi2 --root 2>/dev/null | while read -r k v rest; do
+                      case "$k" in
+                        EVENT) case "$rest" in *Raw*) raw=1 ;; *) raw=0 ;; esac ;;
+                        device:)
+                          if [ "${raw:-0}" = 1 ]; then
+                            src=${rest#(}; src=${src%)}
+                            case "$xtest" in
+                              *" $src "*) ;;
+                              *) now=$(date +%s); [ "$now" != "$prev" ] && echo "$now" > "$last_input" && prev=$now ;;
+                            esac
+                            raw=0
+                          fi ;;
+                      esac
+                    done
+                  ) &
+                fi
+
                 # Firefox runs via Xwayland, so xdotool (XTEST) reaches it without a Wayland protocol
                 (
-                {% if do_zoom %}
-                  # Zoom per tab. Firefox keeps zoom per site in the profile, so every start sets it
-                  # again: Ctrl+0, then Ctrl+= / Ctrl+- to the nearest of Firefox's zoom steps
-                  # (toolkit.zoomManager.zoomValues, Firefox 157: {{ zoom_levels | join(' ') }}),
-                  # then on to the next tab.
-                  sleep {{ kiosk_tab_zoom_delay_seconds | int }}
-                {% for url in kiosk_tabs %}
-                {% set want = kiosk_tab_zoom_list[loop.index0] | default(100) | int %}
-                {% set ns = namespace(best=8, dist=100000) %}
-                {% for level in zoom_levels %}
-                {% if (level - want) | abs < ns.dist %}{% set ns.best = loop.index0 %}{% set ns.dist = (level - want) | abs %}{% endif %}
-                {% endfor %}
-                {% set steps = ns.best - 8 %}
-                  xdotool key --clearmodifiers ctrl+0{% for i in range(steps if steps > 0 else 0) %} ctrl+equal{% endfor %}{% for i in range(-steps if steps < 0 else 0) %} ctrl+minus{% endfor %}   # {{ url }}: {{ zoom_levels[ns.best] }} %
-                  xdotool key --clearmodifiers ctrl+Tab
-                {% endfor %}
-                {% endif %}
-                {% if kiosk_rotate_seconds | int > 0 %}
-                  sleep {{ kiosk_rotate_seconds | int }}
+                  if [ "$KIOSK_ZOOM" = 1 ]; then
+                    # Zoom per tab. Firefox keeps zoom per site in the profile, so every start sets it again:
+                    # Ctrl+0, then Ctrl+= / Ctrl+- to the step kiosk-config picked, then on to the next tab.
+                    sleep "${KIOSK_ZOOM_DELAY:-8}"
+                    printf '%s\n' "$KIOSK_ZOOM_KEYS" | while read -r keys; do
+                      [ -n "$keys" ] || continue
+                      xdotool key --clearmodifiers $keys
+                      xdotool key --clearmodifiers ctrl+Tab
+                    done
+                  fi
+                  [ "$KIOSK_ROTATE_SECONDS" -gt 0 ] || exit 0
+                  sleep "$KIOSK_ROTATE_SECONDS"
                   while kill -0 "$firefox" 2>/dev/null; do
-                {% if kiosk_rotate_pause_seconds | int > 0 %}
                     # hold the tab while someone uses keyboard/mouse
-                    if [ $(( $(date +%s) - $(cat "$last_input" 2>/dev/null || echo 0) )) -ge {{ kiosk_rotate_pause_seconds | int }} ]; then
+                    if [ "$KIOSK_ROTATE_PAUSE_SECONDS" -eq 0 ] || \
+                       [ $(( $(date +%s) - $(cat "$last_input" 2>/dev/null || echo 0) )) -ge "$KIOSK_ROTATE_PAUSE_SECONDS" ]; then
                       xdotool key --clearmodifiers ctrl+Tab
                     fi
-                {% else %}
-                    xdotool key --clearmodifiers ctrl+Tab
-                {% endif %}
-                    sleep {{ kiosk_rotate_seconds | int }}
-                  done
-                {% endif %}
-                ) &
-                {% endif %}
-                {% if kiosk_reset_idle_seconds | int > 0 %}
-                # Back to the start URLs: once someone used the kiosk and then left it alone for
-                # {{ kiosk_reset_idle_seconds | int }}s, end Firefox. The session ends, getty logs in again and
-                # the kiosk starts fresh (tabs, history, scroll position, zoom).
-                (
-                  while kill -0 "$firefox" 2>/dev/null; do
-                    sleep 15
-                    li=$(cat "$last_input" 2>/dev/null || echo 0)
-                    if [ "$li" -gt 0 ] && [ $(( $(date +%s) - li )) -ge {{ kiosk_reset_idle_seconds | int }} ]; then
-                      kill "$firefox"
-                    fi
+                    sleep "$KIOSK_ROTATE_SECONDS"
                   done
                 ) &
-                {% endif %}
+
+                # Back to the start URLs: once someone used the kiosk and then left it alone, end Firefox. The
+                # session ends, getty logs in again and the kiosk starts fresh (tabs, history, scroll, zoom).
+                if [ "$KIOSK_RESET_IDLE_SECONDS" -gt 0 ]; then
+                  (
+                    while kill -0 "$firefox" 2>/dev/null; do
+                      sleep 15
+                      li=$(cat "$last_input" 2>/dev/null || echo 0)
+                      if [ "$li" -gt 0 ] && [ $(( $(date +%s) - li )) -ge "$KIOSK_RESET_IDLE_SECONDS" ]; then
+                        echo "kiosk: idle for ${KIOSK_RESET_IDLE_SECONDS}s after use, back to the start URLs"
+                        kill "$firefox"
+                      fi
+                    done
+                  ) &
+                fi
+
+                # A changed config file restarts the kiosk (the next start fetches it again).
+                if [ -n "$KIOSK_CONFIG_URL" ]; then
+                  (
+                    while kill -0 "$firefox" 2>/dev/null; do
+                      sleep "${KIOSK_CONFIG_INTERVAL:-300}"
+                      if fetch "$state/kiosk-check.json" && ! cmp -s "$state/kiosk-check.json" "$state/kiosk-active.json"; then
+                        echo "kiosk: config changed at $KIOSK_CONFIG_URL, restarting"
+                        cp "$state/kiosk-check.json" "$cache/remote.json"
+                        kill "$firefox"
+                      fi
+                    done
+                  ) &
+                fi
+
                 wait "$firefox"
             notify: Restart getty tty1   # a running kiosk keeps the old session script otherwise
 
