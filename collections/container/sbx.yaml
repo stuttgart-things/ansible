@@ -28,6 +28,11 @@ playbooks:
           # /home ~30G but /var ~100G) -- the user dir becomes a symlink to
           # <sbx_state_dir>/<user>.
           sbx_state_dir: ''
+          # global network policy the daemon initializes on its first start:
+          # allow-all | balanced | deny-all. Without one every `sbx create`
+          # fails. Init is one-time -- an existing policy is kept; change it
+          # with `sbx policy reset` + `sbx policy init <policy>`.
+          sbx_network_policy: balanced
           sbx_apt_gpg_key: https://download.docker.com/linux/ubuntu/gpg
           # same keyring + repo line as the install_configure_docker role, so
           # both can run on one host without a duplicate apt source
@@ -44,6 +49,12 @@ playbooks:
             when: sbx_daemon_service | bool
 
         tasks:
+          - name: Assert valid network policy
+            ansible.builtin.assert:
+              that:
+                - sbx_network_policy in ['allow-all', 'balanced', 'deny-all']
+              fail_msg: "sbx_network_policy must be allow-all, balanced or deny-all, got '{{ sbx_network_policy }}'"
+
           - name: Assert supported OS (Ubuntu 24.04 or later)
             ansible.builtin.assert:
               that:
@@ -172,9 +183,13 @@ playbooks:
                 SupplementaryGroups=kvm
                 Environment=HOME=/home/%i
                 WorkingDirectory=/home/%i
-                ExecStart=/usr/bin/sbx daemon start
+                # the sbx CLI starts its own sandboxd when none answers, and
+                # `daemon start` then exits 0 with "already running" -- take
+                # over from such a daemon instead of exiting
+                ExecStartPre=-/usr/bin/sbx daemon stop
+                ExecStart=/usr/bin/sbx daemon start --policy {{ sbx_network_policy }}
                 ExecStop=/usr/bin/sbx daemon stop
-                Restart=on-failure
+                Restart=always
                 RestartSec=5
 
                 [Install]
@@ -193,6 +208,27 @@ playbooks:
 
           - name: Flush handlers
             ansible.builtin.meta: flush_handlers
+
+          # --policy on the daemon only applies when that daemon starts first.
+          # Initialize explicitly when no policy exists yet; an existing one
+          # is left alone (init is one-time, a change needs `sbx policy reset`)
+          - name: Check sbx network policy
+            ansible.builtin.command: sbx policy ls
+            become_user: "{{ item }}"
+            environment:
+              HOME: "/home/{{ item }}"
+            loop: "{{ sbx_users }}"
+            register: sbx_policy_ls
+            changed_when: false
+            failed_when: false
+
+          - name: Initialize sbx network policy
+            ansible.builtin.command: "sbx policy init {{ sbx_network_policy }}"
+            become_user: "{{ item.item }}"
+            environment:
+              HOME: "/home/{{ item.item }}"
+            loop: "{{ sbx_policy_ls.results }}"
+            when: "'not been initialized' in (item.stdout + item.stderr)"
 
           - name: Run kvm-ok
             ansible.builtin.command: kvm-ok
