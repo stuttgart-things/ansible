@@ -30,7 +30,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `sthings.container.docker` | Install and configure Docker (with compose) |
 | `sthings.container.podman` | Install Podman on Debian/Ubuntu and RHEL |
 | `sthings.container.nerdctl` | Install nerdctl (v2.2.1) with containerd and buildkit |
-| `sthings.container.sbx` | Install Docker Sandboxes (`docker-sbx`), add users to `kvm`, run `sandboxd` as `sbx-daemon@<user>`. Ubuntu 24.04+ with `/dev/kvm` only. Optional `sbx_state_dir` moves state off `/home`. `sbx login` stays manual |
+| `sthings.container.sbx` | Install Docker Sandboxes (`docker-sbx`), add users to `kvm`, run `sandboxd` as `sbx-daemon@<user>`. Ubuntu 24.04+ with `/dev/kvm` only. Optional `sbx_state_dir` moves state off `/home`. `sbx_network_policy` (default `balanced`) is set on the first daemon start. `sbx login` stays manual |
 
 ### KIND Cluster(s)
 
