@@ -9,10 +9,14 @@ playbooks:
       # cpuType host). Docker Engine is NOT required; sbx brings its own
       # containerd shim, kernel and rootfs.
       #
-      # Signing in stays manual (or via a PAT in CI) -- every sbx command but
-      # the daemon refuses to work until it is done:
-      #   sbx login
-      #   echo "$DOCKER_PAT" | sbx login --username <user> --password-stdin
+      # Every sbx command but the daemon refuses to work until the user is
+      # signed in to Docker. By default that stays manual (`sbx login`).
+      # With sbx_login=true the play signs in with a Docker PAT, taken from
+      # -e sbx_docker_username/sbx_docker_token or, when those are empty,
+      # from Vault (sbx_vault_secret, keys username + token):
+      #   -e sbx_login=true -e sbx_docker_username=<user> -e sbx_docker_token=<pat>
+      #   -e sbx_login=true -e sbx_vault_secret=apps/data/docker-sbx
+      #      (+ VAULT_ADDR / VAULT_ROLE_ID / VAULT_SECRET_ID in the env)
       - hosts: "{{ target_host | default('all') }}"
         become: true
         vars:
@@ -33,6 +37,18 @@ playbooks:
           # fails. Init is one-time -- an existing policy is kept; change it
           # with `sbx policy reset` + `sbx policy init <policy>`.
           sbx_network_policy: balanced
+          # Docker sign-in, off by default. A user already signed in is left
+          # alone unless sbx_login_force=true (e.g. after rotating the PAT).
+          sbx_login: false
+          sbx_login_force: false
+          sbx_docker_username: ''
+          sbx_docker_token: ''
+          # KV v2 path with keys `username` and `token`; read only when
+          # sbx_login=true and the -e values above are empty
+          sbx_vault_secret: ''
+          vault_url: "{{ lookup('env', 'VAULT_ADDR') }}"
+          vault_approle_id: "{{ lookup('env', 'VAULT_ROLE_ID') }}"
+          vault_approle_secret: "{{ lookup('env', 'VAULT_SECRET_ID') }}"
           sbx_apt_gpg_key: https://download.docker.com/linux/ubuntu/gpg
           # same keyring + repo line as the install_configure_docker role, so
           # both can run on one host without a duplicate apt source
@@ -230,6 +246,65 @@ playbooks:
             loop: "{{ sbx_policy_ls.results }}"
             when: "'not been initialized' in (item.stdout + item.stderr)"
 
+          - name: Docker sign-in
+            when: sbx_login | bool
+            block:
+              # Same lookup form as baseos developer/setup/pdns. Only the
+              # value that was not passed with -e is read.
+              - name: Read Docker credentials from Vault
+                ansible.builtin.set_fact:
+                  sbx_login_username: "{{ sbx_docker_username if sbx_docker_username | length > 0 else lookup('community.hashi_vault.hashi_vault', 'secret=' ~ sbx_vault_secret ~ ':username validate_certs=false auth_method=approle role_id=' ~ vault_approle_id ~ ' secret_id=' ~ vault_approle_secret ~ ' url=' ~ vault_url) }}"
+                  sbx_login_token: "{{ sbx_docker_token if sbx_docker_token | length > 0 else lookup('community.hashi_vault.hashi_vault', 'secret=' ~ sbx_vault_secret ~ ':token validate_certs=false auth_method=approle role_id=' ~ vault_approle_id ~ ' secret_id=' ~ vault_approle_secret ~ ' url=' ~ vault_url) }}"
+                when: sbx_vault_secret | length > 0
+                delegate_to: localhost
+                become: false
+                no_log: true
+
+              - name: Use Docker credentials from vars
+                ansible.builtin.set_fact:
+                  sbx_login_username: "{{ sbx_docker_username }}"
+                  sbx_login_token: "{{ sbx_docker_token }}"
+                when: sbx_vault_secret | length == 0
+                no_log: true
+
+              - name: Assert Docker credentials are set
+                ansible.builtin.assert:
+                  that:
+                    - sbx_login_username | length > 0
+                    - sbx_login_token | length > 0
+                  fail_msg: >-
+                    sbx_login=true needs sbx_docker_username + sbx_docker_token
+                    (-e) or sbx_vault_secret (Vault keys username, token)
+                  quiet: true
+                no_log: true
+
+              - name: Check Docker sign-in state
+                ansible.builtin.command: sbx diagnose --json
+                become_user: "{{ item }}"
+                environment:
+                  HOME: "/home/{{ item }}"
+                loop: "{{ sbx_users }}"
+                register: sbx_diagnose
+                changed_when: false
+                failed_when: false
+
+              - name: Sign in to Docker
+                ansible.builtin.command:
+                  cmd: "sbx login --username {{ sbx_login_username }} --password-stdin"
+                  stdin: "{{ sbx_login_token }}"
+                become_user: "{{ item.item }}"
+                environment:
+                  HOME: "/home/{{ item.item }}"
+                loop: "{{ sbx_diagnose.results }}"
+                loop_control:
+                  label: "{{ item.item }}"
+                when: >-
+                  sbx_login_force | bool or
+                  ((item.stdout | default('{}') | from_json).checks | default([])
+                    | selectattr('name', 'equalto', 'Authentication')
+                    | selectattr('status', 'equalto', 'pass') | list | length == 0)
+                no_log: true
+
           - name: Run kvm-ok
             ansible.builtin.command: kvm-ok
             changed_when: false
@@ -241,4 +316,4 @@ playbooks:
 
           - name: Show sbx version
             ansible.builtin.debug:
-              msg: "{{ sbx_version_out.stdout }} -- sign in with 'sbx login' as each of {{ sbx_users | join(', ') }}"
+              msg: "{{ sbx_version_out.stdout }}{{ '' if sbx_login | bool else (' -- sign in with sbx login as each of ' ~ (sbx_users | join(', '))) }}"

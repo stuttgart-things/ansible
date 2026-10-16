@@ -30,7 +30,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `sthings.container.docker` | Install and configure Docker (with compose) |
 | `sthings.container.podman` | Install Podman on Debian/Ubuntu and RHEL |
 | `sthings.container.nerdctl` | Install nerdctl (v2.2.1) with containerd and buildkit |
-| `sthings.container.sbx` | Install Docker Sandboxes (`docker-sbx`), add users to `kvm`, run `sandboxd` as `sbx-daemon@<user>`. Ubuntu 24.04+ with `/dev/kvm` only. Optional `sbx_state_dir` moves state off `/home`. `sbx_network_policy` (default `balanced`) is set on the first daemon start. `sbx login` stays manual |
+| `sthings.container.sbx` | Install Docker Sandboxes (`docker-sbx`), add users to `kvm`, run `sandboxd` as `sbx-daemon@<user>`. Ubuntu 24.04+ with `/dev/kvm` only. Optional `sbx_state_dir` moves state off `/home`. `sbx_network_policy` (default `balanced`) is set on the first daemon start. Docker sign-in is manual (`sbx login`) unless `sbx_login=true`, with a PAT from `-e sbx_docker_username/sbx_docker_token` or Vault (`sbx_vault_secret`) |
 
 ### KIND Cluster(s)
 
@@ -161,6 +161,22 @@ ansible-playbook sthings.container.sbx -vv \
 -e sbx_state_dir=/var/lib/sbx \
 -i /tmp/hosts
 # then, as the user on the host: sbx login
+
+# Docker sign-in via the play (off by default): PAT as extra vars ...
+ansible-playbook sthings.container.sbx -vv \
+-e target_host=all \
+-e sbx_login=true \
+-e sbx_docker_username=<user> \
+-e sbx_docker_token=<pat> \
+-i /tmp/hosts
+
+# ... or from Vault (KV v2, keys username + token; approle via
+# VAULT_ADDR / VAULT_ROLE_ID / VAULT_SECRET_ID)
+ansible-playbook sthings.container.sbx -vv \
+-e target_host=all \
+-e sbx_login=true \
+-e sbx_vault_secret=apps/data/docker-sbx \
+-i /tmp/hosts
 ```
 
 </details>
