@@ -1,0 +1,100 @@
+---
+playbooks:
+  - name: longhorn_node
+    play: |
+      ---
+      # Prepare a Kubernetes node for Longhorn (v1 data engine).
+      #
+      # WHY THIS IS NEEDED. Longhorn attaches every volume to its node over
+      # iSCSI. On our Ubuntu templates open-iscsi is installed but iscsid is
+      # inactive and disabled and iscsi_tcp is not loaded (seen on the LabDA
+      # rke2 nodes of labda-apps-test1, stuttgart-things#3715), so
+      # longhorn-manager reports the node as not ready for volumes and every
+      # PVC stays Pending.
+      #
+      # multipathd (when present) claims the /dev/sdX devices Longhorn creates
+      # and the mount then fails with "already mounted or mount point busy" --
+      # Longhorn's own troubleshooting note. Blacklisting the sd devices keeps
+      # multipath out of their way; the VM's disks are not multipath anyway.
+      #
+      # nfs-common is only needed for RWX volumes (share-manager) and NFS
+      # backup targets; set longhorn_nfs_client: true to install it.
+      #
+      # Usage (as a baseos stage of a ClusterStack, or by hand):
+      #   ansible-playbook sthings.baseos.longhorn_node -i "10.100.136.80," -u sthings --become
+      #
+      # Idempotent: a second run changes nothing.
+
+      - name: Prepare node for Longhorn
+        hosts: all
+        become: true
+
+        vars:
+          longhorn_nfs_client: false
+          longhorn_multipath_blacklist: true
+
+        tasks:
+          - name: Install open-iscsi
+            ansible.builtin.apt:
+              name: open-iscsi
+              state: present
+              update_cache: true
+              cache_valid_time: 3600
+
+          - name: Install the NFS client (RWX volumes, NFS backup targets)
+            ansible.builtin.apt:
+              name: nfs-common
+              state: present
+            when: longhorn_nfs_client | bool
+
+          # No community.general here (the collection pulls in none): check
+          # /sys/module and call modprobe only when the module is missing.
+          - name: Check whether iscsi_tcp is loaded
+            ansible.builtin.stat:
+              path: /sys/module/iscsi_tcp
+            register: longhorn_iscsi_tcp
+
+          - name: Load iscsi_tcp now
+            ansible.builtin.command: modprobe iscsi_tcp
+            changed_when: true
+            when: not longhorn_iscsi_tcp.stat.exists
+
+          - name: Load iscsi_tcp at boot
+            ansible.builtin.copy:
+              dest: /etc/modules-load.d/longhorn.conf
+              content: |
+                # sthings.baseos.longhorn_node: Longhorn attaches volumes over iSCSI
+                iscsi_tcp
+              owner: root
+              group: root
+              mode: "0644"
+
+          - name: Enable and start iscsid
+            ansible.builtin.systemd:
+              name: iscsid
+              state: started
+              enabled: true
+
+          - name: Check for multipathd
+            ansible.builtin.stat:
+              path: /etc/multipath.conf
+            register: longhorn_multipath_conf
+
+          - name: Keep multipathd away from Longhorn's sd devices
+            ansible.builtin.blockinfile:
+              path: /etc/multipath.conf
+              marker: "# {mark} sthings.baseos.longhorn_node"
+              block: |
+                blacklist {
+                    devnode "^sd[a-z0-9]+"
+                }
+            notify: Restart multipathd
+            when:
+              - longhorn_multipath_blacklist | bool
+              - longhorn_multipath_conf.stat.exists
+
+        handlers:
+          - name: Restart multipathd
+            ansible.builtin.systemd:
+              name: multipathd
+              state: restarted
