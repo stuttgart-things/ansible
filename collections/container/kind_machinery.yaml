@@ -653,8 +653,17 @@ playbooks:
             # Ab v0.9.2 bleibt der Default `default` stehen; wer eine
             # ansible-run-<env> hat, waehlt sie ueber spec.ansible.environmentConfig.
             # crossplane-configurations#347.
+            #
+            # 2026-10-19: every Configuration pin below was levelled against the
+            # machinery profile of stuttgart-things/flux (xplane-crossplane-catalog
+            # 0.24.0), which is what the LabDA machinery runs. Left at the old pins, a
+            # run DOWNGRADED that cluster (cluster v0.16.1 -> v0.11.10).
+            #
+            # v0.13.0: spec.ansible.inventoryGroups puts the VM IP into a named
+            # inventory group -- what rke2 needs (crossplane-configurations#521).
+            # Floors unchanged (provider-vspherevm-xpkg >=v0.8.1, ansible-run >=v0.1.4).
             - name: stuttgart-things-crossplane-configurations-vspherevm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.12.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.13.0"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
             # v0.10.0 added spec.vm.cloneDatastore, v0.11.0 its `none` opt-out
             # sentinel. NOT optional for LabUL: both base-OS templates keep their
@@ -680,12 +689,20 @@ playbooks:
             # v0.12.2 nimmt den environmentConfig-Durchreicher wieder heraus —
             # dieselbe Korrektur wie vspherevm v0.9.2 oben, gleiche Begruendung.
             # crossplane-configurations#347.
+            #
+            # v0.17.0: spec.ansible.inventoryGroups, same as vspherevm v0.13.0 above.
+            # Floors unchanged (provider-proxmox-bpg >=v1.15.0, ansible-run >=v0.1.4).
             - name: stuttgart-things-crossplane-configurations-proxmoxvm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.16.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.17.0"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
             # Tekton-backed Packer builder — only provider-kubernetes, already up.
+            # packer-build v0.5.0 status.templateName/templateVmId (#525), v0.6.0
+            # status.phase + condition PipelineRunSucceeded so a failed build is
+            # visible (#527), v0.7.0 status.templateUuid for vSphere and stage-time
+            # v0.13.8 (#529). Same dependsOn floors as v0.4.x. Its runtime
+            # (EnvironmentConfigs, CA) is the packer capability chart.
             - name: stuttgart-things-crossplane-configurations-packer-build
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.4.1"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.7.0"
             # Build -> test -> promote. Its dependsOn floor of packer-build
             # >=v0.3.0 is why the pin above had to move: against v0.2.0 the
             # promotion gate reads a `template-name` result that older
@@ -700,8 +717,12 @@ playbooks:
             # EnvironmentConfig, so the `vaultSecretName: vault-labda` the
             # packer chart sets for LabDA is dead config and a LabDA promotion
             # has to restate it on the XR (crossplane-configurations#225).
+            #
+            # v0.5.0: the Proxmox test VM cloned by name and promoted by VMID (#214);
+            # v0.6.0: buildReason/buildMessage + condition BuildSucceeded, stops
+            # waiting on a failed nested build (#527). Floors as v0.4.2.
             - name: stuttgart-things-crossplane-configurations-packer-release
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-release:v0.4.2"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-release:v0.6.0"
             # Scheduled encrypted state export to an OCI registry. Only
             # provider-kubernetes (already up), like the packer packages, so no
             # provider_crd wait. Installing the package + its EnvironmentConfig
@@ -811,8 +832,24 @@ playbooks:
             # v0.6.2: bound ServiceAccounts for additional Vault auths,
             # clusterSecrets (the cluster's own observability entry), cni.gatewayAPI
             # passthrough, no generated webhook token. Floors unchanged.
+            # v0.8.0 — spec.vaultIssuer.authProvider through provider-vault; NEW
+            # dependsOn vault-k8s-auth >=v0.4.2, resolved on fresh clusters.
+            # v0.9.0 (2026-10-19) — additionalAuths[] on another Vault (LabDA: ESO on
+            # the OpenBao, crossplane-configurations#508). cluster >=v0.14.0 needs it:
+            # an older XRD prunes the fields. dependsOn unchanged.
             - name: stuttgart-things-crossplane-configurations-platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.8.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.9.0"
+            # cni IS listed although platform pulls it, and so is rancher-cluster
+            # below although cluster pulls it. The rule above (pin entry points only)
+            # predates the derived names: listed under EXACTLY the name the resolver
+            # gives it, an entry and the dependsOn node are one Lock node, not two
+            # (stuttgart-things/flux#506) -- the #247 collision needs two names. And
+            # pinning is the only way a raised floor reaches an existing cluster: the
+            # resolver installs a dependency once and never raises it.
+            # cni v0.1.5: an installed CNI stays installed (kcl#319) -- before it, a
+            # three-minute API outage uninstalled cilium from a running cluster.
+            - name: stuttgart-things-crossplane-configurations-cni
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cni:v0.1.5"
             # flux-apps is NOT listed. platform has declared the dependency
             # since v0.3.1, so an explicit pin would put the same ghcr path
             # under both a short CR name (this play) and a dependsOn — which is
@@ -828,6 +865,14 @@ playbooks:
             # `kubectl get configuration`. The version follows platform's
             # `>=v0.1.2` rather than a pin here. Same reasoning for the three
             # Configurations v0.3.3 added.
+            # rancher-cluster v0.12.0: the floor of cluster >=v0.16.0 (clusterSpec
+            # from the EnvironmentConfig, crossplane-configurations#536). cluster
+            # raised this floor three times; each time an existing machinery kept its
+            # old rancher-cluster, the new cluster revision went unhealthy and nothing
+            # behind it reconciled (cicd-machinery-test5, 2026-10-19; kcl#354). Raise
+            # it together with cluster's dependsOn, never after.
+            - name: stuttgart-things-crossplane-configurations-rancher-cluster
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/rancher-cluster:v0.12.0"
             # Builds a WHOLE CLUSTER from one namespaced ClusterStack XR: VM ->
             # base-OS -> distribution -> kubeconfig upload -> ClusterAccess ->
             # Platform. Last in the list because it depends on platform above,
@@ -898,8 +943,18 @@ playbooks:
             # rancher environment so the distro is checkable (#491) and takes
             # xplane-cluster 0.20.0, which refuses a mismatched pair (#492).
             # Left at v0.11.8 here, a play run DOWNGRADED the live cluster.
+            # v0.12.1-v0.16.1 (2026-10-19, levelled with catalog 0.24.0) —
+            # v0.12.1 RAISED FLOOR rancher-cluster >=v0.10.0 (v0.12.0 is v0.11.10
+            # content, never pin it); v0.12.2 baseos extraPlaybooks for LabDA;
+            # v0.13.0 rancher-k3s drops local-storage when the platform brings
+            # storage; v0.14.0 dependsOn platform >=v0.9.0 (own Vault for ESO);
+            # v0.15.0 multinode on the Rancher custom-node path, dependsOn vspherevm
+            # >=v0.10.0 and proxmoxvm >=v0.14.0; v0.16.0 `size` is one node, the
+            # count is spec.nodes, RAISED FLOOR rancher-cluster >=v0.12.0 (pinned
+            # above); v0.16.1 profile storage-longhorn. The full history is in
+            # stuttgart-things/kcl crossplane/xplane-crossplane-catalog/profiles/machinery.k.
             - name: stuttgart-things-crossplane-configurations-cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.10"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.16.1"
             # capability and argocd-cluster: nothing dependsOn them, so they only
             # exist where someone installs them. On u26-kind3 that was by hand
             # (2026-08-17/18), each with a live XR (seed-labda-1-capability,
@@ -2405,8 +2460,17 @@ playbooks:
             # Ab v0.9.2 bleibt der Default `default` stehen; wer eine
             # ansible-run-<env> hat, waehlt sie ueber spec.ansible.environmentConfig.
             # crossplane-configurations#347.
+            #
+            # 2026-10-19: every Configuration pin below was levelled against the
+            # machinery profile of stuttgart-things/flux (xplane-crossplane-catalog
+            # 0.24.0), which is what the LabDA machinery runs. Left at the old pins, a
+            # run DOWNGRADED that cluster (cluster v0.16.1 -> v0.11.10).
+            #
+            # v0.13.0: spec.ansible.inventoryGroups puts the VM IP into a named
+            # inventory group -- what rke2 needs (crossplane-configurations#521).
+            # Floors unchanged (provider-vspherevm-xpkg >=v0.8.1, ansible-run >=v0.1.4).
             - name: stuttgart-things-crossplane-configurations-vspherevm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.12.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/vspherevm:v0.13.0"
               provider_crd: clusterproviderconfigs.vspherevm.m.stuttgart-things.com
             # v0.10.0 added spec.vm.cloneDatastore, v0.11.0 its `none` opt-out
             # sentinel. NOT optional for LabUL: both base-OS templates keep their
@@ -2432,11 +2496,19 @@ playbooks:
             # v0.12.2 nimmt den environmentConfig-Durchreicher wieder heraus —
             # dieselbe Korrektur wie vspherevm v0.9.2 oben, gleiche Begruendung.
             # crossplane-configurations#347.
+            #
+            # v0.17.0: spec.ansible.inventoryGroups, same as vspherevm v0.13.0 above.
+            # Floors unchanged (provider-proxmox-bpg >=v1.15.0, ansible-run >=v0.1.4).
             - name: stuttgart-things-crossplane-configurations-proxmoxvm
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.16.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/proxmoxvm:v0.17.0"
               provider_crd: clusterproviderconfigs.proxmoxbpg.m.crossplane.io
+            # packer-build v0.5.0 status.templateName/templateVmId (#525), v0.6.0
+            # status.phase + condition PipelineRunSucceeded so a failed build is
+            # visible (#527), v0.7.0 status.templateUuid for vSphere and stage-time
+            # v0.13.8 (#529). Same dependsOn floors as v0.4.x. Its runtime
+            # (EnvironmentConfigs, CA) is the packer capability chart.
             - name: stuttgart-things-crossplane-configurations-packer-build
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.4.1"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-build:v0.7.0"
             # Build -> test -> promote. Its dependsOn floor of packer-build
             # >=v0.3.0 is why the pin above had to move: against v0.2.0 the
             # promotion gate reads a `template-name` result that older
@@ -2451,8 +2523,12 @@ playbooks:
             # EnvironmentConfig, so the `vaultSecretName: vault-labda` the
             # packer chart sets for LabDA is dead config and a LabDA promotion
             # has to restate it on the XR (crossplane-configurations#225).
+            #
+            # v0.5.0: the Proxmox test VM cloned by name and promoted by VMID (#214);
+            # v0.6.0: buildReason/buildMessage + condition BuildSucceeded, stops
+            # waiting on a failed nested build (#527). Floors as v0.4.2.
             - name: stuttgart-things-crossplane-configurations-packer-release
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-release:v0.4.2"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/packer-release:v0.6.0"
             # Scheduled encrypted state export to an OCI registry. Only
             # provider-kubernetes (already up), like the packer packages, so no
             # provider_crd wait. Installing the package + its EnvironmentConfig
@@ -2548,8 +2624,24 @@ playbooks:
             # v0.6.2: bound ServiceAccounts for additional Vault auths,
             # clusterSecrets (the cluster's own observability entry), cni.gatewayAPI
             # passthrough, no generated webhook token. Floors unchanged.
+            # v0.8.0 — spec.vaultIssuer.authProvider through provider-vault; NEW
+            # dependsOn vault-k8s-auth >=v0.4.2, resolved on fresh clusters.
+            # v0.9.0 (2026-10-19) — additionalAuths[] on another Vault (LabDA: ESO on
+            # the OpenBao, crossplane-configurations#508). cluster >=v0.14.0 needs it:
+            # an older XRD prunes the fields. dependsOn unchanged.
             - name: stuttgart-things-crossplane-configurations-platform
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.8.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/platform:v0.9.0"
+            # cni IS listed although platform pulls it, and so is rancher-cluster
+            # below although cluster pulls it. The rule above (pin entry points only)
+            # predates the derived names: listed under EXACTLY the name the resolver
+            # gives it, an entry and the dependsOn node are one Lock node, not two
+            # (stuttgart-things/flux#506) -- the #247 collision needs two names. And
+            # pinning is the only way a raised floor reaches an existing cluster: the
+            # resolver installs a dependency once and never raises it.
+            # cni v0.1.5: an installed CNI stays installed (kcl#319) -- before it, a
+            # three-minute API outage uninstalled cilium from a running cluster.
+            - name: stuttgart-things-crossplane-configurations-cni
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cni:v0.1.5"
             # flux-apps is NOT listed. platform has declared the dependency
             # since v0.3.1, so an explicit pin would put the same ghcr path
             # under both a short CR name (this play) and a dependsOn — which is
@@ -2565,6 +2657,14 @@ playbooks:
             # `kubectl get configuration`. The version follows platform's
             # `>=v0.1.2` rather than a pin here. Same reasoning for the three
             # Configurations v0.3.3 added.
+            # rancher-cluster v0.12.0: the floor of cluster >=v0.16.0 (clusterSpec
+            # from the EnvironmentConfig, crossplane-configurations#536). cluster
+            # raised this floor three times; each time an existing machinery kept its
+            # old rancher-cluster, the new cluster revision went unhealthy and nothing
+            # behind it reconciled (cicd-machinery-test5, 2026-10-19; kcl#354). Raise
+            # it together with cluster's dependsOn, never after.
+            - name: stuttgart-things-crossplane-configurations-rancher-cluster
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/rancher-cluster:v0.12.0"
             # Builds a WHOLE CLUSTER from one namespaced ClusterStack XR: VM ->
             # base-OS -> distribution -> kubeconfig upload -> ClusterAccess ->
             # Platform. Last in the list because it depends on platform above,
@@ -2635,8 +2735,18 @@ playbooks:
             # rancher environment so the distro is checkable (#491) and takes
             # xplane-cluster 0.20.0, which refuses a mismatched pair (#492).
             # Left at v0.11.8 here, a play run DOWNGRADED the live cluster.
+            # v0.12.1-v0.16.1 (2026-10-19, levelled with catalog 0.24.0) —
+            # v0.12.1 RAISED FLOOR rancher-cluster >=v0.10.0 (v0.12.0 is v0.11.10
+            # content, never pin it); v0.12.2 baseos extraPlaybooks for LabDA;
+            # v0.13.0 rancher-k3s drops local-storage when the platform brings
+            # storage; v0.14.0 dependsOn platform >=v0.9.0 (own Vault for ESO);
+            # v0.15.0 multinode on the Rancher custom-node path, dependsOn vspherevm
+            # >=v0.10.0 and proxmoxvm >=v0.14.0; v0.16.0 `size` is one node, the
+            # count is spec.nodes, RAISED FLOOR rancher-cluster >=v0.12.0 (pinned
+            # above); v0.16.1 profile storage-longhorn. The full history is in
+            # stuttgart-things/kcl crossplane/xplane-crossplane-catalog/profiles/machinery.k.
             - name: stuttgart-things-crossplane-configurations-cluster
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.11.10"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/cluster:v0.16.1"
             # capability and argocd-cluster: nothing dependsOn them, so they only
             # exist where someone installs them. On u26-kind3 that was by hand
             # (2026-08-17/18), each with a live XR (seed-labda-1-capability,
