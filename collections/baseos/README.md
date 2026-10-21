@@ -470,7 +470,7 @@ runner_instances:
   - name: "{{ ansible_hostname }}-2"
     labels: "self-hosted,Linux,{{ ansible_architecture }},special"
 
-runner_version: "2.334.0"
+runner_version: "2.338.0"
 EOF
 
 ansible-playbook sthings.baseos.gh_runner -vv \
@@ -487,7 +487,7 @@ ansible-playbook sthings.baseos.gh_runner -vv \
 | `github_pat` | _(required)_ | GitHub PAT (repo admin or `admin:org` for org scope) |
 | `runner_scope` | `repo` | `repo` or `org` |
 | `runner_github_group` | _(unset)_ | Runner group name (org scope only) |
-| `runner_version` | `2.334.0` | actions/runner release version |
+| `runner_version` | `2.338.0` | actions/runner release version |
 | `runner_instances` | `[{ name: "{{ ansible_hostname }}" }]` | List of runners to deploy on the host |
 | `runner_labels` | `self-hosted,Linux,{{ ansible_architecture }}` | Default labels |
 | `install_docker` | `true` | Install Docker via `sthings.container.install_configure_docker` |
