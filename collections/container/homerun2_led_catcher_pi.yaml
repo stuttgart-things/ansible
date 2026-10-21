@@ -82,7 +82,9 @@ playbooks:
           led_catcher_repo: https://github.com/stuttgart-things/homerun2-led-catcher.git
           led_catcher_version: v0.10.0          # tag, branch or commit
           rgbmatrix_repo: https://github.com/hzeller/rpi-rgb-led-matrix.git
-          rgbmatrix_version: master
+          # a commit, not master: every new upstream commit changed the checkout
+          # and rebuilt the library on the Pi (~8 min on a 3B+). No tags upstream.
+          rgbmatrix_version: 14464b3ad8974665f75a3c82355cf872311fec21   # master, 2026-10-10
 
           # --- Who runs it (defaults to the SSH user) ---
           led_user: "{{ ansible_user | default(ansible_facts['env'].SUDO_USER | default('')) }}"
