@@ -48,6 +48,12 @@ playbooks:
       #     -e led_mode=full -e led_redis_addr=redis.example.com \
       #     -e led_profile_src=$PWD/profile.yaml -e led_ui_stream_presets=messages,tabletennis
       #
+      #   # under /matrix behind homerun2-portal (homerun2-led-catcher v0.19.0 and
+      #   # later for the portal's card): every route carries the prefix,
+      #   # /healthz and /health stay at the root, / redirects to /matrix/
+      #   ansible-playbook -i inventory.ini sthings.container.homerun2_led_catcher_pi \
+      #     -e led_api_token=change-me -e led_catcher_version=v0.20.0 -e led_base_path=/matrix
+      #
       #   # behind https://matrix.sthings.lab, with a certificate from the OpenBao PKI
       #   # (VAULT_TOKEN on the controller), and the clock between displays
       #   VAULT_TOKEN=... ansible-playbook -i inventory.ini sthings.container.homerun2_led_catcher_pi \
@@ -87,6 +93,7 @@ playbooks:
           led_health_port: 8080
           led_log_format: text
           led_log_level: info
+          led_base_path: ""                     # e.g. /matrix behind homerun2-portal (v0.18.0 and later); empty serves at the root
 
           # --- Panel ---
           led_hardware_mapping: adafruit-hat    # adafruit-hat-pwm if the PWM bridge is soldered
@@ -412,6 +419,10 @@ playbooks:
                 # shown by /healthz and the simulator footer
                 Environment=VERSION={{ led_catcher_version }}
                 Environment=COMMIT={{ led_catcher_commit.stdout }}
+                {% if led_base_path | length > 0 %}
+                # the URL prefix behind a reverse proxy; /healthz stays at the root
+                Environment=BASE_PATH={{ led_base_path }}
+                {% endif %}
                 {% if led_idle | length > 0 %}
                 # what the panel shows between displays
                 Environment=LED_IDLE={{ led_idle }}
@@ -646,7 +657,7 @@ playbooks:
               msg: >-
                 {{ ['led-catcher ' ~ led_catcher_version ~ ' (' ~ led_catcher_commit.stdout[:7] ~ ') is running in ' ~ led_mode ~ ' mode',
                     'health: ' ~ (led_health.json | to_json),
-                    'simulator and API: http://' ~ led_connect_addr ~ ':' ~ led_health_port]
+                    'simulator and API: http://' ~ led_connect_addr ~ ':' ~ led_health_port ~ led_base_path ~ '/']
                    + (['over TLS: https://' ~ led_tls_hostname ~ ' (certificate ' ~ led_tls_current.stdout ~ ' before this run)']
                       if led_tls_hostname | length > 0 else [])
                    + (['also on the default route: http://' ~ led_default_addr ~ ':' ~ led_health_port]
