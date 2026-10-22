@@ -433,6 +433,48 @@ playbooks:
                 when: detected_lab | trim | length == 0
             when: ansible_facts['distribution'] == "Ubuntu"
 
+          # Keep the DHCP lease across reboots. systemd-networkd gives the lease
+          # back on shutdown (DHCPRELEASE), so a VM that reboots at the same time
+          # as another can come back on a different address: on 2026-10-21
+          # homerun2-dev2 lost .110 to sbx-labul that way and its k3s/etcd no
+          # longer knew itself (stuttgart-things#3962). Without the release the
+          # DHCP server keeps the lease (1 week in LabUL) for this client and
+          # hands the same address back. Only where netplan renders the default
+          # interface for networkd with DHCP; static addresses are left alone.
+          - name: Keep the DHCP lease across reboots (networkd)
+            vars:
+              _lease_if: "{{ ansible_default_ipv4.interface | default('') }}"
+              _lease_network: "/run/systemd/network/10-netplan-{{ ansible_default_ipv4.interface | default('') }}.network"
+            block:
+              - name: Read the networkd unit netplan rendered for the default interface
+                ansible.builtin.slurp:
+                  src: "{{ _lease_network }}"
+                register: _lease_unit
+                failed_when: false
+
+              - name: Write the SendRelease=no drop-in
+                ansible.builtin.copy:
+                  dest: "/etc/systemd/network/10-netplan-{{ _lease_if }}.network.d/90-keep-lease.conf"
+                  content: |
+                    # Managed by sthings.baseos.setup (stuttgart-things#3962): do not
+                    # give the DHCP lease back on shutdown.
+                    [DHCPv4]
+                    SendRelease=no
+                  owner: root
+                  group: root
+                  mode: '0644'
+                register: _lease_dropin
+                when:
+                  - _lease_unit.content is defined
+                  - (_lease_unit.content | b64decode) is search('(?m)^DHCP=(yes|ipv4)')
+
+              - name: Reload networkd (no address change)
+                ansible.builtin.command: networkctl reload
+                when: _lease_dropin is changed
+            when:
+              - ansible_facts['service_mgr'] == "systemd"
+              - _lease_if | length > 0
+
   - name: users
     play: |
       ---
