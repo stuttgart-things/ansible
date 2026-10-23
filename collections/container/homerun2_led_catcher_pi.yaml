@@ -106,6 +106,9 @@ playbooks:
           led_idle: ""                          # clock; empty leaves LED_IDLE unset, the panel dark between displays
           led_idle_color: ""                    # a profile colour name or r,g,b; empty: the catcher's default (info)
 
+          # --- Display queue (homerun2-led-catcher#142 and later) ---
+          led_display_queue: ""                 # e.g. 3: finite displays wait FIFO, up to N; empty leaves DISPLAY_QUEUE unset (1: the newest waiting one wins)
+
           # --- TLS (optional): a hostname, a PKI certificate, Caddy on 443 ---
           led_tls_hostname: ""                  # e.g. matrix.sthings.lab; empty: no certificate, no Caddy
           led_tls_ip_sans: []                   # e.g. [192.168.10.120] or "192.168.10.120", so https://<ip> is valid too
@@ -598,6 +601,10 @@ playbooks:
                 {% endif %}
                 {% if led_idle_color | length > 0 %}
                 Environment=LED_IDLE_COLOR={{ led_idle_color }}
+                {% endif %}
+                {% if led_display_queue | string | length > 0 %}
+                # how many finite displays may wait for the panel (default 1)
+                Environment=DISPLAY_QUEUE={{ led_display_queue }}
                 {% endif %}
                 {% if led_mode != 'standalone' %}
                 Environment=REDIS_ADDR={{ led_redis_addr }}
