@@ -180,6 +180,19 @@ playbooks:
                 Pin: origin packages.mozilla.org
                 Pin-Priority: 1000
 
+          # The pin above is not enough: unattended-upgrades only installs from
+          # its Allowed-Origins (Ubuntu), so it ignores the Mozilla candidate and
+          # "upgrades" to Ubuntu's 1:1snap1 transitional package (the epoch wins).
+          # That leaves a /usr/bin/firefox wrapper that does not start in cage.
+          - name: Never install Ubuntu's Firefox (snap transitional package)
+            ansible.builtin.copy:
+              dest: /etc/apt/preferences.d/firefox-no-snap
+              mode: "0644"
+              content: |
+                Package: firefox*
+                Pin: release o=Ubuntu
+                Pin-Priority: -1
+
           - name: Check whether Firefox is installed as a snap
             ansible.builtin.command: snap list firefox
             register: firefox_snap
@@ -195,6 +208,20 @@ playbooks:
               name: firefox
               state: present
               update_cache: true
+
+          - name: Installed Firefox version
+            ansible.builtin.command: dpkg-query -W -f=${Version} firefox
+            register: firefox_deb_version
+            changed_when: false
+
+          # A box already switched to the transitional package keeps it with
+          # state: present; going back to the Mozilla version is a downgrade.
+          - name: Replace Ubuntu's snap transitional package with the Mozilla .deb
+            ansible.builtin.apt:
+              name: firefox
+              state: latest
+              allow_downgrade: true
+            when: "'snap' in firefox_deb_version.stdout"
 
           - name: Policy directory
             ansible.builtin.file:
