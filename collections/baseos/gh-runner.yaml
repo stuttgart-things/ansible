@@ -12,7 +12,7 @@ playbooks:
           install_docker: true
           docker_install_compose: true
           install_kind: false
-          runner_version: "2.338.0" # datasource=github-releases depName=actions/runner
+          runner_version: "2.338.1" # datasource=github-releases depName=actions/runner
           runner_force_reconfigure: false
           runner_user: gh-runner
           runner_linux_group: gh-runner
@@ -394,7 +394,7 @@ vars:
       runner_workspace_hook: true
 
       # Runner settings
-      runner_version: "2.338.0" # datasource=github-releases depName=actions/runner
+      runner_version: "2.338.1" # datasource=github-releases depName=actions/runner
       runner_labels: "self-hosted,Linux,{{ ansible_architecture }}"
       runner_user: gh-runner
       runner_linux_group: gh-runner
