@@ -1,0 +1,390 @@
+---
+# stuttgart-things/harvester#526 — a local LLM endpoint on a VM with a
+# passed-through NVIDIA GPU: driver, Ollama as a systemd service, the models
+# pulled, and a check that they really run on the GPU. Backstage RAG-AI talks to
+# it through Ollama's OpenAI-compatible /v1 API (chat + embeddings).
+playbooks:
+  - name: ollama_gpu
+    play: |
+      ---
+      # =============================================================================
+      # Ollama on an NVIDIA GPU (Ubuntu)
+      # -----------------------------------------------------------------------------
+      # For a VM that has the GPU by PCI passthrough (Harvester pcidevices) or a
+      # bare-metal host. From a golden sthings-u26 image to an OpenAI-compatible
+      # endpoint on :11434:
+      #
+      #   1. the GPU is on the PCI bus (fails early when passthrough is missing)
+      #   2. NVIDIA driver, open kernel modules (RTX 50xx / Blackwell need them,
+      #      driver >= 570)
+      #   3. reboot, only when the driver was installed or changed
+      #   4. nvidia-smi sees the card
+      #   5. Ollama release unpacked to /usr, user `ollama`, systemd unit with
+      #      the server settings in /etc/default/ollama
+      #   6. models pulled (only the missing ones)
+      #   7. /api/version, one chat and one embedding call through /v1, and
+      #      `ollama ps` showing the chat model on the GPU
+      #
+      # Idempotent: a second run downloads nothing, pulls nothing, restarts
+      # nothing. A new ollama_version replaces /usr/lib/ollama and restarts the
+      # service; new models are pulled, models dropped from the list stay (remove
+      # them with `ollama rm`).
+      #
+      # Why the settings are what they are:
+      #   OLLAMA_CONTEXT_LENGTH  Ollama's default window is small. RAG prompts
+      #                          (Backstage sends ~6 chunks of 1000 chars plus
+      #                          the question) were cut off silently, and the
+      #                          answers got bad without any error.
+      #   OLLAMA_KEEP_ALIVE=-1   keep chat + embedding model loaded; otherwise
+      #                          the first question after 5 min idle waits for
+      #                          a reload.
+      #   OLLAMA_MAX_LOADED_MODELS=2  chat and embedding model side by side.
+      #   OLLAMA_NUM_PARALLEL    parallel requests per model; each slot costs KV
+      #                          cache (VRAM) for the full context.
+      #
+      # Usage:
+      #   ansible-playbook -i inventory.ini sthings.container.ollama_gpu
+      #
+      #   # other models / no GPU check (CPU-only test VM)
+      #   ansible-playbook -i inventory.ini sthings.container.ollama_gpu \
+      #     -e '{"ollama_models": ["qwen3:14b", "bge-m3"]}' -e ollama_require_gpu=false
+      #
+      # inventory.ini:
+      #   [ollama]
+      #   192.168.10.x
+      #
+      # Tags: gpu, driver, install, service, models, verify
+      # =============================================================================
+
+      - name: Ollama on an NVIDIA GPU
+        hosts: "{{ target_host | default('all') }}"
+        become: true
+        gather_facts: true
+
+        vars:
+          # --- NVIDIA driver ---
+          ollama_require_gpu: true              # false: skip driver + GPU checks (CPU-only)
+          nvidia_driver_version: "580"          # Ubuntu archive branch; >= 570 for Blackwell
+          # -open: the open kernel modules, the only ones RTX 50xx supports.
+          # -server: the LTS/server branch; drop it for the desktop branch.
+          nvidia_driver_package: "nvidia-driver-{{ nvidia_driver_version }}-server-open"
+          nvidia_utils_package: "nvidia-utils-{{ nvidia_driver_version }}-server"
+          nvidia_allow_reboot: true
+
+          # --- Ollama ---
+          ollama_version: "0.40.10"
+          ollama_arch: "{{ 'arm64' if ansible_facts['architecture'] in ['aarch64', 'arm64'] else 'amd64' }}"
+          # the URL the official install.sh uses; ?version= pins the release
+          ollama_download_url: "https://ollama.com/download/ollama-linux-{{ ollama_arch }}.tar.zst?version={{ ollama_version }}"
+          ollama_host: "0.0.0.0:11434"
+          ollama_port: 11434
+          ollama_models_dir: /usr/share/ollama/.ollama/models
+          ollama_context_length: 16384
+          ollama_keep_alive: "-1"
+          ollama_num_parallel: 2
+          ollama_max_loaded_models: 2
+          ollama_extra_env: {}                  # more OLLAMA_* settings, e.g. {OLLAMA_FLASH_ATTENTION: "1"}
+
+          # --- Models ---
+          # gemma3:12b: no thinking mode, good German, ~8 GB at Q4.
+          # bge-m3: multilingual embeddings, 1024 dims, ~1.2 GB.
+          # Both fit a 16 GB card side by side with the KV cache.
+          ollama_models:
+            - gemma3:12b
+            - bge-m3
+          ollama_chat_model: "{{ ollama_models[0] }}"
+          ollama_embedding_model: "{{ ollama_models[-1] }}"
+          ollama_pull_timeout: 3600
+
+          # --- Verify ---
+          ollama_verify: true
+
+        tasks:
+          - name: Only Debian/Ubuntu is supported
+            ansible.builtin.assert:
+              that: ansible_facts['os_family'] == 'Debian'
+              fail_msg: "ollama_gpu supports Debian/Ubuntu only (found {{ ansible_facts['distribution'] }})"
+            tags: [always]
+
+          # --- 1. GPU on the bus ----------------------------------------------------
+          - name: Base packages
+            ansible.builtin.apt:
+              name: [curl, zstd, pciutils, ca-certificates]
+              state: present
+              update_cache: true
+              cache_valid_time: 3600
+            tags: [gpu, driver, install]
+
+          - name: Look for an NVIDIA device on the PCI bus
+            ansible.builtin.command: "lspci -nn -d 10de:"
+            register: ollama_lspci
+            changed_when: false
+            failed_when: false
+            when: ollama_require_gpu | bool
+            tags: [gpu, driver]
+
+          - name: The GPU is passed through
+            ansible.builtin.assert:
+              that: ollama_lspci.stdout | length > 0
+              fail_msg: >-
+                No NVIDIA device on the PCI bus. On Harvester: enable passthrough for
+                the GPU (Advanced > PCI Devices) and give the VM a hostDevices entry
+                with the device's resourceName. Set ollama_require_gpu=false for a
+                CPU-only run.
+              success_msg: "{{ ollama_lspci.stdout_lines | join(' | ') }}"
+            when: ollama_require_gpu | bool
+            tags: [gpu, driver]
+
+          # --- 2./3. Driver ----------------------------------------------------------
+          - name: NVIDIA driver (open kernel modules) and nvidia-smi
+            ansible.builtin.apt:
+              name:
+                - "{{ nvidia_driver_package }}"
+                - "{{ nvidia_utils_package }}"
+              state: present
+              install_recommends: false
+            register: ollama_driver
+            when: ollama_require_gpu | bool
+            tags: [driver]
+
+          - name: Reboot into the new driver
+            ansible.builtin.reboot:
+              reboot_timeout: 900
+              msg: "ollama_gpu: NVIDIA driver installed"
+            when:
+              - ollama_require_gpu | bool
+              - ollama_driver is changed
+              - nvidia_allow_reboot | bool
+            tags: [driver]
+
+          # --- 4. nvidia-smi -----------------------------------------------------------
+          - name: The GPU shows up in nvidia-smi
+            ansible.builtin.command: >-
+              nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
+            register: ollama_nvidia_smi
+            changed_when: false
+            failed_when: ollama_nvidia_smi.rc != 0 or (ollama_nvidia_smi.stdout | length == 0)
+            when: ollama_require_gpu | bool
+            tags: [driver, verify]
+
+          - name: GPU
+            ansible.builtin.debug:
+              msg: "{{ ollama_nvidia_smi.stdout_lines }}"
+            when: ollama_require_gpu | bool
+            tags: [driver, verify]
+
+          # --- 5. Ollama ------------------------------------------------------------
+          - name: Group ollama
+            ansible.builtin.group:
+              name: ollama
+              system: true
+            tags: [install]
+
+          - name: Groups on the host
+            ansible.builtin.getent:
+              database: group
+            tags: [install]
+
+          - name: User ollama (GPU device access through video/render)
+            ansible.builtin.user:
+              name: ollama
+              group: ollama
+              groups: "{{ ['video'] + (['render'] if 'render' in ansible_facts['getent_group'] else []) }}"
+              append: true
+              system: true
+              shell: /bin/false
+              home: /usr/share/ollama
+              create_home: true
+            tags: [install]
+
+          - name: Installed Ollama version
+            ansible.builtin.command: /usr/bin/ollama -v
+            register: ollama_installed
+            changed_when: false
+            failed_when: false
+            tags: [install]
+
+          - name: Install Ollama {{ ollama_version }}
+            when: ollama_version not in ((ollama_installed.stdout | default('')) ~ (ollama_installed.stderr | default('')))
+            tags: [install]
+            block:
+              - name: Download the release
+                ansible.builtin.get_url:
+                  url: "{{ ollama_download_url }}"
+                  dest: "/tmp/ollama-linux-{{ ollama_arch }}-{{ ollama_version }}.tar.zst"
+                  mode: "0644"
+                  timeout: 600
+
+              - name: Remove the libraries of the previous version
+                ansible.builtin.file:
+                  path: /usr/lib/ollama
+                  state: absent
+
+              - name: Unpack to /usr
+                ansible.builtin.shell: >-
+                  set -o pipefail &&
+                  zstd -dc /tmp/ollama-linux-{{ ollama_arch }}-{{ ollama_version }}.tar.zst | tar -x -C /usr
+                args:
+                  executable: /bin/bash
+                # only reached when the installed version differs
+                changed_when: true
+                notify: Restart ollama
+
+              - name: Remove the download
+                ansible.builtin.file:
+                  path: "/tmp/ollama-linux-{{ ollama_arch }}-{{ ollama_version }}.tar.zst"
+                  state: absent
+
+          - name: Server settings
+            ansible.builtin.copy:
+              dest: /etc/default/ollama
+              owner: root
+              group: root
+              mode: "0644"
+              content: |
+                # managed by sthings.container.ollama_gpu
+                OLLAMA_HOST={{ ollama_host }}
+                OLLAMA_MODELS={{ ollama_models_dir }}
+                OLLAMA_CONTEXT_LENGTH={{ ollama_context_length }}
+                OLLAMA_KEEP_ALIVE={{ ollama_keep_alive }}
+                OLLAMA_NUM_PARALLEL={{ ollama_num_parallel }}
+                OLLAMA_MAX_LOADED_MODELS={{ ollama_max_loaded_models }}
+                {% for k, v in ollama_extra_env.items() %}
+                {{ k }}={{ v }}
+                {% endfor %}
+            notify: Restart ollama
+            tags: [service]
+
+          - name: Systemd unit
+            ansible.builtin.copy:
+              dest: /etc/systemd/system/ollama.service
+              owner: root
+              group: root
+              mode: "0644"
+              content: |
+                # managed by sthings.container.ollama_gpu
+                [Unit]
+                Description=Ollama
+                After=network-online.target
+                Wants=network-online.target
+
+                [Service]
+                EnvironmentFile=/etc/default/ollama
+                ExecStart=/usr/bin/ollama serve
+                User=ollama
+                Group=ollama
+                Restart=always
+                RestartSec=3
+
+                [Install]
+                WantedBy=multi-user.target
+            notify: Restart ollama
+            tags: [service]
+
+          - name: Apply changed settings before pulling
+            ansible.builtin.meta: flush_handlers
+            tags: [service]
+
+          - name: Ollama enabled and running
+            ansible.builtin.systemd_service:
+              name: ollama
+              enabled: true
+              state: started
+              daemon_reload: true
+            tags: [service]
+
+          - name: Wait for the API
+            ansible.builtin.uri:
+              url: "http://127.0.0.1:{{ ollama_port }}/api/version"
+              return_content: true
+            register: ollama_api_version
+            retries: 30
+            delay: 2
+            until: ollama_api_version.status == 200
+            tags: [service, models, verify]
+
+          # --- 6. Models ------------------------------------------------------------
+          - name: Models already present
+            ansible.builtin.uri:
+              url: "http://127.0.0.1:{{ ollama_port }}/api/tags"
+              return_content: true
+            register: ollama_tags
+            tags: [models]
+
+          - name: Pull missing models
+            ansible.builtin.command: "/usr/bin/ollama pull {{ item }}"
+            environment:
+              OLLAMA_HOST: "127.0.0.1:{{ ollama_port }}"
+            loop: >-
+              {{ ollama_models | reject('in', ollama_tags.json.models | map(attribute='name') | list)
+                 | reject('in', ollama_tags.json.models | map(attribute='name') | map('regex_replace', ':latest$', '') | list)
+                 | list }}
+            async: "{{ ollama_pull_timeout }}"
+            poll: 15
+            changed_when: true
+            tags: [models]
+
+          # --- 7. Verify ------------------------------------------------------------
+          - name: Chat through the OpenAI-compatible API
+            ansible.builtin.uri:
+              url: "http://127.0.0.1:{{ ollama_port }}/v1/chat/completions"
+              method: POST
+              body_format: json
+              body:
+                model: "{{ ollama_chat_model }}"
+                max_tokens: 16
+                messages:
+                  - role: user
+                    content: "Antworte nur mit: ok"
+              timeout: 300
+              return_content: true
+            register: ollama_chat
+            when: ollama_verify | bool
+            tags: [verify]
+
+          - name: Embedding through the OpenAI-compatible API
+            ansible.builtin.uri:
+              url: "http://127.0.0.1:{{ ollama_port }}/v1/embeddings"
+              method: POST
+              body_format: json
+              body:
+                model: "{{ ollama_embedding_model }}"
+                input: "stuttgart-things harvester"
+              timeout: 300
+              return_content: true
+            register: ollama_embedding
+            when: ollama_verify | bool
+            tags: [verify]
+
+          - name: Where the models run
+            ansible.builtin.command: /usr/bin/ollama ps
+            environment:
+              OLLAMA_HOST: "127.0.0.1:{{ ollama_port }}"
+            register: ollama_ps
+            changed_when: false
+            when: ollama_verify | bool
+            tags: [verify]
+
+          - name: The chat model runs on the GPU
+            ansible.builtin.assert:
+              that:
+                - ollama_chat.json.choices | length > 0
+                - ollama_embedding.json.data[0].embedding | length > 0
+                - not (ollama_require_gpu | bool) or ('GPU' in ollama_ps.stdout)
+              fail_msg: >-
+                chat/embedding failed or the model runs on the CPU. `ollama ps`:
+                {{ ollama_ps.stdout | default('') }}
+              success_msg: >-
+                Ollama {{ ollama_api_version.json.version }} on {{ ollama_host }} --
+                chat "{{ ollama_chat.json.choices[0].message.content | trim }}",
+                embedding dims {{ ollama_embedding.json.data[0].embedding | length }};
+                {{ ollama_ps.stdout_lines | join(' | ') }}
+            when: ollama_verify | bool
+            tags: [verify]
+
+        handlers:
+          - name: Restart ollama
+            ansible.builtin.systemd_service:
+              name: ollama
+              state: restarted
+              daemon_reload: true

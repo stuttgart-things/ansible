@@ -75,6 +75,12 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `sthings.container.redis_setup` | Setup Redis port-forward and create RedisSearch index |
 | `sthings.container.homerun2_led_catcher_pi` | Install homerun2-led-catcher on a Raspberry Pi with a HUB75 matrix: boot config, audio blacklist, venv with rpi-rgb-led-matrix, systemd unit, `/healthz` check. Needs `-e led_api_token=…` (standalone) or `led_redis_addr` (led/full/web). Optional: `led_profile_src` (a profile on the controller, kept in sync) `led_ui_stream_presets` (the simulator's stream buttons) and `led_base_path` (a URL prefix such as `/matrix` behind homerun2-portal) |
 
+### LLM
+
+| Playbook | Description |
+|----------|-------------|
+| `sthings.container.ollama_gpu` | Ollama on an NVIDIA GPU (Ubuntu; a Harvester VM with the GPU passed through, or bare metal): checks the GPU is on the PCI bus, installs the driver with open kernel modules (`nvidia_driver_version`, default 580, >= 570 for RTX 50xx), reboots only when it changed, unpacks Ollama `ollama_version` to `/usr` as a systemd service (`/etc/default/ollama`: `OLLAMA_CONTEXT_LENGTH` 16384, `OLLAMA_KEEP_ALIVE=-1`, 2 models loaded), pulls `ollama_models` (default `gemma3:12b`, `bge-m3`) and verifies one chat and one embedding call through the OpenAI-compatible `/v1` API plus `ollama ps` on the GPU. `ollama_require_gpu=false` for a CPU-only run |
+
 ### Tools
 
 | Playbook | Description |
