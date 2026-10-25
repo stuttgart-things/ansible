@@ -32,7 +32,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `sthings.baseos.setup` | Base OS setup: filesystem, packages, vault CA, motd, DNS configuration |
 | `sthings.baseos.users` | Create OS users from profile YAML |
 | `sthings.baseos.reboot_vm` | Reboot machines |
-| `sthings.baseos.resize_vm` | After an in-place resize: reboot (added CPU/memory apply), then grow partition, LVM and filesystems into the new disk (`manage_filesystem`). `resize_reboot: false` skips the reboot |
+| `sthings.baseos.resize_vm` | After an in-place resize: restart the VM from the Proxmox host (`resize_reboot: host`, API token from the env -- a guest reboot does not apply pending CPU/memory), then grow partition, LVM and filesystems (`manage_filesystem`) |
 | `sthings.baseos.prepare_env` | Prepare SSH keys from Vault, create inventory, wait for SSH |
 | `sthings.baseos.starship` | Install and configure starship shell prompt |
 

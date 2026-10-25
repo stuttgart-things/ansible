@@ -114,25 +114,39 @@ playbooks:
 
   - name: resize_vm
     # After a VM was resized in place (stuttgart-things request-claim-change):
-    # CPU and memory added on Proxmox apply only at the next boot, and a grown
-    # disk is not yet in the guest's partition, LVM and filesystems. Reboot
-    # first, then let manage_filesystem claim the new space -- the same role
-    # and the same split as setup, so a resized VM looks like one built that
-    # size.
+    # CPU and memory added on Proxmox apply only when the HOST restarts the VM
+    # -- a reboot inside the guest keeps the same QEMU process and changes
+    # nothing (seen on cutover3: 4 vCPU before and after an
+    # ansible.builtin.reboot). And a grown disk is not yet in the guest's
+    # partition, LVM and filesystems on any provider.
+    #
+    # resize_reboot picks the restart:
+    #   host  -- POST /nodes/<node>/qemu/<vmid>/status/reboot on the Proxmox
+    #            API, which applies pending changes; token from the env
+    #            (PROXMOX_API_URL, PROXMOX_TOKEN_ID, PROXMOX_TOKEN_SECRET --
+    #            the AnsibleRun's extraEnvSecretName), needs proxmox_node and
+    #            proxmox_vmid
+    #   none  -- no restart (vSphere: the provider restarts the VM itself)
+    # Then manage_filesystem claims the new space, with setup's split, so a
+    # resized VM looks like one built that size. resize_expect_vcpus /
+    # resize_expect_memory_mb, when set, fail the run if the guest does not
+    # show them afterwards.
     play: |
       ---
-      - name: Apply a resize -- reboot, then grow partition, LVM and filesystems
+      - name: Apply a resize -- host restart, then grow partition, LVM and filesystems
         hosts: "{{ target_host | default('all') }}"
         become: true
         # Same reason as setup: the host may not accept SSH yet.
         gather_facts: false
 
         vars:
-          resize_reboot: true
+          resize_reboot: none
           manage_filesystem: true
           lvm_home_sizing: "15%"
           lvm_root_sizing: "35%"
           lvm_var_sizing: "50%"
+          proxmox_api_url: "{{ lookup('env', 'PROXMOX_API_URL') }}"
+          proxmox_validate_certs: false
 
         pre_tasks:
           - name: Wait until the host accepts connections
@@ -147,21 +161,80 @@ playbooks:
             when: path_to_vars_file is defined
 
         tasks:
-          - name: Gather facts before the reboot
+          - name: Gather facts before the restart
             ansible.builtin.setup:
               gather_subset: [hardware]
 
           - name: Remember the size before
             ansible.builtin.set_fact:
-              resize_before: "{{ ansible_processor_vcpus }} vCPU / {{ ansible_memtotal_mb }} MiB"
+              resize_before: "{{ ansible_facts['processor_vcpus'] }} vCPU / {{ ansible_facts['memtotal_mb'] }} MiB"
 
-          - name: Reboot, so added CPU and memory apply
-            ansible.builtin.reboot:
-              reboot_timeout: 600
-            when: resize_reboot | bool
+          - name: Restart the VM from the Proxmox host, so pending CPU and memory apply
+            when: resize_reboot == 'host'
+            block:
+              - name: The host restart needs node, vmid and a token
+                ansible.builtin.assert:
+                  that:
+                    - proxmox_node is defined and proxmox_node | length > 0
+                    - proxmox_vmid is defined and proxmox_vmid | string | length > 0
+                    - proxmox_api_url | length > 0
+                    - lookup('env', 'PROXMOX_TOKEN_ID') | length > 0
+                    - lookup('env', 'PROXMOX_TOKEN_SECRET') | length > 0
+                  fail_msg: >-
+                    resize_reboot=host needs proxmox_node, proxmox_vmid and
+                    PROXMOX_API_URL / PROXMOX_TOKEN_ID / PROXMOX_TOKEN_SECRET in the env
 
-          - name: Gather facts after the reboot
+              - name: Ask Proxmox to restart the VM (applies pending changes)
+                ansible.builtin.uri:
+                  url: "{{ proxmox_api_url }}/api2/json/nodes/{{ proxmox_node }}/qemu/{{ proxmox_vmid }}/status/reboot"
+                  method: POST
+                  headers:
+                    Authorization: "PVEAPIToken={{ lookup('env', 'PROXMOX_TOKEN_ID') }}={{ lookup('env', 'PROXMOX_TOKEN_SECRET') }}"
+                  validate_certs: "{{ proxmox_validate_certs }}"
+                  return_content: true
+                register: resize_task
+                delegate_to: localhost
+                become: false
+                no_log: true
+
+              - name: Wait for the Proxmox task to finish
+                ansible.builtin.uri:
+                  url: "{{ proxmox_api_url }}/api2/json/nodes/{{ proxmox_node }}/tasks/{{ resize_task.json.data | urlencode }}/status"
+                  headers:
+                    Authorization: "PVEAPIToken={{ lookup('env', 'PROXMOX_TOKEN_ID') }}={{ lookup('env', 'PROXMOX_TOKEN_SECRET') }}"
+                  validate_certs: "{{ proxmox_validate_certs }}"
+                register: resize_task_status
+                until: resize_task_status.json.data.status == 'stopped'
+                retries: 60
+                delay: 10
+                delegate_to: localhost
+                become: false
+                no_log: true
+
+              - name: The Proxmox task succeeded
+                ansible.builtin.assert:
+                  that: resize_task_status.json.data.exitstatus == 'OK'
+                  fail_msg: "Proxmox reboot task ended with {{ resize_task_status.json.data.exitstatus }}"
+
+              - name: Wait until the VM is back
+                ansible.builtin.wait_for_connection:
+                  delay: 15
+                  sleep: 5
+                  timeout: 600
+                become: false
+
+          - name: Gather facts after the restart
             ansible.builtin.setup:
+
+          - name: The guest shows the new size
+            ansible.builtin.assert:
+              that:
+                - resize_expect_vcpus is not defined or ansible_facts['processor_vcpus'] | int == resize_expect_vcpus | int
+                # memtotal is the RAM minus what the kernel reserves: within 10 %.
+                - resize_expect_memory_mb is not defined or ansible_facts['memtotal_mb'] | int >= (resize_expect_memory_mb | int * 0.9) | int
+              fail_msg: >-
+                the guest shows {{ ansible_facts['processor_vcpus'] }} vCPU / {{ ansible_facts['memtotal_mb'] }} MiB,
+                expected {{ resize_expect_vcpus | default('-') }} / {{ resize_expect_memory_mb | default('-') }}
 
           - name: Grow partition, LVM and filesystems into the new disk space
             ansible.builtin.include_role:
@@ -178,7 +251,7 @@ playbooks:
             ansible.builtin.debug:
               msg:
                 - "before: {{ resize_before }}"
-                - "now:    {{ ansible_processor_vcpus }} vCPU / {{ ansible_memtotal_mb }} MiB"
+                - "now:    {{ ansible_facts['processor_vcpus'] }} vCPU / {{ ansible_facts['memtotal_mb'] }} MiB"
                 - "{{ resize_df.stdout_lines | default([]) }}"
 
   - name: setup
