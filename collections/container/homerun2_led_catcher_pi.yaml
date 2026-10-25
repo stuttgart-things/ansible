@@ -125,7 +125,7 @@ playbooks:
           # --- Redis (led, full, web) ---
           led_redis_addr: ""
           led_redis_port: 6379
-          led_redis_stream: messages
+          led_redis_stream: messages            # comma-separated for several, e.g. messages,tabletennis (REDIS_STREAMS)
           led_redis_password: ""
           # One Pi, several LANs -- e.g. a panel that travels with an edge box between two networks.
           # Per LAN: the default gateway that identifies it, the Redis to consume from there, and
@@ -609,7 +609,13 @@ playbooks:
                 {% if led_mode != 'standalone' %}
                 Environment=REDIS_ADDR={{ led_redis_addr }}
                 Environment=REDIS_PORT={{ led_redis_port }}
+                {% if ',' in led_redis_stream %}
+                # several streams at once: the catcher reads REDIS_STREAMS, and would take
+                # a comma inside REDIS_STREAM for one stream of that name
+                Environment=REDIS_STREAMS={{ led_redis_stream }}
+                {% else %}
                 Environment=REDIS_STREAM={{ led_redis_stream }}
+                {% endif %}
                 Environment=CONSUMER_GROUP={{ led_consumer_group }}
                 Environment=PROFILE_PATH={{ led_dir }}/profile.yaml
                 {% if led_ui_stream_presets | length > 0 %}
