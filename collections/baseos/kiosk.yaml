@@ -15,6 +15,9 @@ playbooks:
       #     -e kiosk_reset_idle_seconds=300 -e kiosk_tab_zoom=100,80,120
       # Private CAs Firefox must trust (PEM files on the controller):
       #     -e kiosk_ca_certs=/path/ca-1.crt,/path/ca-2.crt
+      # sthings-portal with a login: its kiosk token (keep it in a vault, not in the URLs
+      # or in a public kiosk_config_url file) is added to every tab under kiosk_portal_url:
+      #     -e kiosk_portal_url=https://lab-portal.example.com/ -e @kiosk-secrets.vault.yaml  # kiosk_portal_token
       # Gateways per role can be overridden via -e '{"edge_role_gateways": {...}}'
       - name: Edge box - role detection and kiosk browser
         hosts: "{{ target_host | default('all') }}"
@@ -40,6 +43,11 @@ playbooks:
           kiosk_ca_dir: /usr/local/share/ca-certificates/kiosk
           kiosk_ca_list: "{{ (kiosk_ca_certs.split(',') if kiosk_ca_certs is string else kiosk_ca_certs) | map('trim') | select | list }}"
           kiosk_ca_paths: "{{ kiosk_ca_list | map('basename') | map('regex_replace', '\\.(crt|pem)$', '') | map('regex_replace', '^(.*)$', kiosk_ca_dir ~ '/\\1.crt') | list }}"
+          # sthings-portal behind a login (AUTH_KIOSK_TOKEN): the token goes to /etc/kiosk/portal-token
+          # (readable by kiosk_user only) and is appended as ?kiosk_token= to every tab starting with
+          # kiosk_portal_url when Firefox starts. The portal drops it from the URL right away.
+          kiosk_portal_url: ""
+          kiosk_portal_token: ""
           kiosk_user: kiosk
           edge_role_default: auto       # only written if /etc/edge-role does not exist yet
           edge_role_wait_seconds: 30    # tty1: max. wait for a default route before deciding the role
@@ -70,7 +78,9 @@ playbooks:
               that:
                 - kiosk_tabs | length > 0 or kiosk_config_url | length > 0
                 - kiosk_rotate_seconds | int >= 0
-              fail_msg: "Please set -e kiosk_url=https://..., -e kiosk_urls=https://...,https://... or -e kiosk_config_url=https://... (kiosk_rotate_seconds >= 0)"
+                - (kiosk_portal_token | length > 0) == (kiosk_portal_url | length > 0)
+                - kiosk_portal_url | length == 0 or kiosk_portal_url is match('https?://[^/]+/')
+              fail_msg: "Please set -e kiosk_url=https://..., -e kiosk_urls=https://...,https://... or -e kiosk_config_url=https://... (kiosk_rotate_seconds >= 0; kiosk_portal_url like https://host/ and kiosk_portal_token only together)"
 
         tasks:
           # ------------------------------------------------------------------
@@ -458,6 +468,27 @@ playbooks:
                 KIOSK_ZOOM_DELAY={{ kiosk_tab_zoom_delay_seconds | int }}
             notify: Restart getty tty1
 
+          - name: Portal kiosk token (kiosk_portal_token), readable by the kiosk user only
+            ansible.builtin.copy:
+              dest: /etc/kiosk/portal-token
+              owner: root
+              group: "{{ kiosk_user }}"
+              mode: "0640"
+              content: |
+                # Managed by Ansible (sthings.baseos.kiosk), read by kiosk-session
+                KIOSK_PORTAL_URL={{ kiosk_portal_url | quote }}
+                KIOSK_PORTAL_TOKEN={{ kiosk_portal_token | quote }}
+            no_log: true
+            when: kiosk_portal_token | length > 0
+            notify: Restart getty tty1
+
+          - name: No portal kiosk token without kiosk_portal_token
+            ansible.builtin.file:
+              path: /etc/kiosk/portal-token
+              state: absent
+            when: kiosk_portal_token | length == 0
+            notify: Restart getty tty1
+
           - name: Kiosk session (reads its settings at start, see kiosk-config)
             ansible.builtin.copy:
               dest: /usr/local/bin/kiosk-session
@@ -494,6 +525,21 @@ playbooks:
                 cp "$config" "$state/kiosk-active.json"
                 eval "$("$helper" shell < "$state/kiosk-active.json")"
                 eval "set -- $KIOSK_URLS"
+                # sthings-portal behind a login: its kiosk token on every tab under the portal URL
+                # (/etc/kiosk/portal-token, from kiosk_portal_token). Added here, so it is neither in
+                # config.json nor in a kiosk_config_url file.
+                KIOSK_PORTAL_URL= KIOSK_PORTAL_TOKEN=
+                [ -r /etc/kiosk/portal-token ] && . /etc/kiosk/portal-token
+                if [ -n "$KIOSK_PORTAL_URL" ] && [ -n "$KIOSK_PORTAL_TOKEN" ]; then
+                  for url do
+                    shift
+                    case "$url" in
+                      "$KIOSK_PORTAL_URL"*)
+                        case "$url" in *\?*) url="$url&kiosk_token=$KIOSK_PORTAL_TOKEN" ;; *) url="$url?kiosk_token=$KIOSK_PORTAL_TOKEN" ;; esac ;;
+                    esac
+                    set -- "$@" "$url"
+                  done
+                fi
                 /usr/bin/firefox --kiosk "$@" &
                 firefox=$!
 
