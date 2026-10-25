@@ -112,6 +112,75 @@ playbooks:
               reboot_timeout: 600
             when: ansible_facts['os_family'] in ['Debian', 'RedHat', 'Suse']
 
+  - name: resize_vm
+    # After a VM was resized in place (stuttgart-things request-claim-change):
+    # CPU and memory added on Proxmox apply only at the next boot, and a grown
+    # disk is not yet in the guest's partition, LVM and filesystems. Reboot
+    # first, then let manage_filesystem claim the new space -- the same role
+    # and the same split as setup, so a resized VM looks like one built that
+    # size.
+    play: |
+      ---
+      - name: Apply a resize -- reboot, then grow partition, LVM and filesystems
+        hosts: "{{ target_host | default('all') }}"
+        become: true
+        # Same reason as setup: the host may not accept SSH yet.
+        gather_facts: false
+
+        vars:
+          resize_reboot: true
+          manage_filesystem: true
+          lvm_home_sizing: "15%"
+          lvm_root_sizing: "35%"
+          lvm_var_sizing: "50%"
+
+        pre_tasks:
+          - name: Wait until the host accepts connections
+            ansible.builtin.wait_for_connection:
+              delay: 0
+              sleep: 5
+              timeout: "{{ wait_for_connection_timeout | default(600) }}"
+            become: false
+
+          - name: Include vars
+            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
+            when: path_to_vars_file is defined
+
+        tasks:
+          - name: Gather facts before the reboot
+            ansible.builtin.setup:
+              gather_subset: [hardware]
+
+          - name: Remember the size before
+            ansible.builtin.set_fact:
+              resize_before: "{{ ansible_processor_vcpus }} vCPU / {{ ansible_memtotal_mb }} MiB"
+
+          - name: Reboot, so added CPU and memory apply
+            ansible.builtin.reboot:
+              reboot_timeout: 600
+            when: resize_reboot | bool
+
+          - name: Gather facts after the reboot
+            ansible.builtin.setup:
+
+          - name: Grow partition, LVM and filesystems into the new disk space
+            ansible.builtin.include_role:
+              name: sthings.baseos.manage_filesystem
+            when: manage_filesystem | bool
+
+          - name: Report the size now
+            ansible.builtin.command: df -h --output=target,size,avail / /var /home
+            register: resize_df
+            changed_when: false
+            failed_when: false
+
+          - name: Resize applied
+            ansible.builtin.debug:
+              msg:
+                - "before: {{ resize_before }}"
+                - "now:    {{ ansible_processor_vcpus }} vCPU / {{ ansible_memtotal_mb }} MiB"
+                - "{{ resize_df.stdout_lines | default([]) }}"
+
   - name: setup
     play: |
       ---
