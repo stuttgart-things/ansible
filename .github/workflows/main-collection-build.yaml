@@ -134,7 +134,7 @@ jobs:
       runs-on: ubuntu-latest
       environment-name: k8s
       collection-directory: ${{ matrix.collection-directory }}
-      dagger-module-version: v0.138.0
+      dagger-module-version: v0.139.0
       dagger-version: v0.21.11
       # BUILD THE PUSHED COMMIT, NOT THE BRANCH TIP. THE INPUT IS PASSED STRAIGHT
       # TO actions/checkout ref, WHICH TAKES A SHA. WITH THE BRANCH NAME, RUNS OF
