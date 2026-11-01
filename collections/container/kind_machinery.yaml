@@ -747,8 +747,10 @@ playbooks:
             # users as managed resources instead of mc. Needs provider-minio, which
             # provider_packages installs, and a minio.crossplane.io ProviderConfig,
             # which is per environment and comes from the exec vars.
+            # v0.1.1 (crossplane-configurations#551): bucketName is immutable,
+            # a rename used to wedge the XR on the unrenameable user.
             - name: stuttgart-things-crossplane-configurations-minio
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/minio:v0.1.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/minio:v0.1.1"
             # Runs a tofu module as a Workspace. Pulls provider-opentofu, which
             # the packer-release test VM also needs at RUN time — but nothing
             # installed here consumes its CRD at apply time, so no wait.
@@ -2553,8 +2555,10 @@ playbooks:
             # users as managed resources instead of mc. Needs provider-minio, which
             # provider_packages installs, and a minio.crossplane.io ProviderConfig,
             # which is per environment and comes from the exec vars.
+            # v0.1.1 (crossplane-configurations#551): bucketName is immutable,
+            # a rename used to wedge the XR on the unrenameable user.
             - name: stuttgart-things-crossplane-configurations-minio
-              package: "ghcr.io/stuttgart-things/crossplane-configurations/minio:v0.1.0"
+              package: "ghcr.io/stuttgart-things/crossplane-configurations/minio:v0.1.1"
             # Runs a tofu module as a Workspace. Pulls provider-opentofu, which
             # the packer-release test VM also needs at RUN time — but nothing
             # installed here consumes its CRD at apply time, so no wait.
