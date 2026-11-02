@@ -120,6 +120,12 @@ playbooks:
           rancher_kubeconfig_wait_timeout: 900
           rancher_kubeconfig_wait_delay: 5
           rancher_kubeconfig_api_port: 6443
+          # WHICH HOST THE PUBLISHED KUBECONFIG NAMES. EMPTY: rancher_node_address
+          # IF SET, ELSE THE NODE'S FQDN ONCE A PROBE FROM THE NODE SHOWS IT
+          # RESOLVES AND THE API PRESENTS A CERTIFICATE FOR IT SIGNED BY THE
+          # CLUSTER CA, ELSE THE DEFAULT ROUTE'S IP. A DHCP LEASE CAN MOVE THE IP
+          # ACROSS A REBOOT, THE NAME FOLLOWS IT (stuttgart-things/stuttgart-things#4211).
+          rancher_kubeconfig_server_host: ""
           secret_path_kubeconfig: kubeconfigs
           # cluster_name: my-cluster                          # REQUIRED with rancher_upload_kubeconfig
           rancher_kubeconfig_vault_addr: "{{ lookup('env', 'VAULT_ADDR') }}"
@@ -329,16 +335,78 @@ playbooks:
                 register: _rancher_kubeconfig_raw
                 no_log: true
 
+              # THE PROBE NEEDS THE CLUSTER CA AS A FILE. IT IS THE PUBLIC HALF OF
+              # THE KUBECONFIG, BUT IT IS CUT FROM THE SAME no_log CONTENT.
+              - name: Write the cluster CA for the FQDN probe
+                ansible.builtin.copy:
+                  content: >-
+                    {{ (_rancher_kubeconfig_raw.content | b64decode | from_yaml)
+                       .clusters[0].cluster['certificate-authority-data'] | b64decode }}
+                  dest: /tmp/rancher-kubeconfig-probe-ca.crt
+                  mode: "0644"
+                no_log: true
+                when:
+                  - rancher_kubeconfig_server_host | default('', true) | trim | length == 0
+                  - rancher_node_address | default('', true) | trim | length == 0
+                  - "'.' in ansible_fqdn"
+
+              # ANY HTTP ANSWER PROVES DNS AND TLS; 401/403 ONLY MEAN ANONYMOUS
+              # AUTH IS OFF.
+              - name: Probe the API server under the node's FQDN
+                ansible.builtin.uri:
+                  url: "https://{{ ansible_fqdn }}:{{ rancher_kubeconfig_api_port }}/version"
+                  ca_path: /tmp/rancher-kubeconfig-probe-ca.crt
+                  validate_certs: true
+                  status_code: [200, 401, 403]
+                register: _rancher_fqdn_probe
+                until: (_rancher_fqdn_probe.status | default(-1)) in [200, 401, 403]
+                retries: 6
+                delay: 5
+                failed_when: false
+                when:
+                  - rancher_kubeconfig_server_host | default('', true) | trim | length == 0
+                  - rancher_node_address | default('', true) | trim | length == 0
+                  - "'.' in ansible_fqdn"
+
+              - name: Remove the probe CA
+                ansible.builtin.file:
+                  path: /tmp/rancher-kubeconfig-probe-ca.crt
+                  state: absent
+
               # THE DISTRIBUTION POINTS ITS KUBECONFIG AT 127.0.0.1, WHICH IS
-              # USELESS FROM ANYWHERE ELSE. THE ADDRESS RANCHER REGISTERED THE
-              # NODE WITH WINS; OTHERWISE THE DEFAULT ROUTE'S.
-              - name: Point the kubeconfig at the node address
+              # USELESS FROM ANYWHERE ELSE. SEE rancher_kubeconfig_server_host
+              # FOR WHICH HOST REPLACES IT.
+              - name: Name the API server host for the kubeconfig
+                ansible.builtin.set_fact:
+                  _rancher_kubeconfig_host: >-
+                    {{ rancher_kubeconfig_server_host | trim
+                       if rancher_kubeconfig_server_host | default('', true) | trim | length > 0
+                       else rancher_node_address | trim
+                       if rancher_node_address | default('', true) | trim | length > 0
+                       else ansible_fqdn
+                       if (_rancher_fqdn_probe.status | default(-1)) in [200, 401, 403]
+                       else ansible_default_ipv4.address }}
+
+              - name: Report the API server host
+                ansible.builtin.debug:
+                  msg: "kubeconfig server: https://{{ _rancher_kubeconfig_host }}:{{ rancher_kubeconfig_api_port }}"
+
+              - name: Report why the kubeconfig keeps the IP
+                ansible.builtin.debug:
+                  msg: >-
+                    The FQDN '{{ ansible_fqdn }}' did not pass the probe
+                    ({{ _rancher_fqdn_probe.msg | default('no domain part') }}), so the
+                    kubeconfig keeps the IP. Reserve it in DHCP or set
+                    rancher_kubeconfig_server_host.
+                when: _rancher_kubeconfig_host == ansible_default_ipv4.address
+
+              - name: Point the kubeconfig at the API server host
                 ansible.builtin.set_fact:
                   _rancher_kubeconfig: >-
                     {{
                       _rancher_kubeconfig_raw.content | b64decode
                       | regex_replace('https://127\.0\.0\.1:',
-                          'https://' ~ (rancher_node_address | default(ansible_default_ipv4.address, true)) ~ ':')
+                          'https://' ~ _rancher_kubeconfig_host ~ ':')
                     }}
                 no_log: true
 
