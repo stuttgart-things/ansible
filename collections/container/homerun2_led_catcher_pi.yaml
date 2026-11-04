@@ -109,6 +109,9 @@ playbooks:
           # --- Display queue (homerun2-led-catcher#142 and later) ---
           led_display_queue: ""                 # e.g. 3: finite displays wait FIFO, up to N; empty leaves DISPLAY_QUEUE unset (1: the newest waiting one wins)
 
+          # --- Redis startup wait (homerun2-led-catcher#158 and later) ---
+          led_redis_startup_timeout: ""         # e.g. 0: retry Redis without a limit; 5m; empty leaves REDIS_STARTUP_TIMEOUT unset (120s, then the catcher exits)
+
           # --- TLS (optional): a hostname, a PKI certificate, Caddy on 443 ---
           led_tls_hostname: ""                  # e.g. matrix.sthings.lab; empty: no certificate, no Caddy
           led_tls_ip_sans: []                   # e.g. [192.168.10.120] or "192.168.10.120", so https://<ip> is valid too
@@ -617,6 +620,10 @@ playbooks:
                 Environment=REDIS_STREAM={{ led_redis_stream }}
                 {% endif %}
                 Environment=CONSUMER_GROUP={{ led_consumer_group }}
+                {% if led_redis_startup_timeout | string | length > 0 %}
+                # how long the consumer waits for Redis at startup; 0: no limit
+                Environment=REDIS_STARTUP_TIMEOUT={{ led_redis_startup_timeout }}
+                {% endif %}
                 Environment=PROFILE_PATH={{ led_dir }}/profile.yaml
                 {% if led_ui_stream_presets | length > 0 %}
                 # the simulator's stream switch: comma-separated presets, streams in one joined by |
