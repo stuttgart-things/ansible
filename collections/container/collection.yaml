@@ -18,7 +18,9 @@ requirements: |
   roles:
     - src: https://github.com/stuttgart-things/install-configure-docker.git
       scm: git
-      version: 2026.10.15
+      # 2026.11.05 -- ansible-lint clean (install-configure-docker#47); no
+      # behaviour change.
+      version: 2026.11.05
     - src: https://github.com/stuttgart-things/install-requirements.git
       scm: git
       version: 2026.10.09-1
@@ -27,7 +29,12 @@ requirements: |
       # 2026.09.01 -- install-ca-auth derives the CA filename from the Vault
       # instance instead of `999 | random`, so the file is idempotent and can be
       # removed again. See collections/baseos/collection.yaml for the full why.
-      version: 2026.09.01
+      # 2026.11.05 -- ansible-lint clean (install-configure-vault#10). Fixes the
+      # ssh-conf-server/client includes (.yml -> .yaml; they failed at runtime)
+      # and sets explicit modes: generated private key and the init summary
+      # (root token, unseal keys) are now 0600; vault.key stays 0644 (read by
+      # the container's vault user).
+      version: 2026.11.05
     - src: https://github.com/stuttgart-things/create-send-webhook.git
       scm: git
       version: 2024.09.06
