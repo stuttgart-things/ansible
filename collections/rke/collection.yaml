@@ -34,4 +34,5 @@ requirements: |
     # DOES NOT RUN.
     - src: https://github.com/stuttgart-things/manage-filesystem.git
       scm: git
-      version: 2026.13.04
+      # 2026.13.05 -- LVs never shrink, fs grow always finishes (manage-filesystem#6).
+      version: 2026.13.05

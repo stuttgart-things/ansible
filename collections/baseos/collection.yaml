@@ -29,7 +29,11 @@ requirements: |
       version: 2026.10.09-1
     - src: https://github.com/stuttgart-things/manage-filesystem.git
       scm: git
-      version: 2026.13.04
+      # 2026.13.05 -- mgm-lvm never shrinks an LV (shrink: false, no force) and
+      # always finishes the fs grow (manage-filesystem#6/#7). Before, a resize
+      # with a smaller share than the VM was built with failed on xfs /home and
+      # could cut a mounted ext4 on lvm2 < 2.03.17 (stuttgart-things#4348).
+      version: 2026.13.05
     - src: https://github.com/stuttgart-things/install-configure-vault.git
       scm: git
       # 2026.09.01 -- install-ca-auth now derives the CA FILENAME from the Vault
