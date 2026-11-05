@@ -18,4 +18,6 @@ requirements: |
   roles:
     - src: https://github.com/stuttgart-things/install-configure-docker.git
       scm: git
-      version: 2026.10.15
+      # 2026.11.05 -- ansible-lint clean (install-configure-docker#47); no
+      # behaviour change.
+      version: 2026.11.05

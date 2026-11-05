@@ -56,13 +56,20 @@ requirements: |
       # `vault_ca_cleanup_legacy: true` (opt-in, default false) clears the
       # vault-ca-<digits>.crt files the old versions left behind. Not set
       # anywhere yet -- it removes trust, so it wants a deliberate run.
-      version: 2026.09.01
+      # 2026.11.05 -- ansible-lint clean (install-configure-vault#10). Fixes the
+      # ssh-conf-server/client includes (.yml -> .yaml; they failed at runtime)
+      # and sets explicit modes: generated private key and the init summary
+      # (root token, unseal keys) are now 0600; vault.key stays 0644 (read by
+      # the container's vault user).
+      version: 2026.11.05
     - src: https://github.com/stuttgart-things/create-send-webhook.git
       scm: git
       version: 2024.09.06
     - src: https://github.com/stuttgart-things/install-configure-docker.git
       scm: git
-      version: 2026.10.15
+      # 2026.11.05 -- ansible-lint clean (install-configure-docker#47); no
+      # behaviour change.
+      version: 2026.11.05
     # PINNED BY COMMIT, not by a dated tag like its siblings: the role repo has
     # never been tagged, and its main branch has not moved since 2023-05-10.
     # A SHA is at least as reproducible; swap it for a tag once the repo has one.
