@@ -33,7 +33,7 @@ tasks:
     preconditions: *venv
     cmds:
       - |
-        COLLECTION_NAME=$(gum choose "baseos" "container" "awx" )
+        COLLECTION_NAME=$(gum choose "baseos" "container" )
 
         molecule test -s ${COLLECTION_NAME}
 

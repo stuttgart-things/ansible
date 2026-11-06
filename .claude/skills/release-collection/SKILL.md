@@ -145,9 +145,12 @@ the PR by hand instead.
 
 `pr-collection-build.yaml` builds with `publish-release: false` — the artifact is
 uploaded for review, never published. It also runs Molecule, but only for scenarios
-in the hardcoded list `^collections/(baseos|container|rke)$`; `awx` needs a kind
-cluster plus Vault credentials so it runs nightly instead
-(`nightly-molecule-awx.yaml`).
+in the hardcoded list `^collections/(baseos|container|rke)$`.
+
+A collection the PR or push **deletes** is skipped, not built: the PR build drops a
+folder whose `collection.yaml` the files API reports as `removed`, the main build
+one without `collection.yaml` at the pushed commit. That is how `sthings.awx` was
+retired (#1442) without a red matrix job; its last release stays published.
 
 ## Adding a new collection
 
@@ -165,7 +168,7 @@ skip a new one:
 
 - `pr-collection-build.yaml` → the `MOLECULE_FOLDERS` grep. No molecule gating until
   the name is added.
-- `Taskfile.yaml` → the `run-molecule` task's `gum choose "baseos" "container" "awx"`.
+- `Taskfile.yaml` → the `run-molecule` task's `gum choose "baseos" "container"`.
 
 Before adding a collection, ask whether the plays actually need a separate one. A
 collection buys nothing operationally here — all collections build from the same

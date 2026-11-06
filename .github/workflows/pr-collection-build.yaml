@@ -40,6 +40,7 @@ jobs:
           set -eu
 
           CHANGED_FILES=$(mktemp)
+          REMOVED_FILES=$(mktemp)
           PAGE=1
 
           # THE FILES API PAGES AT 30 BY DEFAULT. A PR TOUCHING MORE THAN THAT
@@ -65,6 +66,7 @@ jobs:
             fi
 
             printf '%s\n' "${BATCH}" >> "${CHANGED_FILES}"
+            printf '%s' "${BODY}" | jq -r '.[] | select(.status == "removed") | .filename' >> "${REMOVED_FILES}"
             PAGE=$((PAGE + 1))
           done
 
@@ -76,6 +78,19 @@ jobs:
           # collections/ TO A BARE "collections" THAT FELL THROUGH AS ""
           ALL_CHANGED_FOLDERS=$(awk -F/ 'NF>=3 && $1=="collections" {print $1"/"$2}' \
             "${CHANGED_FILES}" | sort -u)
+
+          # A COLLECTION THE PR DELETES HAS NOTHING LEFT TO BUILD. ITS
+          # collection.yaml IS "removed" IN THE FILES API, SO DROP IT RATHER
+          # THAN FAIL THE MATRIX ON A MISSING DIRECTORY (sthings.awx, #1442)
+          ALL_CHANGED_FOLDERS=$(printf '%s\n' "${ALL_CHANGED_FOLDERS}" \
+            | while read -r d; do
+                [ -n "$d" ] || continue
+                if grep -qx "$d/collection.yaml" "${REMOVED_FILES}"; then
+                  echo "skipping $d: removed by this PR" >&2
+                else
+                  echo "$d"
+                fi
+              done)
 
           echo "ALL_CHANGED_FOLDERS=${ALL_CHANGED_FOLDERS:-<none>}"
 
@@ -96,9 +111,7 @@ jobs:
           echo "has_changes=true" >> "$GITHUB_OUTPUT"
           echo "collection_folders=${JSON_FOLDERS}" >> "$GITHUB_OUTPUT"
 
-          # ONLY THESE SCENARIOS GATE A PR. awx NEEDS A KIND CLUSTER, AN AWX
-          # DEPLOY AND VAULT CREDENTIALS, SO IT RUNS NIGHTLY INSTEAD
-          # (nightly-molecule-awx.yaml). rke IS SYNTAX-ONLY AND RUNS BELOW
+          # ONLY THESE SCENARIOS GATE A PR. rke IS SYNTAX-ONLY AND RUNS BELOW
           MOLECULE_FOLDERS=$(printf '%s\n' "${ALL_CHANGED_FOLDERS}" \
             | grep -E '^collections/(baseos|container|rke)$' || true)
 
