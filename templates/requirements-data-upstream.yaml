@@ -7,7 +7,6 @@
 gitCollections:
   ansible.netcommon: 8.6.2
   ansible.posix: 2.2.2
-  awx.awx: 24.6.1
   community.crypto: 3.3.0
   community.docker: 5.2.2
   community.general: 13.3.0
@@ -18,5 +17,4 @@ gitCollections:
 artifactCollections:
   - https://github.com/stuttgart-things/ansible/releases/download/sthings-container-26.822.1267/sthings-container-26.822.1267.tar.gz
   - https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-26.821.1265/sthings-baseos-26.821.1265.tar.gz
-  - https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-26.812.1209/sthings-awx-26.812.1209.tar.gz
   - https://github.com/stuttgart-things/ansible/releases/download/sthings-rke-26.730.1176/sthings-rke-26.730.1176.tar.gz

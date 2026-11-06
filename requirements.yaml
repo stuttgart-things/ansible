@@ -4,8 +4,6 @@ collections:
     version: 8.7.1
   - name: ansible.posix
     version: 2.2.2
-  - name: awx.awx
-    version: 24.6.1
   - name: community.crypto
     version: 3.5.1
   - name: community.docker
@@ -28,7 +26,6 @@ collections:
   # NB the URL shape changed: releases up to sthings-*-26.2.675 were TAGGED
   # with a trailing `.tar.gz`, so the old links repeated it in the tag segment.
   # Current tags do not carry it.
-  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-awx-26.812.1209/sthings-awx-26.812.1209.tar.gz
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-26.1002.1398/sthings-container-26.1002.1398.tar.gz
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-rke-26.1003.1401/sthings-rke-26.1003.1401.tar.gz
   - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-26.1003.1399/sthings-baseos-26.1003.1399.tar.gz

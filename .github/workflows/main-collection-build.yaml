@@ -79,7 +79,11 @@ jobs:
           # SO A NESTED FILE STILL MAPS TO THE COLLECTION THAT OWNS IT
           CHANGED_FOLDERS=$(git diff --name-only "${BEFORE}" "${{ github.sha }}" -- collections \
             | awk -F/ 'NF>=3 && $1=="collections" {print $1"/"$2}' \
-            | sort -u)
+            | sort -u \
+            | while read -r d; do
+                # A COLLECTION THE PUSH DELETED HAS NOTHING TO BUILD (sthings.awx, #1442)
+                if [ -f "$d/collection.yaml" ]; then echo "$d"; else echo "skipping $d: no collection.yaml at this commit" >&2; fi
+              done)
 
           echo "CHANGED COLLECTIONS: ${CHANGED_FOLDERS:-<none>}"
 

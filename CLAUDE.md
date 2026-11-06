@@ -2,7 +2,7 @@
 
 ## Project Structure
 
-- `collections/` — Source definitions for Ansible collections (baseos, container, awx, rke)
+- `collections/` — Source definitions for Ansible collections (baseos, container, rke)
 - Each collection has a `collection.yaml` (metadata) and one or more YAML files defining playbooks
 
 ## Collection Build System
@@ -49,6 +49,6 @@ Build pipeline stages (all via Dagger):
 ## Conventions
 
 - Namespace: `sthings`
-- Collections: baseos, container, awx, rke
+- Collections: baseos, container, rke (`sthings.awx` was retired, #1442; its last release `sthings-awx-26.1105.1526` stays for reference)
 - Task runner: [Taskfile](https://taskfile.dev/) (`Taskfile.yaml`)
 - Testing: Molecule (requires venv: `task setup-venv && source .venv/bin/activate && task setup-molecule`)

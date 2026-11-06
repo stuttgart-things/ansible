@@ -7,7 +7,6 @@ ansible collections, playbooks and snippets.
 * [BASEOS](collections/baseos/README.md)
 * [CONTAINER](collections/container/README.md)
 * [RKE](collections/rke/README.md)
-* [AWX](collections/awx/README.md)
 
 ## DEV
 
