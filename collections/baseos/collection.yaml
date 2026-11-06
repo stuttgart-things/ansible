@@ -61,7 +61,11 @@ requirements: |
       # and sets explicit modes: generated private key and the init summary
       # (root token, unseal keys) are now 0600; vault.key stays 0644 (read by
       # the container's vault user).
-      version: 2026.11.05
+      # 2026.11.06 -- vault.key (and raft client keys) 0600, owned by the
+      # container's vault user (vault_container_uid/gid 100:1000) instead of
+      # 0644 root; the self-signed path's 777 cert dir is tightened after the
+      # deploy (install-configure-vault#12).
+      version: 2026.11.06
     - src: https://github.com/stuttgart-things/create-send-webhook.git
       scm: git
       version: 2024.09.06
