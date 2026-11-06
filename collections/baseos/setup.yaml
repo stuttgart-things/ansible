@@ -594,6 +594,21 @@ playbooks:
                 register: _lease_unit
                 failed_when: false
 
+              # copy does not create the parent: netplan renders the unit under
+              # /run, so the /etc drop-in dir does not exist on a fresh VM and
+              # the next task failed ("Destination directory ... does not exist",
+              # claims-rsz-vm, 2026-11-05).
+              - name: Create the drop-in directory for the default interface
+                ansible.builtin.file:
+                  path: "/etc/systemd/network/10-netplan-{{ _lease_if }}.network.d"
+                  state: directory
+                  owner: root
+                  group: root
+                  mode: '0755'
+                when:
+                  - _lease_unit.content is defined
+                  - (_lease_unit.content | b64decode) is search('(?m)^DHCP=(yes|ipv4)')
+
               - name: Write the SendRelease=no drop-in
                 ansible.builtin.copy:
                   dest: "/etc/systemd/network/10-netplan-{{ _lease_if }}.network.d/90-keep-lease.conf"
