@@ -494,6 +494,10 @@ ansible-playbook sthings.baseos.gh_runner -vv \
 | `install_docker` | `true` | Install Docker via `sthings.container.install_configure_docker` |
 | `docker_install_compose` | `true` | Also install docker compose plugin |
 | `runner_force_reconfigure` | `false` | Unregister + re-register existing runners (needed when changing labels, group, name, or scope after first deploy) |
+| `runner_workspace_hook` | `true` | Job-started hook chowns each runner's `_work` back to the runner user (root `container:` jobs leave root-owned files) |
+| `runner_docker_isolation` | `true` | Each runner gets its own `DOCKER_CONFIG` (`<home>/.docker-<instance>`, set in its `.env`), and the job-started hook empties its `config.json` before every job. No job inherits another job's registry logins -- an expired `GITHUB_TOKEN` there makes ghcr answer `403` even for public packages (#1446). A job that needs a registry logs in itself; nothing may rely on a login provisioned on the host. |
+
+Changing `runner_docker_isolation` or `runner_workspace_hook` rewrites the runners' `.env` and restarts them, which cancels a job in flight -- roll out when the runners are idle.
 
 </details>
 
