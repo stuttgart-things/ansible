@@ -51,6 +51,15 @@ playbooks:
           # every job after it, reruns included.
           runner_workspace_hook: true
           runner_hook_dir: /opt/runner-hooks
+          # Registry logins per runner and per job (ansible#1446). All instances
+          # run as one user with one $HOME, so without this they share
+          # ~/.docker/config.json: a job inherits the logins other jobs left
+          # there, and ghcr answers a job's expired GITHUB_TOKEN with 403 even
+          # for a public package. true gives each instance its own
+          # DOCKER_CONFIG (.env) and empties its config.json before every job
+          # (job-started hook). Nothing may rely on a login provisioned on the
+          # host: a job that needs a registry logs in itself.
+          runner_docker_isolation: true
 
         pre_tasks:
           - name: Include vars
@@ -272,6 +281,18 @@ playbooks:
                 {% endfor %}
             when: runner_workspace_hook | bool
 
+          - name: Create per-runner docker config directory
+            ansible.builtin.file:
+              path: "{{ runner_user_home }}/.docker-{{ item.name }}"
+              state: directory
+              owner: "{{ runner_user }}"
+              group: "{{ runner_linux_group }}"
+              mode: '0700'
+            loop: "{{ runner_instances }}"
+            loop_control:
+              label: "{{ item.name }}"
+            when: runner_docker_isolation | bool
+
           - name: Create runner hook directory
             ansible.builtin.file:
               path: "{{ runner_hook_dir }}"
@@ -279,7 +300,7 @@ playbooks:
               owner: root
               group: root
               mode: '0755'
-            when: runner_workspace_hook | bool
+            when: runner_workspace_hook | bool or runner_docker_isolation | bool
 
           # Root-owned and not writable by the runner user: the runner executes
           # it, so it must not be able to change what it does.
@@ -291,16 +312,23 @@ playbooks:
               mode: '0755'
               content: |
                 #!/bin/sh
-                # Managed by sthings.baseos.gh_runner (runner_workspace_hook).
-                # Hand _work back to {{ runner_user }} before the job: a previous
-                # `container:` job ran as root and may have left root-owned
-                # files that break the checkout. Never fails the job.
+                # Managed by sthings.baseos.gh_runner. Never fails the job.
+                {% if runner_workspace_hook | bool %}
+                # runner_workspace_hook: hand _work back to {{ runner_user }}
+                # before the job -- a previous `container:` job ran as root and
+                # may have left root-owned files that break the checkout.
                 sudo -n /usr/bin/chown -R {{ runner_user }}:{{ runner_linux_group }} {{ runner_base_dir }}-{{ item.name }}/_work 2>/dev/null || true
+                {% endif %}
+                {% if runner_docker_isolation | bool %}
+                # runner_docker_isolation: start the job without the registry
+                # logins earlier jobs left behind (ansible#1446).
+                printf '{}\n' > {{ runner_user_home }}/.docker-{{ item.name }}/config.json 2>/dev/null || true
+                {% endif %}
                 exit 0
             loop: "{{ runner_instances }}"
             loop_control:
               label: "{{ item.name }}"
-            when: runner_workspace_hook | bool
+            when: runner_workspace_hook | bool or runner_docker_isolation | bool
 
           # The runner reads .env only at start: a changed line restarts the
           # service (on a host that is already running jobs, that cancels the
@@ -317,7 +345,22 @@ playbooks:
             loop: "{{ runner_instances }}"
             loop_control:
               label: "{{ item.name }}"
-            when: runner_workspace_hook | bool
+            when: runner_workspace_hook | bool or runner_docker_isolation | bool
+            notify: Restart runner instances
+
+          - name: Point each runner's DOCKER_CONFIG at its own directory
+            ansible.builtin.lineinfile:
+              path: "{{ runner_base_dir }}-{{ item.name }}/.env"
+              regexp: '^DOCKER_CONFIG='
+              line: "DOCKER_CONFIG={{ runner_user_home }}/.docker-{{ item.name }}"
+              create: true
+              owner: "{{ runner_user }}"
+              group: "{{ runner_linux_group }}"
+              mode: '0644'
+            loop: "{{ runner_instances }}"
+            loop_control:
+              label: "{{ item.name }}"
+            when: runner_docker_isolation | bool
             notify: Restart runner instances
 
           - name: Install runner instances as systemd services
@@ -392,6 +435,10 @@ vars:
       # Job-started hook: chown each runner's _work back to the runner user
       # before every job (root `container:` jobs leave root-owned files).
       runner_workspace_hook: true
+
+      # Own DOCKER_CONFIG per runner, emptied before every job (ansible#1446):
+      # no job inherits another job's (expired) registry logins.
+      runner_docker_isolation: true
 
       # Runner settings
       runner_version: "2.338.1" # datasource=github-releases depName=actions/runner
