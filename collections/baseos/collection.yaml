@@ -65,7 +65,9 @@ requirements: |
       # container's vault user (vault_container_uid/gid 100:1000) instead of
       # 0644 root; the self-signed path's 777 cert dir is tightened after the
       # deploy (install-configure-vault#12).
-      version: 2026.11.06
+      # 2026.11.13 -- trust-store path for RedHat 10 (Rocky/RHEL 10,
+      # install-configure-vault#14, stuttgart-things#4489).
+      version: 2026.11.13
     - src: https://github.com/stuttgart-things/create-send-webhook.git
       scm: git
       version: 2024.09.06
