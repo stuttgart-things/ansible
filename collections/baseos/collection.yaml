@@ -26,7 +26,9 @@ requirements: |
       scm: git
       # 2026.10.09-1 -- sthings-motd: `t gcl` (clone repos) in the TASKS row
       # (install-requirements#65); 2026.10.09: no red gradient themes (#64).
-      version: 2026.10.09-1
+      # 2026.11.13 -- python3-packaging on RedHat: ansible.builtin.pip needs it in
+      # the system python (install-requirements#68, Rocky 10, stuttgart-things#4489).
+      version: 2026.11.13
     - src: https://github.com/stuttgart-things/manage-filesystem.git
       scm: git
       # 2026.13.05 -- mgm-lvm never shrinks an LV (shrink: false, no force) and
