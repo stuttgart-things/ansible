@@ -49,3 +49,6 @@
 
 - name: ansible
   ansible.builtin.import_playbook: sthings.baseos.ansible
+
+- name: Health report (dry run, findings/v1 asserted)
+  ansible.builtin.import_playbook: health_report.yaml
