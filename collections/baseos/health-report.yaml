@@ -1,0 +1,594 @@
+---
+playbooks:
+  - name: health_report
+    play: |
+      ---
+      # =============================================================================
+      # VM health report -- read-only, findings to homerun2 (#1450)
+      # -----------------------------------------------------------------------------
+      # Collects the health of each host and sends ONE snapshot message per host
+      # to omni-pitcher (POST <PITCHER_URL>/pitch), in the findings/v1 format of
+      # stuttgart-things/stuttgart-things#4556. s3-catcher archives it under
+      # system=vm-<host>, the daily cluster analysis reads it next to the K8sGPT
+      # findings.
+      #
+      # READ-ONLY: nothing on the host is changed. `become` is used only where
+      # reading needs it (journal, failed units, package metadata, certificates).
+      # Package lists are NOT refreshed (no apt update); dnf may refresh its
+      # metadata cache when it is expired, like its timer does.
+      #
+      # Checks (each failed check is one finding):
+      #   Host/<host>          unreachable (error), reboot required (warning),
+      #                        a check that broke (warning)
+      #   Packages/updates     pending updates (info), Packages/security-updates
+      #                        (warning), Packages/update-check failed (warning)
+      #   Filesystem/<mount>   disk usage and inode usage (warn/error thresholds)
+      #   Resource/load        15 min load per CPU, Resource/memory, Resource/swap
+      #   Unit/<unit>          one per failed systemd unit (error)
+      #   Journal/err          priority err+ in the last 24h above a threshold
+      #   TimeSync/clock       clock not NTP-synchronized (chrony/timesyncd/ntpd)
+      #   Certificate/<file>   certificate files under health_report_cert_paths,
+      #   Certificate/<h:p>    certificates of health_report_tls_ports
+      #   Port/tcp/<port>      expected listening port missing (error)
+      #
+      # The play does not fail because of findings, and an unreachable host is
+      # reported as a finding while the others still report.
+      #
+      # Usage:
+      #   # dry run: print the report, send nothing (PITCHER_URL unset or pitch=false)
+      #   ansible-playbook -i inventory sthings.baseos.health_report -e health_report_pitch=false
+      #   # report to omni-pitcher
+      #   PITCHER_URL=https://omni-pitcher.example.com PITCHER_TOKEN=... \
+      #     ansible-playbook -i inventory sthings.baseos.health_report
+      #   # keep the JSON on the controller as well
+      #   ansible-playbook -i inventory sthings.baseos.health_report -e health_report_output_dir=/tmp/health
+      # =============================================================================
+
+      - name: VM health report
+        # health_report_hosts narrows it, else target_host (AnsibleRun sets
+        # -e target_host=all), else all.
+        hosts: "{{ health_report_hosts | default(target_host) | default('all') }}"
+        gather_facts: false
+        become: false
+        # An unreachable host stays in the play: it is reported as a finding.
+        ignore_unreachable: true
+
+        vars:
+          # --- Delivery ---
+          health_report_pitch: true                 # false = dry run: print only
+          health_report_pitcher_url: "{{ lookup('env', 'PITCHER_URL') }}"
+          health_report_pitcher_token: "{{ lookup('env', 'PITCHER_TOKEN') }}"
+          health_report_insecure: false             # true = accept self-signed TLS of the pitcher
+          health_report_pitch_timeout: 30
+          health_report_author: sthings.baseos.health_report
+          health_report_tags: [vm, health-report, snapshot]
+          health_report_print: true                 # print each host's message
+          health_report_output_dir: ""              # also write <dir>/<host>.json on the controller
+          health_report_fail_on_unreachable: false  # true = the run fails after reporting an unreachable host
+
+          # --- Access ---
+          health_report_become: true                # become for the reads that need root
+          health_report_gather_timeout: 30
+
+          # --- Thresholds ---
+          health_report_disk_warn: 85               # % used
+          health_report_disk_error: 95
+          health_report_inode_warn: 85
+          health_report_inode_error: 95
+          health_report_disk_exclude_fstypes:
+            [tmpfs, devtmpfs, squashfs, overlay, iso9660, nfs, nfs4, cifs, smb3, fuse.sshfs, ramfs, efivarfs]
+          health_report_disk_exclude_mounts: '^/(snap|proc|sys|dev|run)(/|$)'
+          health_report_load_warn: 2.0              # 15 min load average per CPU
+          health_report_load_error: 4.0
+          health_report_memory_warn: 90             # % used (MemAvailable based)
+          health_report_memory_error: 97
+          health_report_swap_warn: 80               # % used, warning only
+          health_report_pending_updates_min: 1      # pending updates (info) from this count
+          health_report_security_updates_min: 1     # security updates (warning) from this count
+          health_report_journal_hours: 24
+          health_report_journal_threshold: 50       # err+ entries in the window before it is a finding
+          health_report_journal_top: 5              # top messages in the finding
+          health_report_cert_paths: []              # files or directories (searched for *.crt, *.pem, *.cer)
+          health_report_cert_depth: 3
+          health_report_cert_max: 200
+          health_report_tls_ports: []               # 443 or "10.0.0.5:8443": certificate of a listening service
+          health_report_cert_warn_days: 14
+          health_report_cert_error_days: 3
+          health_report_expected_ports: []          # TCP ports that must be listening, e.g. [22, 443]
+
+          # --- Size ---
+          health_report_text_max: 300               # characters per finding text
+          health_report_max_items: 200              # worst first, the rest is counted in "truncated"
+
+          # --- Internal ---
+          hr_target: >-
+            {{ inventory_hostname | lower | regex_replace('[^a-z0-9-]+', '-')
+               | regex_replace('-+', '-') | regex_replace('^-|-$', '') }}
+          hr_severities: [critical, error, warning, info]
+          hr_nl: "\n"
+          # local filesystems, one mount per device (bind mounts repeat it)
+          hr_mounts: >-
+            {{ ansible_facts.mounts | default([])
+               | rejectattr('fstype', 'in', health_report_disk_exclude_fstypes)
+               | rejectattr('mount', 'match', health_report_disk_exclude_mounts)
+               | selectattr('size_total', 'defined') | selectattr('size_total', 'gt', 0)
+               | sort(attribute='mount') | unique(attribute='device') | list }}
+
+        tasks:
+          - name: Gather facts (also the reachability probe)
+            ansible.builtin.setup:
+              gather_subset: [min, hardware]
+              gather_timeout: "{{ health_report_gather_timeout }}"
+            register: hr_setup
+            failed_when: false
+
+          - name: Start the report
+            ansible.builtin.set_fact:
+              hr_reachable: "{{ not (hr_setup.unreachable | default(false)) and ansible_facts.distribution is defined }}"
+              hr_findings: []
+              hr_facts_line: n/a
+              hr_updates_line: "updates: n/a"
+
+          - name: Unreachable host or no facts
+            ansible.builtin.set_fact:
+              hr_findings:
+                - kind: Host
+                  name: "{{ inventory_hostname }}"
+                  check: unreachable
+                  severity: error
+                  texts:
+                    - >-
+                      {{ ('host unreachable: ' if hr_setup.unreachable | default(false) else 'facts could not be gathered: ')
+                         ~ (hr_setup.msg | default('no message') | string | replace(hr_nl, ' ') | regex_replace('^Task failed: ', '')) }}
+            when: not hr_reachable
+
+          - name: Checks
+            when: hr_reachable
+            block:
+              # ---------------------------------------------------------------
+              # OS, load, memory
+              # ---------------------------------------------------------------
+              - name: Read load and memory
+                ansible.builtin.slurp:
+                  src: "{{ item }}"
+                loop: [/proc/loadavg, /proc/meminfo]
+                register: hr_proc
+
+              - name: Load, memory and swap
+                vars:
+                  hr_load15: "{{ (hr_proc.results[0].content | b64decode).split()[2] | float }}"
+                  hr_cpus: "{{ ansible_facts.processor_vcpus | default(1) | int }}"
+                  hr_load_per_cpu: "{{ (hr_load15 | float / ([hr_cpus | int, 1] | max)) | round(2) }}"
+                  hr_meminfo: >-
+                    {{ dict((hr_proc.results[1].content | b64decode).splitlines()
+                       | map('regex_replace', '^(\S+):\s+(\d+).*$', '\1 \2') | map('split', ' ')) }}
+                  hr_mem_total: "{{ hr_meminfo.MemTotal | default(0) | int }}"
+                  hr_mem_pct: >-
+                    {{ (100 - (hr_meminfo.MemAvailable | default(hr_meminfo.MemFree | default(0)) | int) * 100
+                       / ([hr_mem_total | int, 1] | max)) | round(1) }}
+                  hr_swap_total: "{{ hr_meminfo.SwapTotal | default(0) | int }}"
+                  hr_swap_pct: >-
+                    {{ (100 - (hr_meminfo.SwapFree | default(0) | int) * 100 / ([hr_swap_total | int, 1] | max)) | round(1)
+                       if hr_swap_total | int > 0 else 0 }}
+                  hr_uptime: "{{ ansible_facts.uptime_seconds | default(0) | int }}"
+                ansible.builtin.set_fact:
+                  hr_facts_line: >-
+                    {{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}
+                    (kernel {{ ansible_facts.kernel }}), up {{ hr_uptime | int // 86400 }}d {{ hr_uptime | int % 86400 // 3600 }}h,
+                    {{ hr_cpus }} CPUs, load15 {{ hr_load15 }}, memory {{ hr_mem_pct }}% used
+                  hr_findings: >-
+                    {{ hr_findings
+                       + ([{'kind': 'Resource', 'name': 'load', 'check': 'load', 'severity':
+                            ('error' if hr_load_per_cpu | float >= health_report_load_error | float else 'warning'),
+                            'texts': ['load average (15 min) ' ~ hr_load15 ~ ' on ' ~ hr_cpus ~ ' CPUs ('
+                                      ~ hr_load_per_cpu ~ ' per CPU)']}]
+                          if hr_load_per_cpu | float >= health_report_load_warn | float else [])
+                       + ([{'kind': 'Resource', 'name': 'memory', 'check': 'memory', 'severity':
+                            ('error' if hr_mem_pct | float >= health_report_memory_error | float else 'warning'),
+                            'texts': ['memory ' ~ hr_mem_pct ~ '% used (' ~ ((hr_mem_total | int) // 1024)
+                                      ~ ' MiB total, ' ~ ((hr_meminfo.MemAvailable | default(0) | int) // 1024)
+                                      ~ ' MiB available)']}]
+                          if hr_mem_pct | float >= health_report_memory_warn | float else [])
+                       + ([{'kind': 'Resource', 'name': 'swap', 'check': 'swap', 'severity': 'warning',
+                            'texts': ['swap ' ~ hr_swap_pct ~ '% used (' ~ ((hr_swap_total | int) // 1024) ~ ' MiB total)']}]
+                          if hr_swap_pct | float >= health_report_swap_warn | float else []) }}
+
+              # ---------------------------------------------------------------
+              # Disk and inodes
+              # ---------------------------------------------------------------
+              - name: Disk usage per mount
+                vars:
+                  hr_pct: "{{ ((item.size_total - item.size_available) * 100 / item.size_total) | round(1) }}"
+                ansible.builtin.set_fact:
+                  hr_findings: >-
+                    {{ hr_findings + [{'kind': 'Filesystem', 'name': item.mount, 'parent': item.device, 'check': 'disk-usage',
+                       'severity': ('error' if hr_pct | float >= health_report_disk_error | float else 'warning'),
+                       'texts': ['disk usage ' ~ hr_pct ~ '% (' ~ ((item.size_available / 1073741824) | round(1))
+                                 ~ ' of ' ~ ((item.size_total / 1073741824) | round(1)) ~ ' GiB free, '
+                                 ~ item.fstype ~ ')']}] }}
+                loop: "{{ hr_mounts }}"
+                loop_control:
+                  label: "{{ item.mount }}"
+                when: hr_pct | float >= health_report_disk_warn | float
+
+              - name: Inode usage per mount
+                vars:
+                  hr_pct: "{{ ((item.inode_total - item.inode_available) * 100 / item.inode_total) | round(1) }}"
+                ansible.builtin.set_fact:
+                  hr_findings: >-
+                    {{ hr_findings + [{'kind': 'Filesystem', 'name': item.mount, 'parent': item.device, 'check': 'inode-usage',
+                       'severity': ('error' if hr_pct | float >= health_report_inode_error | float else 'warning'),
+                       'texts': ['inode usage ' ~ hr_pct ~ '% (' ~ item.inode_available ~ ' of '
+                                 ~ item.inode_total ~ ' inodes free)']}] }}
+                loop: "{{ hr_mounts | selectattr('inode_total', 'defined') | selectattr('inode_total', 'gt', 0) }}"
+                loop_control:
+                  label: "{{ item.mount }}"
+                when: hr_pct | float >= health_report_inode_warn | float
+
+              # ---------------------------------------------------------------
+              # Pending updates and reboot
+              # ---------------------------------------------------------------
+              - name: Count pending and security updates
+                ansible.builtin.shell: |
+                  set -o pipefail
+                  export LC_ALL=C
+                  if command -v apt-get >/dev/null 2>&1; then
+                    # simulation only, from the package lists as they are (no apt update)
+                    out=$(apt-get -s -o Debug::NoLocking=true dist-upgrade 2>&1) || { printf '%s\n' "$out" | tail -n 3; exit 2; }
+                    inst=$(printf '%s\n' "$out" | grep '^Inst ' || true)
+                    pending=$(printf '%s\n' "$inst" | grep -c '^Inst ' || true)
+                    security=$(printf '%s\n' "$inst" | grep -ci 'security' || true)
+                  elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
+                    pm=$(command -v dnf || command -v yum)
+                    out=$("$pm" -q check-update 2>&1); rc=$?
+                    if [ "$rc" -ne 0 ] && [ "$rc" -ne 100 ]; then printf '%s\n' "$out" | tail -n 3; exit 2; fi
+                    pending=$(printf '%s\n' "$out" | awk '/^Obsoleting/ {exit} NF == 3 && $1 ~ /\./ {n++} END {print n + 0}')
+                    security=$("$pm" -q updateinfo list --security 2>/dev/null | awk 'NF >= 3 {print $3}' | sort -u | wc -l)
+                  else
+                    exit 3
+                  fi
+                  echo "pending=${pending:-0} security=${security:-0}"
+                args:
+                  executable: /bin/bash
+                become: "{{ health_report_become }}"
+                register: hr_updates
+                changed_when: false
+                failed_when: false
+                check_mode: false
+
+              - name: Updates findings
+                vars:
+                  hr_pending: "{{ hr_updates.stdout | regex_search('pending=(\\d+)', '\\1') | default(['0'], true) | first | int }}"
+                  hr_security: "{{ hr_updates.stdout | regex_search('security=(\\d+)', '\\1') | default(['0'], true) | first | int }}"
+                ansible.builtin.set_fact:
+                  hr_updates_line: >-
+                    {{ ('updates: ' ~ hr_pending ~ ' pending, ' ~ hr_security ~ ' security') if hr_updates.rc == 0
+                       else ('updates: check failed' if hr_updates.rc == 2 else 'updates: n/a') }}
+                  hr_findings: >-
+                    {{ hr_findings
+                       + ([{'kind': 'Packages', 'name': 'security-updates', 'check': 'security-updates', 'severity': 'warning',
+                            'texts': ['pending security updates: ' ~ hr_security]}]
+                          if hr_updates.rc == 0 and hr_security | int >= health_report_security_updates_min | int else [])
+                       + ([{'kind': 'Packages', 'name': 'updates', 'check': 'pending-updates', 'severity': 'info',
+                            'texts': ['pending updates: ' ~ hr_pending]}]
+                          if hr_updates.rc == 0 and hr_pending | int >= health_report_pending_updates_min | int else [])
+                       + ([{'kind': 'Packages', 'name': 'update-check', 'check': 'update-check', 'severity': 'warning',
+                            'texts': ['update check failed: ' ~ (hr_updates.stdout | default('') | replace(hr_nl, ' ') | trim)]}]
+                          if hr_updates.rc == 2 else []) }}
+
+              - name: Check whether a reboot is required
+                ansible.builtin.shell: |
+                  set -o pipefail
+                  if [ -f /var/run/reboot-required ]; then
+                    echo yes
+                    head -n 10 /var/run/reboot-required.pkgs 2>/dev/null | paste -sd, -
+                  elif command -v needs-restarting >/dev/null 2>&1; then
+                    out=$(needs-restarting -r 2>/dev/null); rc=$?
+                    case "$rc" in 0) echo no ;; 1) echo yes; printf '%s\n' "$out" | grep -i 'updated\|core lib' | head -n 3 | paste -sd, - ;; *) exit 3 ;; esac
+                  elif command -v dnf >/dev/null 2>&1 && dnf needs-restarting --help >/dev/null 2>&1; then
+                    out=$(dnf -q needs-restarting -r 2>/dev/null); rc=$?
+                    case "$rc" in 0) echo no ;; 1) echo yes ;; *) exit 3 ;; esac
+                  elif command -v apt-get >/dev/null 2>&1; then
+                    echo no
+                  else
+                    exit 3
+                  fi
+                args:
+                  executable: /bin/bash
+                become: "{{ health_report_become }}"
+                register: hr_reboot
+                changed_when: false
+                failed_when: false
+                check_mode: false
+
+              - name: Reboot finding
+                ansible.builtin.set_fact:
+                  hr_updates_line: "{{ hr_updates_line }}{{ '; reboot required' if hr_reboot.stdout_lines[:1] == ['yes'] else '' }}"
+                  hr_findings: >-
+                    {{ hr_findings + [{'kind': 'Host', 'name': inventory_hostname, 'check': 'reboot-required',
+                       'severity': 'warning',
+                       'texts': ['reboot required' ~ ((' (' ~ hr_reboot.stdout_lines[1] ~ ')') if hr_reboot.stdout_lines | length > 1 else '')]}] }}
+                when: hr_reboot.rc == 0 and hr_reboot.stdout_lines[:1] == ['yes']
+
+              # ---------------------------------------------------------------
+              # systemd: failed units, journal, time sync
+              # ---------------------------------------------------------------
+              - name: List failed systemd units
+                ansible.builtin.command: systemctl list-units --state=failed --no-legend --plain --no-pager --full  # noqa: command-instead-of-module
+                become: "{{ health_report_become }}"
+                register: hr_units
+                changed_when: false
+                failed_when: false
+                check_mode: false
+                when: ansible_facts.service_mgr | default('') == 'systemd'
+
+              - name: Failed unit findings
+                ansible.builtin.set_fact:
+                  hr_findings: >-
+                    {{ hr_findings + [{'kind': 'Unit', 'name': item.split()[0], 'check': 'failed-unit', 'severity': 'error',
+                       'texts': ['unit ' ~ item.split()[0] ~ ' is failed' ~ ((': ' ~ item.split(None, 4)[4]) if item.split() | length > 4 else '')]}] }}
+                loop: "{{ hr_units.stdout_lines | default([]) | select | list if hr_units.rc | default(1) == 0 else [] }}"
+                loop_control:
+                  label: "{{ item.split()[0] }}"
+
+              - name: Count journal entries with priority err and higher
+                ansible.builtin.shell: |
+                  set -o pipefail
+                  command -v journalctl >/dev/null 2>&1 || exit 3
+                  out=$(journalctl -q --no-pager -p err --since "{{ health_report_journal_hours | int }} hours ago" -o cat 2>/dev/null) || exit 3
+                  printf '%s\n' "$out" | grep -c . || true
+                  printf '%s\n' "$out" | grep . | cut -c1-{{ health_report_text_max | int }} \
+                    | sort | uniq -c | sort -rn | head -n {{ health_report_journal_top | int }} || true
+                args:
+                  executable: /bin/bash
+                become: "{{ health_report_become }}"
+                register: hr_journal
+                changed_when: false
+                failed_when: false
+                check_mode: false
+                when: ansible_facts.service_mgr | default('') == 'systemd'
+
+              - name: Journal finding
+                vars:
+                  hr_count: "{{ hr_journal.stdout_lines[0] | default(0) | int }}"
+                ansible.builtin.set_fact:
+                  hr_findings: >-
+                    {{ hr_findings + [{'kind': 'Journal', 'name': 'err', 'check': 'journal-errors', 'severity': 'warning',
+                       'texts': [hr_count ~ ' journal entries with priority err or higher in the last '
+                                 ~ health_report_journal_hours ~ 'h']
+                                + (hr_journal.stdout_lines[1:] | map('regex_replace', '^\s*(\d+)\s(.*)$', '\1x: \2') | list)}] }}
+                when:
+                  - hr_journal.rc | default(1) == 0
+                  - hr_count | int > health_report_journal_threshold | int
+
+              - name: Check time synchronization
+                ansible.builtin.shell: |
+                  if command -v timedatectl >/dev/null 2>&1; then
+                    s=$(timedatectl show -p NTPSynchronized --value 2>/dev/null)
+                    if [ -n "$s" ]; then echo "$s"; timedatectl show -p NTP --value 2>/dev/null; exit 0; fi
+                  fi
+                  if command -v chronyc >/dev/null 2>&1; then
+                    t=$(chronyc -n tracking 2>/dev/null)
+                    if [[ $t =~ Leap\ status\ *:\ Normal ]]; then echo yes; else echo no; fi
+                    echo yes
+                    exit 0
+                  fi
+                  exit 3
+                args:
+                  executable: /bin/bash
+                register: hr_timesync
+                changed_when: false
+                failed_when: false
+                check_mode: false
+
+              - name: Time sync finding
+                ansible.builtin.set_fact:
+                  hr_findings: >-
+                    {{ hr_findings + [{'kind': 'TimeSync', 'name': 'clock', 'check': 'time-sync', 'severity': 'warning',
+                       'texts': ['system clock is not NTP-synchronized (NTP service enabled: '
+                                 ~ (hr_timesync.stdout_lines[1] | default('unknown')) ~ ')']}] }}
+                when: hr_timesync.rc == 0 and hr_timesync.stdout_lines[:1] == ['no']
+
+              # ---------------------------------------------------------------
+              # Certificates and ports
+              # ---------------------------------------------------------------
+              - name: Read certificate expiry dates
+                ansible.builtin.shell: |
+                  set -o pipefail
+                  command -v openssl >/dev/null 2>&1 || exit 3
+                  now=$(date +%s)
+                  emit() {
+                    out=$(printf '%s\n' "$2" | openssl x509 -noout -enddate -subject -nameopt RFC2253 2>/dev/null) || return 0
+                    end=$(printf '%s\n' "$out" | sed -n 's/^notAfter=//p')
+                    subj=$(printf '%s\n' "$out" | sed -n 's/^subject=//p')
+                    endts=$(date -d "$end" +%s 2>/dev/null) || return 0
+                    printf '%s\t%s\t%s\t%s\n' "$1" "$((endts - now))" "$(date -u -d "@$endts" +%Y-%m-%d)" "$subj"
+                  }
+                  for p in {{ health_report_cert_paths | map('quote') | join(' ') }}; do
+                    if [ -f "$p" ]; then echo "$p"; else
+                      find "$p" -maxdepth {{ health_report_cert_depth | int }} -type f \( -name '*.crt' -o -name '*.pem' -o -name '*.cer' \) 2>/dev/null
+                    fi
+                  done | sort -u | head -n {{ health_report_cert_max | int }} | while IFS= read -r f; do
+                    emit "$f" "$(cat "$f" 2>/dev/null)"
+                  done
+                  for t in {{ health_report_tls_ports | map('string') | map('quote') | join(' ') }}; do
+                    case "$t" in *:*) ep="$t" ;; *) ep="127.0.0.1:$t" ;; esac
+                    emit "$ep" "$(timeout 10 openssl s_client -connect "$ep" </dev/null 2>/dev/null)"
+                  done
+                args:
+                  executable: /bin/bash
+                become: "{{ health_report_become }}"
+                register: hr_certs
+                changed_when: false
+                failed_when: false
+                check_mode: false
+                when: health_report_cert_paths | length > 0 or health_report_tls_ports | length > 0
+
+              - name: Certificate findings
+                vars:
+                  hr_cert: "{{ item.split('\t') }}"
+                  hr_days: "{{ ((hr_cert[1] | int) / 86400) | round(0, 'floor') | int }}"
+                ansible.builtin.set_fact:
+                  hr_findings: >-
+                    {{ hr_findings + [{'kind': 'Certificate', 'name': hr_cert[0], 'check': 'cert-expiry',
+                       'severity': ('critical' if hr_cert[1] | int <= 0 else
+                                    ('error' if hr_days | int < health_report_cert_error_days | int else 'warning')),
+                       'texts': [(('certificate expired ' ~ ((hr_days | int) | abs) ~ ' days ago (')
+                                  if hr_cert[1] | int <= 0 else ('certificate expires in ' ~ hr_days ~ (' day (' if hr_days | int == 1 else ' days (')))
+                                 ~ hr_cert[2] ~ ')' ~ ((', ' ~ hr_cert[3]) if hr_cert[3] | default('') | length > 0 else '')]}] }}
+                loop: "{{ hr_certs.stdout_lines | default([]) if hr_certs.rc | default(1) == 0 else [] }}"
+                loop_control:
+                  label: "{{ item.split('\t')[0] }}"
+                when: hr_days | int < health_report_cert_warn_days | int
+
+              - name: List listening TCP ports
+                ansible.builtin.command: ss -Hltn
+                register: hr_ports
+                changed_when: false
+                failed_when: false
+                check_mode: false
+                when: health_report_expected_ports | length > 0
+
+              - name: Missing port findings
+                vars:
+                  hr_listening: >-
+                    {{ hr_ports.stdout_lines | default([]) | map('split') | map(attribute=3)
+                       | map('regex_replace', '^.*:(\d+)$', '\1') | map('int') | unique | list }}
+                ansible.builtin.set_fact:
+                  hr_findings: >-
+                    {{ hr_findings + [{'kind': 'Port', 'name': 'tcp/' ~ item, 'check': 'port-listening', 'severity': 'error',
+                       'texts': ['nothing listens on tcp port ' ~ item]}] }}
+                loop: "{{ health_report_expected_ports | map('int') | list if hr_ports.rc | default(1) == 0 else [] }}"
+                when: item | int not in hr_listening
+
+            rescue:
+              - name: A check broke -- report it, keep the findings so far
+                ansible.builtin.set_fact:
+                  hr_findings: >-
+                    {{ hr_findings | default([]) + [{'kind': 'Host', 'name': inventory_hostname, 'check': 'report-error',
+                       'severity': 'warning',
+                       'texts': ['health report check failed: ' ~ (ansible_failed_task.name | default('?')) ~ ': '
+                                 ~ (ansible_failed_result.msg | default('') | string | replace(hr_nl, ' '))]}] }}
+
+          # -------------------------------------------------------------------
+          # Message
+          # -------------------------------------------------------------------
+          - name: Order findings worst first
+            ansible.builtin.set_fact:
+              hr_sorted: >-
+                {{ (hr_findings | selectattr('severity', 'eq', 'critical') | list)
+                   + (hr_findings | selectattr('severity', 'eq', 'error') | list)
+                   + (hr_findings | selectattr('severity', 'eq', 'warning') | list)
+                   + (hr_findings | selectattr('severity', 'eq', 'info') | list) }}
+              hr_items: []
+              hr_lines: []
+
+          - name: Build items with fingerprints
+            vars:
+              # source|target|kind|namespace/name|check -- no texts, no numbers
+              hr_fp: >-
+                {{ (['vm', hr_target, item.kind, (item.namespace | default('')) ~ '/' ~ item.name, item.check]
+                    | join('|') | hash('sha256'))[:16] }}
+            ansible.builtin.set_fact:
+              hr_items: >-
+                {{ hr_items + [{'fingerprint': hr_fp, 'kind': item.kind, 'name': item.name | string, 'severity': item.severity,
+                   'texts': item.texts | map('string') | map('truncate', health_report_text_max | int, true, '...', 0) | list}
+                   | combine({'parent': item.parent} if item.parent | default('') | length > 0 else {})
+                   | combine({'namespace': item.namespace} if item.namespace | default('') | length > 0 else {})] }}
+              hr_lines: >-
+                {{ hr_lines + (['- ' ~ item.severity ~ ' ' ~ item.kind ~ '/' ~ item.name ~ ': '
+                                ~ (item.texts | first | default('') | string | truncate(health_report_text_max | int, true, '...', 0))]
+                               if hr_lines | length < 20 else []) }}
+            loop: "{{ hr_sorted[: health_report_max_items | int] }}"
+            loop_control:
+              label: "{{ item.kind }}/{{ item.name }} {{ item.check }}"
+
+          - name: Compose the homerun2 message
+            vars:
+              hr_worst: "{{ hr_severities | select('in', hr_items | map(attribute='severity') | list) | first | default('success') }}"
+              hr_payload: >-
+                {{ {'format': 'findings/v1', 'source': 'vm', 'target': hr_target, 'count': hr_items | length, 'items': hr_items}
+                   | combine({'truncated': hr_sorted | length - hr_items | length} if hr_sorted | length > hr_items | length else {}) }}
+            ansible.builtin.set_fact:
+              health_report_message:
+                title: >-
+                  VM health {{ hr_target }}: {{ (hr_sorted | length ~ ' finding' ~ ('s' if hr_sorted | length != 1 else '') ~ ' (' ~ hr_worst ~ ')')
+                  if hr_sorted | length > 0 else 'no findings' }}
+                message: >-
+                  {{ (([hr_facts_line | trim, hr_updates_line] if hr_reachable else ['host unreachable'])
+                      + hr_lines
+                      + (['... and ' ~ (hr_sorted | length - 20) ~ ' more'] if hr_sorted | length > 20 else []))
+                     | join(hr_nl) }}
+                severity: "{{ hr_worst }}"
+                author: "{{ health_report_author }}"
+                timestamp: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+                system: vm-{{ hr_target }}
+                tags: "{{ health_report_tags | join(',') }}"
+                payload: "{{ hr_payload }}"
+
+          - name: Print the report
+            ansible.builtin.debug:
+              var: health_report_message
+            when: health_report_print | bool
+
+          - name: Create the output directory on the controller
+            ansible.builtin.file:
+              path: "{{ health_report_output_dir }}"
+              state: directory
+              mode: "0755"
+            delegate_to: localhost
+            when: health_report_output_dir | length > 0
+
+          - name: Write the report on the controller
+            ansible.builtin.copy:
+              content: "{{ health_report_message | to_nice_json }}\n"
+              dest: "{{ health_report_output_dir }}/{{ hr_target }}.json"
+              mode: "0644"
+            delegate_to: localhost
+            changed_when: false
+            when: health_report_output_dir | length > 0
+
+          - name: Pitch to omni-pitcher
+            when:
+              - health_report_pitch | bool
+              - health_report_pitcher_url | default('', true) | length > 0
+            block:
+              - name: Check the pitcher token
+                ansible.builtin.assert:
+                  that: health_report_pitcher_token | default('', true) | length > 0
+                  fail_msg: PITCHER_URL is set but PITCHER_TOKEN is empty
+                  quiet: true
+
+              - name: POST the snapshot to omni-pitcher
+                ansible.builtin.uri:
+                  url: "{{ health_report_pitcher_url | regex_replace('/+$', '') }}/pitch"
+                  method: POST
+                  headers:
+                    Authorization: Bearer {{ health_report_pitcher_token }}
+                  body_format: json
+                  body: "{{ health_report_message }}"
+                  validate_certs: "{{ not (health_report_insecure | bool) }}"
+                  timeout: "{{ health_report_pitch_timeout | int }}"
+                  status_code: [200, 201, 202]
+                register: hr_pitch
+                delegate_to: localhost
+                retries: 3
+                delay: 5
+                until: hr_pitch.status | default(0) in [200, 201, 202]
+                failed_when: false
+                no_log: true  # the request carries the token
+
+              - name: Pitch result
+                ansible.builtin.assert:
+                  that: hr_pitch.status | default(0) in [200, 201, 202]
+                  fail_msg: >-
+                    pitch to {{ health_report_pitcher_url }} failed: HTTP {{ hr_pitch.status | default('n/a') }}
+                    {{ hr_pitch.msg | default('') }} {{ hr_pitch.content | default('') | truncate(300) }}
+                  success_msg: pitched {{ health_report_message.system }} ({{ hr_pitch.json.objectId | default('') }})
+
+          - name: Fail for an unreachable host (health_report_fail_on_unreachable)
+            ansible.builtin.fail:
+              msg: "{{ inventory_hostname }} is unreachable (reported as a finding)"
+            when:
+              - health_report_fail_on_unreachable | bool
+              - not hr_reachable

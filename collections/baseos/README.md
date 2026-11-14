@@ -84,6 +84,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 |----------|-------------|
 | `sthings.baseos.disk_cleanup` | Reclaim disk space on runner/service hosts: journal, Go caches, runner `_diag`/`_work/_temp`, files in a runner's `_work` its own user does not own (root-owned leftovers of container jobs that break every later checkout; `~/actions-runner` and `/opt/actions-runner*`, see `runner_work_dirs`), trivy cache, snap revisions, apt cache + old kernels, rotated logs, crash dumps and a safe Docker prune. Skips hosts with an active CI job (`-e cleanup_force=true` overrides), never touches Docker volumes or tagged images unless explicitly enabled (`-e prune_docker_volumes=true`, `-e prune_docker_all_images=true`; `-e prune_docker_all_images_min_usage=85` limits the latter to when the filesystem holding `/var/lib/docker` is at least that full). On dev VMs (`-e cleanup_runner_user=<login user>`) it also removes VS Code servers no client is running, developer tool caches (uv, pip, npm/_npx, puppeteer, node-gyp, golangci-lint), `/var/tmp/buildah-cache-*` and the unattached state volumes of old Dagger engines; `-e stop_crossplane_render_containers=true` removes the function containers `crossplane render` leaves behind (pair it with `prune_docker_all_images`). Reports freed space and runs a `du` top-N diagnosis for mounts still above `report_usage_threshold`. Tags: `journal, trivy, go, runner, snap, vscode, docker, apt, logs, devcaches, buildah, diagnose` |
 | `sthings.baseos.node_exporter` | Install Prometheus node_exporter (pinned release, checksum verified) as a capped systemd service (64 MiB, 10 % CPU, own user, read-only system view) with only the collectors host alerts need. Scraped by the central Prometheus on sthings-infra; where UFW is active, port 9100 is allowed from `node_exporter_allow_from` only |
+| `sthings.baseos.health_report` | Read-only VM health report (#1450): pending/security updates, reboot required, disk + inode usage per mount, load per CPU, memory, swap, failed systemd units, journal `err`+ in the last 24h, NTP sync, certificate expiry (files under `health_report_cert_paths`, services on `health_report_tls_ports`), expected listening ports. One `findings/v1` snapshot per host to omni-pitcher (`system: vm-<host>`, `PITCHER_URL`/`PITCHER_TOKEN` from the env); without `PITCHER_URL` or with `-e health_report_pitch=false` it only prints. Unreachable hosts are reported as a finding, findings never fail the play. See [VM HEALTH REPORT](#usage) |
 
 ### VM Provisioning
 
@@ -498,6 +499,187 @@ ansible-playbook sthings.baseos.gh_runner -vv \
 | `runner_docker_isolation` | `true` | Each runner gets its own `DOCKER_CONFIG` (`<home>/.docker-<instance>`, set in its `.env`), and the job-started hook empties its `config.json` before every job. No job inherits another job's registry logins -- an expired `GITHUB_TOKEN` there makes ghcr answer `403` even for public packages (#1446). A job that needs a registry logs in itself; nothing may rely on a login provisioned on the host. |
 
 Changing `runner_docker_isolation` or `runner_workspace_hook` rewrites the runners' `.env` and restarts them, which cancels a job in flight -- roll out when the runners are idle.
+
+</details>
+
+<details><summary>VM HEALTH REPORT (sthings.baseos.health_report)</summary>
+
+Read-only: nothing on the host is changed, `become` only for the reads that need
+it (journal, failed units, package metadata, certificates). Package lists are not
+refreshed (no `apt update`); dnf may refresh an expired metadata cache.
+
+Every failed check becomes a **finding**, and each host gets **one snapshot
+message** to omni-pitcher (`POST <PITCHER_URL>/pitch`, `Authorization: Bearer
+<PITCHER_TOKEN>`) in the `findings/v1` contract (stuttgart-things/stuttgart-things#4556):
+
+- `system`: `vm-<host>` -- `inventory_hostname`, lower-cased, everything but
+  `[a-z0-9-]` replaced by `-` (`Dev-VM3.lab` -> `vm-dev-vm3-lab`)
+- `tags`: `vm,health-report,snapshot`
+- `severity`: the worst finding, `success` when there are none
+- `payload`: `{"format": "findings/v1", "source": "vm", "target": "<host>", "count": n, "items": [...]}`,
+  worst first, at most `health_report_max_items` (the rest counted in `truncated`)
+- `fingerprint`: first 16 hex of sha256 over `vm|<host>|<kind>|<namespace>/<name>|<check>`
+  (no namespace here, so `/<name>`) -- no numbers or dates, it stays the same while the problem does
+
+| Kind / name | Check | Severity |
+|-------------|-------|----------|
+| `Host/<inventory_hostname>` | `unreachable` (or no facts) | error |
+| `Host/<inventory_hostname>` | `reboot-required` (`/var/run/reboot-required`, `needs-restarting -r`) | warning |
+| `Host/<inventory_hostname>` | `report-error` (a check itself broke) | warning |
+| `Packages/updates` | `pending-updates` | info |
+| `Packages/security-updates` | `security-updates` | warning |
+| `Packages/update-check` | `update-check` (apt/dnf failed) | warning |
+| `Filesystem/<mount>` (parent: device) | `disk-usage`, `inode-usage` | warning / error |
+| `Resource/load` | `load` (15 min load per CPU) | warning / error |
+| `Resource/memory` | `memory` (MemAvailable based) | warning / error |
+| `Resource/swap` | `swap` | warning |
+| `Unit/<unit>` | `failed-unit`, one per failed systemd unit | error |
+| `Journal/err` | `journal-errors`, count + top messages (clipped) | warning |
+| `TimeSync/clock` | `time-sync` (timedatectl / chrony) | warning |
+| `Certificate/<file or host:port>` | `cert-expiry` | warning (< 14 d) / error (< 3 d) / critical (expired) |
+| `Port/tcp/<port>` | `port-listening` | error |
+
+Ubuntu/Debian and RHEL-family; a check whose tool is missing (no systemd, no
+apt/dnf, no openssl, ...) is skipped. An unreachable host is reported as a
+finding, and the play does not fail because of findings -- only a failed pitch
+fails a host (or an unreachable one with `health_report_fail_on_unreachable: true`).
+
+```bash
+# DRY RUN: PRINT THE MESSAGES, SEND NOTHING (ALSO WHEN PITCHER_URL IS UNSET)
+ansible-playbook -i inventory sthings.baseos.health_report -e health_report_pitch=false
+
+# KEEP THE JSON ON THE CONTROLLER
+ansible-playbook -i inventory sthings.baseos.health_report -e health_report_pitch=false \
+-e health_report_output_dir=/tmp/health-report
+
+# REPORT TO OMNI-PITCHER
+export PITCHER_URL=https://omni-pitcher.example.com
+export PITCHER_TOKEN=<token>
+ansible-playbook -i inventory sthings.baseos.health_report \
+-e '{"health_report_cert_paths": ["/etc/ssl/private", "/opt/app/tls"], "health_report_expected_ports": [22, 443]}'
+```
+
+### VARIABLES
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `health_report_hosts` | `target_host`, else `all` | Hosts to report on |
+| `health_report_pitch` | `true` | `false` = dry run, print only |
+| `health_report_pitcher_url` | `lookup('env', 'PITCHER_URL')` | omni-pitcher base URL; empty = dry run |
+| `health_report_pitcher_token` | `lookup('env', 'PITCHER_TOKEN')` | Bearer token (required when the URL is set) |
+| `health_report_insecure` | `false` | Accept a self-signed certificate of the pitcher |
+| `health_report_pitch_timeout` | `30` | Seconds per POST (3 retries) |
+| `health_report_author` | `sthings.baseos.health_report` | Message `author` |
+| `health_report_tags` | `[vm, health-report, snapshot]` | Message `tags` (keep `snapshot`) |
+| `health_report_print` | `true` | Print each host's message |
+| `health_report_output_dir` | `""` | Also write `<dir>/<host>.json` on the controller |
+| `health_report_fail_on_unreachable` | `false` | Fail the run (after reporting) for an unreachable host |
+| `health_report_become` | `true` | Become for the reads that need root |
+| `health_report_gather_timeout` | `30` | Fact gathering timeout (hung NFS mounts) |
+| `health_report_disk_warn` / `_error` | `85` / `95` | % used per mount |
+| `health_report_inode_warn` / `_error` | `85` / `95` | % inodes used per mount |
+| `health_report_disk_exclude_fstypes` | tmpfs, devtmpfs, squashfs, overlay, iso9660, nfs, nfs4, cifs, smb3, fuse.sshfs, ramfs, efivarfs | Not checked |
+| `health_report_disk_exclude_mounts` | `^/(snap\|proc\|sys\|dev\|run)(/\|$)` | Mount points not checked (regex) |
+| `health_report_load_warn` / `_error` | `2.0` / `4.0` | 15 min load average per CPU |
+| `health_report_memory_warn` / `_error` | `90` / `97` | % memory used |
+| `health_report_swap_warn` | `80` | % swap used |
+| `health_report_pending_updates_min` | `1` | Pending updates from which there is an info finding |
+| `health_report_security_updates_min` | `1` | Security updates from which there is a warning |
+| `health_report_journal_hours` | `24` | Journal window |
+| `health_report_journal_threshold` | `50` | `err`+ entries in the window before it is a finding |
+| `health_report_journal_top` | `5` | Top messages in the finding |
+| `health_report_cert_paths` | `[]` | Files or directories (`*.crt`, `*.pem`, `*.cer`, first certificate of a file) |
+| `health_report_cert_depth` / `_max` | `3` / `200` | Directory depth / files at most |
+| `health_report_tls_ports` | `[]` | `443` (= 127.0.0.1:443) or `"10.0.0.5:8443"`: certificate of a listening service |
+| `health_report_cert_warn_days` / `_error_days` | `14` / `3` | Days to expiry |
+| `health_report_expected_ports` | `[]` | TCP ports that must be listening |
+| `health_report_text_max` | `300` | Characters per finding text |
+| `health_report_max_items` | `200` | Items per message, worst first |
+
+### SAMPLE PAYLOAD
+
+```jsonc
+{
+  "title": "VM health dev-vm3: 3 findings (error)",
+  "message": "Ubuntu 24.04 (kernel 6.8.0-49-generic), up 12d 3h, 4 CPUs, load15 0.42, memory 61.3% used\nupdates: 14 pending, 3 security\n- error Unit/backup.service: unit backup.service is failed: Nightly backup\n- warning Certificate//etc/ssl/private/app.crt: certificate expires in 9 days (2026-11-23), CN=app.example.com\n- warning Packages/security-updates: pending security updates: 3",
+  "severity": "error",
+  "author": "sthings.baseos.health_report",
+  "timestamp": "2026-11-14T06:30:12Z",
+  "system": "vm-dev-vm3",
+  "tags": "vm,health-report,snapshot",
+  "payload": {
+    "format": "findings/v1",
+    "source": "vm",
+    "target": "dev-vm3",
+    "count": 3,
+    "items": [
+      {"fingerprint": "aa93e494b34a52c5", "kind": "Unit", "name": "backup.service", "severity": "error", // pragma: allowlist secret
+       "texts": ["unit backup.service is failed: Nightly backup"]},
+      {"fingerprint": "14736e46714086ae", "kind": "Certificate", "name": "/etc/ssl/private/app.crt", "severity": "warning", // pragma: allowlist secret
+       "texts": ["certificate expires in 9 days (2026-11-23), CN=app.example.com"]},
+      {"fingerprint": "d6d4de2c66038d00", "kind": "Packages", "name": "security-updates", "severity": "warning", // pragma: allowlist secret
+       "texts": ["pending security updates: 3"]}
+    ]
+  }
+}
+```
+
+### SCHEDULED ON THE CLUSTER (ScheduledRun + AnsibleRun)
+
+Daily at 06:30, before the 07:30 analysis. The Secret named in
+`extraEnvSecretName` lives in the AnsibleRun's `spec.namespace`; its keys become
+environment variables of the ansible step, which the playbook reads with
+`lookup('env', ...)`:
+
+```bash
+kubectl -n tekton-ci create secret generic health-report-pitcher \
+--from-literal=PITCHER_URL=https://omni-pitcher.example.com \
+--from-literal=PITCHER_TOKEN=<token>
+```
+
+```yaml
+---
+apiVersion: resources.stuttgart-things.com/v1alpha1
+kind: ScheduledRun
+metadata:
+  name: vm-health-report
+  namespace: default
+spec:
+  environmentConfig: default
+  schedule: "30 6 * * *"
+  targetNamespace: tekton-ci
+  namespace: crossplane-system
+  crossplaneProviderConfig: in-cluster
+  keepHistory: 3
+  uniqueFields:
+    - metadata.name
+    - spec.pipelineRunName
+    - spec.crossplaneObjectName
+  manifest:
+    apiVersion: resources.stuttgart-things.com/v1alpha1
+    kind: AnsibleRun
+    metadata:
+      name: vm-health-report
+    spec:
+      pipelineRunName: vm-health-report
+      namespace: tekton-ci
+      ansibleCredentialsSecretName: ansible-credentials # pragma: allowlist secret
+      # PITCHER_URL + PITCHER_TOKEN as env of the ansible step
+      extraEnvSecretName: health-report-pitcher # pragma: allowlist secret
+      installExtraCollections: "true"
+      ansibleExtraCollections:
+        # A RELEASE THAT CONTAINS health_report (ANY FROM #1450 ON)
+        - "https://github.com/stuttgart-things/ansible/releases/download/sthings-baseos-<version>/sthings-baseos-<version>.tar.gz"
+      ansiblePlaybooks:
+        - sthings.baseos.health_report
+      ansibleVarsFile:
+        - health_report_insecure+-true
+      # INVENTORY NAMES BECOME THE SYSTEM: vm-<name>, SO USE HOST NAMES
+      ansibleVarsInventory:
+        - 'all+["dev-vm3.example.com","gh-runner-1.example.com"]'
+      crossplaneObjectName: vm-health-report
+      crossplaneProviderConfig: in-cluster
+```
 
 </details>
 

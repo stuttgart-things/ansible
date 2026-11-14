@@ -1,0 +1,149 @@
+---
+# sthings.baseos.health_report in dry run (#1450): no pitch, the report is
+# written to the controller and its findings/v1 structure asserted. Runs on its
+# own as well: MOLECULE_PLAYBOOK=health_report.yaml molecule converge -s baseos
+- name: Prepare test certificates for the health report
+  hosts: all
+  gather_facts: true
+  become: true
+  tasks:
+    - name: Install openssl
+      ansible.builtin.package:
+        name: openssl
+        state: present
+
+    - name: Create the certificate directory
+      ansible.builtin.file:
+        path: /etc/health-report-test
+        state: directory
+        mode: "0755"
+
+    - name: Create certificates expiring in 2 and 365 days
+      ansible.builtin.command: >-
+        openssl req -x509 -newkey rsa:2048 -nodes -days {{ item.days }}
+        -subj /CN={{ item.name }}.health-report.test
+        -keyout /etc/health-report-test/{{ item.name }}.key
+        -out /etc/health-report-test/{{ item.name }}.crt
+      args:
+        creates: /etc/health-report-test/{{ item.name }}.crt
+      loop:
+        - {name: expiring, days: 2}
+        - {name: valid, days: 365}
+
+    - name: A failed unit and an error in the journal
+      ansible.builtin.shell: |
+        systemctl reset-failed health-report-test.service 2>/dev/null || true
+        systemd-run --unit health-report-test /bin/false
+        logger -p user.err "health report test error"
+      register: hr_prep_unit
+      changed_when: true
+      failed_when: false
+      when: ansible_facts.service_mgr == 'systemd'
+
+- name: Add an unreachable host
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Nothing listens on port 1
+      ansible.builtin.add_host:
+        name: hr-unreachable.test
+        groups: health_report_test
+        ansible_host: 127.0.0.1
+        ansible_port: 1
+        ansible_connection: ssh
+        ansible_ssh_common_args: -o ConnectTimeout=3 -o StrictHostKeyChecking=no
+
+- name: Health report (dry run)
+  ansible.builtin.import_playbook: sthings.baseos.health_report
+  vars:
+    health_report_hosts: all
+    health_report_pitch: false
+    health_report_output_dir: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') | default('/tmp/molecule-baseos', true) }}/health-report"
+    health_report_cert_paths: [/etc/health-report-test]
+    health_report_expected_ports: [65000]
+    health_report_tls_ports: [65001]
+    # thresholds at the floor, so every check produces a finding where it can
+    health_report_disk_warn: 0
+    health_report_inode_warn: 0
+    health_report_load_warn: 0
+    health_report_memory_warn: 0
+    health_report_journal_threshold: 0
+
+- name: Verify the health report
+  hosts: localhost
+  gather_facts: false
+  vars:
+    hr_dir: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') | default('/tmp/molecule-baseos', true) }}/health-report"
+    hr_severities: [critical, error, warning, info]
+  tasks:
+    - name: Every report has the findings/v1 structure
+      vars:
+        hr_target: "{{ item | lower | regex_replace('[^a-z0-9-]+', '-') }}"
+        msg: "{{ lookup('ansible.builtin.file', hr_dir ~ '/' ~ hr_target ~ '.json') | from_json }}"
+        sevs: "{{ msg.payload['items'] | map(attribute='severity') | list }}"
+      ansible.builtin.assert:
+        that:
+          - msg.title is string and msg.title | length > 0
+          - msg.message is string
+          - msg.author == 'sthings.baseos.health_report'
+          - msg.timestamp is match('^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$')
+          - msg.system == 'vm-' ~ hr_target
+          - "'snapshot' in msg.tags.split(',')"
+          - msg.payload.format == 'findings/v1'
+          - msg.payload.source == 'vm'
+          - msg.payload.target == hr_target
+          - msg.payload.count == msg.payload['items'] | length
+          - msg.payload['items'] | map(attribute='fingerprint') | select('match', '^[0-9a-f]{16}$') | list | length == msg.payload.count
+          - msg.payload['items'] | map(attribute='fingerprint') | unique | list | length == msg.payload.count
+          - msg.payload['items'] | selectattr('kind', 'string') | selectattr('name', 'string') | list | length == msg.payload.count
+          - sevs | reject('in', hr_severities) | list | length == 0
+          - msg.payload['items'] | map(attribute='texts') | reject('sequence') | list | length == 0
+          - msg.severity == (hr_severities | select('in', sevs) | first | default('success'))
+        quiet: true
+      loop: "{{ groups['all'] }}"
+
+    - name: The reachable host reports the test certificate and the missing port
+      vars:
+        host: "{{ groups['all'] | reject('in', groups['health_report_test']) | first }}"
+        hr_target: "{{ host | lower | regex_replace('[^a-z0-9-]+', '-') }}"
+        msg: "{{ lookup('ansible.builtin.file', hr_dir ~ '/' ~ hr_target ~ '.json') | from_json }}"
+        cert: "{{ msg.payload['items'] | selectattr('kind', 'eq', 'Certificate') | list }}"
+        hr_port: "{{ msg.payload['items'] | selectattr('kind', 'eq', 'Port') | list }}"
+      ansible.builtin.assert:
+        that:
+          - cert | length == 1
+          - cert[0].name == '/etc/health-report-test/expiring.crt'
+          - cert[0].severity == 'error'
+          - cert[0].texts[0] is match('certificate expires in [0-9]+ days? ')
+          - cert[0].fingerprint == ('vm|' ~ hr_target ~ '|Certificate|//etc/health-report-test/expiring.crt|cert-expiry') | hash('sha256') | truncate(16, true, '', 0)
+          - hr_port | length == 1
+          - hr_port[0].name == 'tcp/65000'
+          - hr_port[0].severity == 'error'
+          - msg.severity in ['error', 'critical']
+          - msg.payload['items'] | selectattr('kind', 'eq', 'Resource') | selectattr('name', 'eq', 'memory') | list | length == 1
+        quiet: true
+
+    - name: Failed unit and journal findings (where systemd-run worked)
+      vars:
+        host: "{{ groups['all'] | reject('in', groups['health_report_test']) | first }}"
+        hr_target: "{{ host | lower | regex_replace('[^a-z0-9-]+', '-') }}"
+        msg: "{{ lookup('ansible.builtin.file', hr_dir ~ '/' ~ hr_target ~ '.json') | from_json }}"
+      ansible.builtin.assert:
+        that:
+          - msg.payload['items'] | selectattr('kind', 'eq', 'Unit') | selectattr('name', 'eq', 'health-report-test.service') | list | length == 1
+          - msg.payload['items'] | selectattr('kind', 'eq', 'Journal') | list | length <= 1
+        quiet: true
+      when: hostvars[host].hr_prep_unit.rc | default(1) == 0
+
+    - name: The unreachable host is a Host finding
+      vars:
+        msg: "{{ lookup('ansible.builtin.file', hr_dir ~ '/hr-unreachable-test.json') | from_json }}"
+      ansible.builtin.assert:
+        that:
+          - msg.payload.count == 1
+          - msg.payload['items'][0].kind == 'Host'
+          - msg.payload['items'][0].name == 'hr-unreachable.test'
+          - msg.payload['items'][0].severity == 'error'
+          - msg.payload['items'][0].texts[0] is match('host unreachable')
+          - msg.severity == 'error'
+        quiet: true
