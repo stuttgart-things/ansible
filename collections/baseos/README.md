@@ -595,6 +595,7 @@ ansible-playbook -i inventory sthings.baseos.health_report \
 | `health_report_expected_ports` | `[]` | TCP ports that must be listening |
 | `health_report_text_max` | `300` | Characters per finding text |
 | `health_report_max_items` | `200` | Items per message, worst first |
+| `health_report_target_names` | `""` | Target name per inventory host for IP inventories: a mapping or `"ip=name,ip=name"`; the system becomes `vm-<name>` |
 
 ### SAMPLE PAYLOAD
 

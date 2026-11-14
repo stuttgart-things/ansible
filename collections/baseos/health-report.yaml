@@ -100,9 +100,25 @@ playbooks:
           health_report_text_max: 300               # characters per finding text
           health_report_max_items: 200              # worst first, the rest is counted in "truncated"
 
+          # --- Names ---
+          # Target name per inventory host, for inventories of IPs: a mapping
+          # or "ip=name,ip=name". The system becomes vm-<name>; unlisted hosts
+          # keep their inventory name.
+          health_report_target_names: ""
+
           # --- Internal ---
+          hr_names: >-
+            {%- set m = {} -%}
+            {%- if health_report_target_names is mapping -%}
+            {%-   set _ = m.update(health_report_target_names) -%}
+            {%- else -%}
+            {%-   for p in (health_report_target_names | default('') | string).split(',') if '=' in p -%}
+            {%-     set _ = m.update({p.split('=', 1)[0] | trim: p.split('=', 1)[1] | trim}) -%}
+            {%-   endfor -%}
+            {%- endif -%}
+            {{ m }}
           hr_target: >-
-            {{ inventory_hostname | lower | regex_replace('[^a-z0-9-]+', '-')
+            {{ hr_names.get(inventory_hostname, inventory_hostname) | lower | regex_replace('[^a-z0-9-]+', '-')
                | regex_replace('-+', '-') | regex_replace('^-|-$', '') }}
           hr_severities: [critical, error, warning, info]
           hr_nl: "\n"
