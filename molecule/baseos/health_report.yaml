@@ -108,7 +108,7 @@
         hr_target: "{{ host | lower | regex_replace('[^a-z0-9-]+', '-') }}"
         msg: "{{ lookup('ansible.builtin.file', hr_dir ~ '/' ~ hr_target ~ '.json') | from_json }}"
         cert: "{{ msg.payload['items'] | selectattr('kind', 'eq', 'Certificate') | list }}"
-        port: "{{ msg.payload['items'] | selectattr('kind', 'eq', 'Port') | list }}"
+        hr_port: "{{ msg.payload['items'] | selectattr('kind', 'eq', 'Port') | list }}"
       ansible.builtin.assert:
         that:
           - cert | length == 1
@@ -116,9 +116,9 @@
           - cert[0].severity == 'error'
           - cert[0].texts[0] is match('certificate expires in [0-9]+ days? ')
           - cert[0].fingerprint == ('vm|' ~ hr_target ~ '|Certificate|//etc/health-report-test/expiring.crt|cert-expiry') | hash('sha256') | truncate(16, true, '', 0)
-          - port | length == 1
-          - port[0].name == 'tcp/65000'
-          - port[0].severity == 'error'
+          - hr_port | length == 1
+          - hr_port[0].name == 'tcp/65000'
+          - hr_port[0].severity == 'error'
           - msg.severity in ['error', 'critical']
           - msg.payload['items'] | selectattr('kind', 'eq', 'Resource') | selectattr('name', 'eq', 'memory') | list | length == 1
         quiet: true
