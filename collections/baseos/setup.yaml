@@ -311,7 +311,9 @@ playbooks:
           event_url: unset
 
           vault_instances:
-            - https://vault.tiab.labda.sva.de:8200
+            # vault.tiab.labda.sva.de retired 2026-11-14: Vault 1.8.4, sealed (503),
+            # VM powered off (stuttgart-things#4491). Its CA (OU=stuttgart-things) was
+            # already skipped while sealed; vault-vsphere.tiab.labda has its own.
             # - https://vault.labul.sva.de:8200
             - https://vault-vsphere.labul.sva.de:8200
             - https://vault-vsphere.tiab.labda.sva.de:8200
