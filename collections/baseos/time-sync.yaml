@@ -1,0 +1,154 @@
+---
+playbooks:
+  - name: time_sync
+    play: |
+      ---
+      # Plain NTP sources for chrony (#1455).
+      #
+      # WHY. Ubuntu 26.04 ships chrony with NTS-ONLY sources
+      # (/etc/chrony/sources.d/ubuntu-ntp-pools.sources: `pool N.ntp.ubuntu.com
+      # ... nts prefer`). NTS first needs a TLS key exchange on TCP 4460. In
+      # LabDA that port times out while plain NTP on UDP 123 answers, so chrony
+      # never gets a usable source: timedatectl says "NTP service: active,
+      # System clock synchronized: no", the journal fills with NTS-KE
+      # timeouts, and the clock drifts (0.6-0.8 s after ~4 weeks on the LabDA
+      # VMs, measured 2026-11-15; stuttgart-things#4589).
+      #
+      # WHAT IT DOES. Writes time_sync_sources into its own sources file and
+      # moves the NTS defaults aside (renamed to *.disabled -- chrony reads only
+      # *.sources, and dpkg leaves a removed conffile removed on upgrades), then
+      # `chronyc reload sources`. No chronyd restart.
+      #
+      # AND THEN PROVES IT: `chronyc waitsync` until the clock is synchronized
+      # with a remaining correction below time_sync_max_correction, otherwise the
+      # play fails with `chronyc sources`. A play that writes the file and hands
+      # back a machine that still does not sync is the failure this exists for.
+      #
+      # Keep NTS where TCP 4460 is open: -e time_sync_disable_defaults=false
+      # adds the plain sources next to the defaults instead.
+      - name: Plain NTP time sources for chrony
+        hosts: all
+        become: true
+
+        vars:
+          # chrony source lines: pool/server/peer, no `nts`.
+          time_sync_sources:
+            - pool ntp.ubuntu.com iburst maxsources 4
+          time_sync_sources_file: /etc/chrony/sources.d/sthings.sources
+          time_sync_disable_defaults: true
+          time_sync_default_sources:
+            - /etc/chrony/sources.d/ubuntu-ntp-pools.sources
+          time_sync_verify: true
+          # waitsync polls every 10 s
+          time_sync_wait_tries: 9
+          time_sync_max_correction: 0.5
+
+        pre_tasks:
+          # The stage-time execute-ansible pipeline hands its vars file in as
+          # -e path_to_vars_file=<workdir>/vars (see dns_zones).
+          - name: Include vars
+            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
+            when: path_to_vars_file is defined
+            tags: always
+
+        tasks:
+          - name: Fail on empty or NTS source lines
+            ansible.builtin.assert:
+              that:
+                - time_sync_sources | length > 0
+                - time_sync_sources | select('match', '^(pool|server|peer)\s+\S+') | list | length == time_sync_sources | length
+                - time_sync_sources | select('search', '\snts(\s|$)') | list | length == 0
+              fail_msg: >-
+                time_sync_sources must be a non-empty list of chrony pool/server/peer
+                lines without `nts` -- this play exists for networks where NTS is
+                blocked.
+
+          - name: Check that chronyd is running
+            ansible.builtin.command: systemctl is-active chrony
+            register: time_sync_chrony_active
+            changed_when: false
+            failed_when: false
+
+          - name: Check that chrony reads the sources directory
+            ansible.builtin.command: grep -qE '^\s*sourcedir\s+{{ time_sync_sources_file | dirname }}\s*$' /etc/chrony/chrony.conf
+            register: time_sync_sourcedir
+            changed_when: false
+            failed_when: false
+
+          - name: Fail when chrony is not the time daemon or ignores the directory
+            ansible.builtin.fail:
+              msg: >-
+                chrony is {{ time_sync_chrony_active.stdout | default('unknown') }} and
+                {{ 'reads' if time_sync_sourcedir.rc == 0 else 'does NOT read' }}
+                {{ time_sync_sources_file | dirname }}. This play only configures
+                chrony with a sources.d directory (Ubuntu >= 22.04); a file written
+                anywhere else would never be read.
+            when: time_sync_chrony_active.stdout != "active" or time_sync_sourcedir.rc != 0
+
+          - name: Write the plain NTP sources
+            ansible.builtin.copy:
+              dest: "{{ time_sync_sources_file }}"
+              # Only pool/server/peer lines: chrony accepts nothing else in sources.d.
+              content: |
+                {% for s in time_sync_sources %}
+                {{ s }}
+                {% endfor %}
+              owner: root
+              group: root
+              mode: "0644"
+            register: time_sync_written
+
+          - name: Find the NTS default sources
+            ansible.builtin.stat:
+              path: "{{ item }}"
+            loop: "{{ time_sync_default_sources }}"
+            register: time_sync_defaults
+            when: time_sync_disable_defaults | bool
+
+          - name: Move the NTS default sources aside
+            ansible.builtin.command: mv "{{ item.item }}" "{{ item.item }}.disabled"
+            loop: "{{ time_sync_defaults.results | default([]) }}"
+            loop_control:
+              label: "{{ item.item }}"
+            when:
+              - time_sync_disable_defaults | bool
+              - item.stat is defined and item.stat.exists
+            register: time_sync_moved
+            changed_when: true
+
+          - name: Reload chrony sources
+            ansible.builtin.command: chronyc reload sources
+            when: time_sync_written is changed or time_sync_moved is changed
+
+          # A selected source (^*) AND a synchronized clock: waitsync alone
+          # passes on a sync left over from sources that were just removed.
+          - name: Wait until a source is selected and the clock is synchronized
+            ansible.builtin.shell: >-
+              chronyc -n sources | grep -q '^\^\*' &&
+              chronyc waitsync 1 {{ time_sync_max_correction }}
+            register: time_sync_wait
+            until: time_sync_wait.rc == 0
+            retries: "{{ time_sync_wait_tries }}"
+            delay: 10
+            changed_when: false
+            failed_when: false
+            when: time_sync_verify | bool
+
+          - name: Read the sources and tracking
+            ansible.builtin.shell: chronyc -n sources; echo; chronyc tracking
+            register: time_sync_state
+            changed_when: false
+
+          - name: Show the time sync state
+            ansible.builtin.debug:
+              msg: "{{ time_sync_state.stdout_lines }}"
+
+          - name: Fail when the clock did not synchronize
+            ansible.builtin.fail:
+              msg: >-
+                chrony did not synchronize within {{ time_sync_wait_tries * 10 }} s
+                (remaining correction must be below {{ time_sync_max_correction }} s).
+                Check that UDP 123 to the sources is open; state above.
+            when:
+              - time_sync_verify | bool
+              - time_sync_wait.rc != 0

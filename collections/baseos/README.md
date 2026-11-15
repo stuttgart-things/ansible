@@ -85,6 +85,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | `sthings.baseos.disk_cleanup` | Reclaim disk space on runner/service hosts: journal, Go caches, runner `_diag`/`_work/_temp`, files in a runner's `_work` its own user does not own (root-owned leftovers of container jobs that break every later checkout; `~/actions-runner` and `/opt/actions-runner*`, see `runner_work_dirs`), trivy cache, snap revisions, apt cache + old kernels, rotated logs, crash dumps and a safe Docker prune. Skips hosts with an active CI job (`-e cleanup_force=true` overrides), never touches Docker volumes or tagged images unless explicitly enabled (`-e prune_docker_volumes=true`, `-e prune_docker_all_images=true`; `-e prune_docker_all_images_min_usage=85` limits the latter to when the filesystem holding `/var/lib/docker` is at least that full). On dev VMs (`-e cleanup_runner_user=<login user>`) it also removes VS Code servers no client is running, developer tool caches (uv, pip, npm/_npx, puppeteer, node-gyp, golangci-lint), `/var/tmp/buildah-cache-*` and the unattached state volumes of old Dagger engines; `-e stop_crossplane_render_containers=true` removes the function containers `crossplane render` leaves behind (pair it with `prune_docker_all_images`). Reports freed space and runs a `du` top-N diagnosis for mounts still above `report_usage_threshold`. Tags: `journal, trivy, go, runner, snap, vscode, docker, apt, logs, devcaches, buildah, diagnose` |
 | `sthings.baseos.node_exporter` | Install Prometheus node_exporter (pinned release, checksum verified) as a capped systemd service (64 MiB, 10 % CPU, own user, read-only system view) with only the collectors host alerts need. Scraped by the central Prometheus on sthings-infra; where UFW is active, port 9100 is allowed from `node_exporter_allow_from` only |
 | `sthings.baseos.health_report` | Read-only VM health report (#1450): pending/security updates, reboot required, disk + inode usage per mount, load per CPU, memory, swap, failed systemd units, journal `err`+ in the last 24h, NTP sync, certificate expiry (files under `health_report_cert_paths`, services on `health_report_tls_ports`), expected listening ports. One `findings/v1` snapshot per host to omni-pitcher (`system: vm-<host>`, `PITCHER_URL`/`PITCHER_TOKEN` from the env); without `PITCHER_URL` or with `-e health_report_pitch=false` it only prints. Unreachable hosts are reported as a finding, findings never fail the play. See [VM HEALTH REPORT](#usage) |
+| `sthings.baseos.time_sync` | Plain NTP sources for chrony where NTS (TCP 4460) is blocked (#1455): Ubuntu 26.04 ships NTS-only sources, so the clock never syncs there. Writes `time_sync_sources` (default `pool ntp.ubuntu.com iburst maxsources 4`) to `/etc/chrony/sources.d/sthings.sources`, moves the NTS defaults aside (`*.disabled`, keep them with `-e time_sync_disable_defaults=false`), reloads the sources and fails unless a source is selected and the clock synchronized. See [TIME SYNC](#usage) |
 
 ### VM Provisioning
 
@@ -681,6 +682,28 @@ spec:
       crossplaneObjectName: vm-health-report
       crossplaneProviderConfig: in-cluster
 ```
+
+</details>
+
+<details><summary>TIME SYNC (sthings.baseos.time_sync)</summary>
+
+```bash
+# Plain NTP from the public Ubuntu pool (default)
+ansible-playbook sthings.baseos.time_sync -i inventory -vv
+
+# An internal NTP server instead
+ansible-playbook sthings.baseos.time_sync -i inventory \
+-e '{"time_sync_sources": ["server ntp.example.lab iburst"]}' -vv
+```
+
+Needs UDP 123 to the sources. Check before/after on a host:
+
+```bash
+timedatectl | grep synchronized
+chronyc -n sources
+```
+
+As a ClusterStack base-OS step: add `sthings.baseos.time_sync` to `baseos.extraPlaybooks` (a release that contains it).
 
 </details>
 
