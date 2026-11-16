@@ -589,6 +589,7 @@ ansible-playbook -i inventory sthings.baseos.health_report \
 | `health_report_journal_hours` | `24` | Journal window |
 | `health_report_journal_threshold` | `50` | `err`+ entries in the window before it is a finding |
 | `health_report_journal_top` | `5` | Top messages in the finding |
+| `health_report_journal_ignore` | networkd-dispatcher noise (2 patterns) | Extended regexes (`grep -E`) for known-noise journal lines, dropped before counting; setting the list replaces the default. Default: `networkctl` on container hosts racing short-lived interfaces (`GetLLDPNeighbors() varlink call`, `Interface "tmp…/lxc…/veth…" not found.`) |
 | `health_report_cert_paths` | `[]` | Files or directories (`*.crt`, `*.pem`, `*.cer`, first certificate of a file) |
 | `health_report_cert_depth` / `_max` | `3` / `200` | Directory depth / files at most |
 | `health_report_tls_ports` | `[]` | `443` (= 127.0.0.1:443) or `"10.0.0.5:8443"`: certificate of a listening service |
