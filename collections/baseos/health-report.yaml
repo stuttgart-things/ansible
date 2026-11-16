@@ -88,6 +88,17 @@ playbooks:
           health_report_journal_hours: 24
           health_report_journal_threshold: 50       # err+ entries in the window before it is a finding
           health_report_journal_top: 5              # top messages in the finding
+          # Extended regexes (grep -E) for journal lines that are known noise:
+          # they are dropped before counting. The default is networkd-dispatcher
+          # on Ubuntu 26.04 container hosts: it runs networkctl on every link
+          # event, and short-lived container interfaces (tmp*, lxc*, veth*) are
+          # gone by then -- "GetLLDPNeighbors() varlink call: Invalid argument"
+          # and "Interface ... not found." (stuttgart-things/stuttgart-things#4589:
+          # all 329 err lines of a day on labda-cicd-test1 were these two).
+          # Setting the list replaces the default.
+          health_report_journal_ignore:
+            - 'Failed to issue io\.systemd\.Network\.GetLLDPNeighbors\(\) varlink call'
+            - '^Interface "(tmp|lxc|veth)[0-9a-f]+" not found\.$'
           health_report_cert_paths: []              # files or directories (searched for *.crt, *.pem, *.cer)
           health_report_cert_depth: 3
           health_report_cert_max: 200
@@ -364,6 +375,8 @@ playbooks:
                   set -o pipefail
                   command -v journalctl >/dev/null 2>&1 || exit 3
                   out=$(journalctl -q --no-pager -p err --since "{{ health_report_journal_hours | int }} hours ago" -o cat 2>/dev/null) || exit 3
+                  # Known noise out before counting (health_report_journal_ignore).
+                  out=$(printf '%s\n' "$out" | grep -v -E -f <(printf '%s\n' {{ (health_report_journal_ignore | default([])) | map('quote') | join(' ') }} | grep .) || true)
                   printf '%s\n' "$out" | grep -c . || true
                   printf '%s\n' "$out" | grep . | cut -c1-{{ health_report_text_max | int }} \
                     | sort | uniq -c | sort -rn | head -n {{ health_report_journal_top | int }} || true
