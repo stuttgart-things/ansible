@@ -695,6 +695,9 @@ ansible-playbook sthings.baseos.time_sync -i inventory -vv
 # An internal NTP server instead
 ansible-playbook sthings.baseos.time_sync -i inventory \
 -e '{"time_sync_sources": ["server ntp.example.lab iburst"]}' -vv
+
+# Preview: the sources file as a diff, nothing written, no wait for sync
+ansible-playbook sthings.baseos.time_sync -i inventory --check --diff
 ```
 
 Needs UDP 123 to the sources. Check before/after on a host:
