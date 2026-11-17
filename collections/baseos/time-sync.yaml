@@ -26,6 +26,10 @@ playbooks:
       #
       # Keep NTS where TCP 4460 is open: -e time_sync_disable_defaults=false
       # adds the plain sources next to the defaults instead.
+      #
+      # --check --diff shows the sources file and the moves without changing
+      # anything: the read-only checks run anyway (check_mode: false), the wait
+      # for sync is skipped (it would only judge the old sources).
       - name: Plain NTP time sources for chrony
         hosts: all
         become: true
@@ -68,12 +72,14 @@ playbooks:
             register: time_sync_chrony_active
             changed_when: false
             failed_when: false
+            check_mode: false
 
           - name: Check that chrony reads the sources directory
             ansible.builtin.command: grep -qE '^\s*sourcedir\s+{{ time_sync_sources_file | dirname }}\s*$' /etc/chrony/chrony.conf
             register: time_sync_sourcedir
             changed_when: false
             failed_when: false
+            check_mode: false
 
           - name: Fail when chrony is not the time daemon or ignores the directory
             ansible.builtin.fail:
@@ -132,12 +138,15 @@ playbooks:
             delay: 10
             changed_when: false
             failed_when: false
-            when: time_sync_verify | bool
+            when:
+              - time_sync_verify | bool
+              - not ansible_check_mode
 
           - name: Read the sources and tracking
             ansible.builtin.shell: chronyc -n sources; echo; chronyc tracking
             register: time_sync_state
             changed_when: false
+            check_mode: false
 
           - name: Show the time sync state
             ansible.builtin.debug:
@@ -151,4 +160,5 @@ playbooks:
                 Check that UDP 123 to the sources is open; state above.
             when:
               - time_sync_verify | bool
+              - not ansible_check_mode
               - time_sync_wait.rc != 0
