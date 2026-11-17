@@ -105,6 +105,10 @@ playbooks:
           # --- Idle screen (homerun2-led-catcher v0.12.0 and later) ---
           led_idle: ""                          # clock; empty leaves LED_IDLE unset, the panel dark between displays
           led_idle_color: ""                    # a profile colour name or r,g,b; empty: the catcher's default (info)
+          # Faces (homerun2-led-catcher#162 and later); empty leaves each unset (classic, fixed, 300)
+          led_idle_style: ""                    # classic, big, binary, words, analog, or rotate through them
+          led_idle_color_mode: ""               # fixed (led_idle_color), daylight (time of day), random (per interval)
+          led_idle_interval: ""                 # seconds per rotate/random slot, 30-86400
 
           # --- Display queue (homerun2-led-catcher#142 and later) ---
           led_display_queue: ""                 # e.g. 3: finite displays wait FIFO, up to N; empty leaves DISPLAY_QUEUE unset (1: the newest waiting one wins)
@@ -604,6 +608,16 @@ playbooks:
                 {% endif %}
                 {% if led_idle_color | length > 0 %}
                 Environment=LED_IDLE_COLOR={{ led_idle_color }}
+                {% endif %}
+                {% if led_idle_style | length > 0 %}
+                # the clock's face; rotate changes it every interval
+                Environment=LED_IDLE_STYLE={{ led_idle_style }}
+                {% endif %}
+                {% if led_idle_color_mode | length > 0 %}
+                Environment=LED_IDLE_COLOR_MODE={{ led_idle_color_mode }}
+                {% endif %}
+                {% if led_idle_interval | string | length > 0 %}
+                Environment=LED_IDLE_INTERVAL={{ led_idle_interval }}
                 {% endif %}
                 {% if led_display_queue | string | length > 0 %}
                 # how many finite displays may wait for the panel (default 1)
