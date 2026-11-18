@@ -29,7 +29,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 
 | Playbook | Description |
 |----------|-------------|
-| `sthings.baseos.setup` | Base OS setup: filesystem, packages, vault CA, motd, DNS configuration |
+| `sthings.baseos.setup` | Base OS setup: filesystem, packages, vault CA, motd, DNS configuration, SSH user CA of the lab's Vault (`ssh_trusted_user_ca_map`, LabUL; `ssh_trusted_user_ca_url` overrides, `""` switches it off) |
 | `sthings.baseos.users` | Create OS users from profile YAML |
 | `sthings.baseos.reboot_vm` | Reboot machines |
 | `sthings.baseos.resize_vm` | After an in-place resize: restart the VM from the Proxmox host (`resize_reboot: host`, API token from the env -- a guest reboot does not apply pending CPU/memory), then grow partition, LVM and filesystems (`manage_filesystem`) |

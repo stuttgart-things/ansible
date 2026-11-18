@@ -319,6 +319,15 @@ playbooks:
             - https://vault-vsphere.tiab.labda.sva.de:8200
             - https://vault.infra.sthings-vsphere.labul.sva.de
 
+          # SSH user CA per lab (ai-personas ADR 0003): sshd trusts user
+          # certificates the lab's Vault signs (ssh-client-signer/, short-lived,
+          # per-role login names), so nobody copies public keys onto VMs. The
+          # lab is sthings_build_lab (create-vm passes it), else the one the IP
+          # falls into. A lab without an entry gets nothing. Override with
+          # ssh_trusted_user_ca_url ("" switches it off).
+          ssh_trusted_user_ca_map:
+            labul: "https://vault.infra.sthings-vsphere.labul.sva.de/v1/ssh-client-signer/public_key"
+
         roles:
           - role: sthings.baseos.manage_filesystem
             when: manage_filesystem|bool
@@ -576,6 +585,68 @@ playbooks:
                   msg: "WARNING: Could not detect lab for IP {{ ansible_default_ipv4.address }}. DNS not configured. Add the IP prefix to lab_dns_map."
                 when: detected_lab | trim | length == 0
             when: ansible_facts['distribution'] == "Ubuntu"
+
+          # Trust the lab's SSH user CA (see ssh_trusted_user_ca_map). Runs after
+          # the Vault CAs are installed, so the fetch verifies TLS. A failed
+          # fetch skips it with a warning instead of failing the build: the VM
+          # is fine without it, only certificate logins do not work.
+          - name: Trust the lab's SSH user CA
+            vars:
+              _ca_lab: "{{ sthings_build_lab | default(detected_lab | default('') | trim, true) }}"
+              _ca_url: "{{ ssh_trusted_user_ca_url | default(ssh_trusted_user_ca_map[_ca_lab] | default(''), true) }}"
+              _ca_service: "{{ 'ssh' if ansible_facts['os_family'] == 'Debian' else 'sshd' }}"
+            block:
+              - name: Fetch the SSH user CA public key
+                ansible.builtin.uri:
+                  url: "{{ _ca_url }}"
+                  return_content: true
+                  validate_certs: true
+                register: _ssh_ca
+                failed_when: false
+
+              - name: Write the SSH user CA public key
+                ansible.builtin.copy:
+                  dest: /etc/ssh/sthings-trusted-user-ca.pub
+                  content: "{{ _ssh_ca.content | trim }}\n"
+                  owner: root
+                  group: root
+                  mode: '0644'
+                register: _ssh_ca_key
+                when: _ssh_ca.status | default(0) == 200 and (_ssh_ca.content | default('')) is match('ssh-')
+
+              - name: Point sshd at the CA (drop-in)
+                ansible.builtin.copy:
+                  dest: /etc/ssh/sshd_config.d/50-sthings-trusted-user-ca.conf
+                  content: |
+                    # Managed by sthings.baseos.setup (ai-personas ADR 0003): user
+                    # certificates signed by the lab's Vault SSH CA are accepted.
+                    TrustedUserCAKeys /etc/ssh/sthings-trusted-user-ca.pub
+                  owner: root
+                  group: root
+                  mode: '0644'
+                register: _ssh_ca_conf
+                when: _ssh_ca_key is not skipped
+
+              # A broken sshd config fails here, before the reload, instead of
+              # locking the next login out.
+              - name: Check the sshd config
+                ansible.builtin.command: /usr/sbin/sshd -t
+                changed_when: false
+                when: _ssh_ca_key is changed or _ssh_ca_conf is changed
+
+              # restarted, not reloaded: a reload did not reach the listener
+              # in every setup tested; running sessions survive a restart.
+              - name: Restart sshd
+                ansible.builtin.service:
+                  name: "{{ _ca_service }}"
+                  state: restarted
+                when: _ssh_ca_key is changed or _ssh_ca_conf is changed
+
+              - name: Warn when the CA could not be fetched
+                ansible.builtin.debug:
+                  msg: "WARNING: SSH user CA not trusted, {{ _ca_url }} answered {{ _ssh_ca.status | default('nothing') }} {{ _ssh_ca.msg | default('') }}"
+                when: _ssh_ca_key is skipped
+            when: _ca_url | length > 0
 
           # Keep the DHCP lease across reboots. systemd-networkd gives the lease
           # back on shutdown (DHCPRELEASE), so a VM that reboots at the same time
