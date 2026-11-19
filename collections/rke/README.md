@@ -16,7 +16,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 | Role | Version | Description |
 |------|---------|-------------|
 | deploy-configure-rke | 2026.11.02-1 | Main RKE/K3s deployment orchestration |
-| configure-rke-node | 2025.12.13 | Node configuration |
+| configure-rke-node | 2026.11.19 | Node configuration |
 | install-requirements | 2026.04.13 | Prerequisites installation |
 | download-install-binary | 2025.03.27 | Binary download utilities |
 | manage-filesystem | 2026.13.04 | Grows the LVM layout to the disk before `rancher_register` joins a node |
