@@ -22,7 +22,11 @@ requirements: |
       version: 2026.11.02-1
     - src: https://github.com/stuttgart-things/configure-rke-node.git
       scm: git
-      version: 2025.12.13
+      # 2026.11.19 -- inotify limits persisted in /etc/sysctl.d/90-inotify.conf
+      # instead of a sysctl -w lost on reboot (configure-rke-node#6), Cilium
+      # metrics ports 9962-9965 in the firewall (configure-rke-node#5);
+      # stuttgart-things/harvester#753.
+      version: 2026.11.19
     - src: https://github.com/stuttgart-things/install-requirements.git
       scm: git
       # 2026.11.13 -- python3-packaging on RedHat: ansible.builtin.pip needs it in
