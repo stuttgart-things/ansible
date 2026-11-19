@@ -87,6 +87,7 @@ playbooks:
           clean_apt: true               # apt clean + autoremove --purge (old kernels)
           clean_old_logs: true          # rotated archives in /var/log (*.gz, *.1, ...)
           clean_crash_dumps: true       # /var/crash
+          drop_kubectl_sigurg_audit: true  # rsyslog drops the kubectl probe AppArmor noise (k8s nodes)
           diagnose_top_consumers: true  # du top-N for mounts still above threshold
 
           # DANGEROUS -> enable explicitly with -e only
@@ -105,6 +106,11 @@ playbooks:
           - name: Restart systemd-journald
             ansible.builtin.systemd_service:
               name: systemd-journald
+              state: restarted
+
+          - name: Restart rsyslog
+            ansible.builtin.systemd_service:
+              name: rsyslog
               state: restarted
 
         pre_tasks:
@@ -428,6 +434,29 @@ playbooks:
                   executable: /bin/bash
                 changed_when: true
                 when: clean_crash_dumps
+
+              # RKE2's kube-apiserver probes run kubectl every 5-10 s; the Go
+              # runtime sends itself SIGURG, the cri-containerd AppArmor
+              # profile denies it, and every denial is a kernel audit line in
+              # syslog and kern.log (~100/min, >1G on sthings-platform,
+              # 2026-11-19). Harmless, so rsyslog drops exactly those lines.
+              - name: Check for rsyslog
+                ansible.builtin.stat:
+                  path: /etc/rsyslog.d
+                register: rsyslog_dir
+                when: drop_kubectl_sigurg_audit
+
+              - name: Drop the kubectl SIGURG AppArmor denials from syslog
+                ansible.builtin.copy:
+                  dest: /etc/rsyslog.d/10-drop-kubectl-sigurg.conf
+                  content: |
+                    # Managed by sthings.baseos.disk_cleanup (tag logs).
+                    if $msg contains 'apparmor="DENIED" operation="signal"' and $msg contains 'comm="kubectl"' and $msg contains 'signal=urg' then stop
+                  owner: root
+                  group: root
+                  mode: "0644"
+                notify: Restart rsyslog
+                when: drop_kubectl_sigurg_audit and (rsyslog_dir.stat.isdir | default(false))
 
           # ------------------------------------------------------- VSCODE SERVER
           - name: Clear vscode-server bin/ (opt-in, disconnects remote sessions)
