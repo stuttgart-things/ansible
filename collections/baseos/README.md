@@ -73,6 +73,7 @@ ansible-galaxy collection install https://github.com/stuttgart-things/ansible/re
 |----------|-------------|
 | `sthings.baseos.nfs` | Setup NFS server with exports for Kubernetes StorageClass |
 | `sthings.baseos.longhorn_node` | Prepare a Kubernetes node for Longhorn: install `open-iscsi`, load `iscsi_tcp` now and at boot (`/etc/modules-load.d/longhorn.conf`), enable and start `iscsid`, blacklist `sd` devices in `multipath.conf` when multipathd is present (`longhorn_multipath_blacklist`, default `true`), optionally install `nfs-common` for RWX volumes (`longhorn_nfs_client`, default `false`) |
+| `sthings.baseos.containerd_apparmor` | containerd's default AppArmor profile `cri-containerd.apparmor.d` (template of the node's containerd, k3s-io v2.2.7-k3s1) plus the two stacked-peer rules of containerd#14487, written to `/etc/apparmor.d/` and loaded with `apparmor_parser -r`. Workaround for Ubuntu kernels >= 7.0.0-42 (LP #2172640): with `kernel.apparmor_restrict_unprivileged_unconfined=1` containers run as `cri-containerd.apparmor.d//&unconfined` and can no longer signal their own processes (PostgreSQL: "could not signal for checkpoint"). apparmor.service loads the file at boot before containerd, which then keeps it. `-e containerd_apparmor_state=absent` reloads containerd's original profile and removes the file. See [CONTAINERD APPARMOR](#usage) |
 | `sthings.baseos.pdns` | Create PowerDNS A records using Vault for API token |
 | `sthings.baseos.gh_runner` | Install and configure self-hosted GitHub Actions runners (repo or org scope) with optional Docker installation |
 | `sthings.baseos.cockpit` | Install Cockpit (web console: journal, systemd units, resources, terminal, reboot/shutdown) without recommends, write `cockpit.conf` (`cockpit_login_title`, `cockpit_origins`, `cockpit_behind_proxy` for a reverse proxy), optional port drop-in (`cockpit_port`), open the port in ufw from `cockpit_ufw_from` when ufw is active, then check the login page answers |
@@ -683,6 +684,36 @@ spec:
       crossplaneObjectName: vm-health-report
       crossplaneProviderConfig: in-cluster
 ```
+
+</details>
+
+<details><summary>CONTAINERD APPARMOR (sthings.baseos.containerd_apparmor)</summary>
+
+```bash
+# Preview: the profile file as a diff, nothing written or loaded
+ansible-playbook sthings.baseos.containerd_apparmor -i "10.100.136.66," -u sthings --check --diff -vv
+
+# Write + load the profile with the stacked-peer rules
+ansible-playbook sthings.baseos.containerd_apparmor -i "10.100.136.66," -u sthings -vv
+
+# Back to containerd's own profile (once RKE2/k3s ship containerd with #14487)
+ansible-playbook sthings.baseos.containerd_apparmor -i "10.100.136.66," -u sthings \
+-e containerd_apparmor_state=absent -vv
+```
+
+Check on a node before/after:
+
+```bash
+sysctl kernel.apparmor_restrict_unprivileged_unconfined
+sudo aa-status | grep -c 'cri-containerd.apparmor.d//&unconfined'   # stacked container processes
+sudo sh -c 'cat /sys/kernel/security/apparmor/policy/profiles/cri-containerd.apparmor.d.*/raw_sha256'
+```
+
+On RKE2 v1.35.9+rke2r1 (containerd 2.2.7-k3s1, Ubuntu 26.04, apparmor 5.0.2) the loaded policy is
+`8fd64492...` with containerd's own profile and `b6b9c37f...` with this one. A different containerd
+may render a different template: compare its `contrib/apparmor/template.go` first.
+
+As a ClusterStack base-OS step: add `sthings.baseos.containerd_apparmor` to `baseos.extraPlaybooks` (a release that contains it).
 
 </details>
 
