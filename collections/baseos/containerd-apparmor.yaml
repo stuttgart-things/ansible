@@ -42,11 +42,18 @@ playbooks:
       # (-e containerd_apparmor_state=absent): it reloads containerd's
       # original profile and deletes the file, nothing else to clean up.
       #
-      # Template source: k3s-io/containerd v2.2.7-k3s1 (RKE2 v1.35.9+rke2r1,
-      # containerd://2.2.7-k3s1). Rendered with containerd_apparmor_stacked_peers
-      # false it compiles byte-identical to the profile containerd loaded on
-      # sthings-app (raw_sha256 8fd64492...); check that again on a node with a
-      # different containerd before rolling this out there.
+      # TEMPLATE SOURCE: k3s-io/containerd contrib/apparmor/template.go, in two
+      # variants picked by the containerd that runs on the node (detected, or
+      # set with containerd_apparmor_template):
+      #   v2.2  v2.2.2-k3s1 / v2.2.7-k3s1 (RKE2 v1.35.x). Rendered with
+      #         containerd_apparmor_stacked_peers false it compiles
+      #         byte-identical to the loaded profile (raw_sha256 8fd64492...).
+      #   v2.3  v2.3.4-k3s1.36 (k3s v1.36.4+k3s1): the /proc write deny no
+      #         longer matches `/` in its character classes, and the explicit
+      #         @{PROC}/mem and @{PROC}/kmem denies are gone. Byte-identical to
+      #         the loaded profile on homerun2-dev2 (raw_sha256 a8658e1b...).
+      # Any other containerd minor fails the play: compare its template.go and
+      # add a variant before rolling this out there.
       #
       # Usage (by hand, or as a ClusterStack baseos extraPlaybook):
       #   ansible-playbook sthings.baseos.containerd_apparmor -i "10.100.136.66," -u sthings --become
@@ -70,7 +77,9 @@ playbooks:
           containerd_apparmor_daemon_profile: unconfined
           # Path of a rootlesskit binary on containerd's PATH; empty on RKE2/k3s.
           containerd_apparmor_rootlesskit: ""
-          containerd_apparmor_template_version: v2.2.7-k3s1
+          # auto = from the running containerd (v2.2 or v2.3, see TEMPLATE
+          # SOURCE above); or v2.2 / v2.3 to force a variant.
+          containerd_apparmor_template: auto
 
         pre_tasks:
           # The stage-time execute-ansible pipeline hands its vars file in as
@@ -97,6 +106,43 @@ playbooks:
 
           # containerd's loadData: abi only if abi/3.0 exists, tunables/global
           # else a plain @{PROC} definition, abstractions/base if present.
+          # The running containerd: RKE2 starts its own binary
+          # (`containerd github.com/k3s-io/containerd v2.2.7-k3s1 ...`), k3s runs it
+          # inside the k3s multi-call binary, which only `k3s ctr version` names.
+          - name: Detect the running containerd version
+            ansible.builtin.shell: |
+              set -o pipefail
+              pid=$(pgrep -xo containerd) || { echo none; exit 0; }
+              v=$(/proc/$pid/exe --version 2>/dev/null | grep -oE '^containerd .* v[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | awk '{print $NF}' || true)
+              if [ -z "$v" ] && command -v k3s >/dev/null; then
+                v=$(k3s ctr version 2>/dev/null | awk '/^Server:/{s=1} s && /Version:/{print $2; exit}' || true)
+              fi
+              echo "${v:-unknown}"
+            args:
+              executable: /bin/bash
+            register: containerd_apparmor_containerd
+            changed_when: false
+            check_mode: false
+            when: containerd_apparmor_template == 'auto'
+
+          - name: Pick the template variant
+            ansible.builtin.set_fact:
+              # v<major>.<minor> of the detected version; anything unparsable
+              # becomes vNone and fails the assert below.
+              containerd_apparmor_variant: >-
+                {{ containerd_apparmor_template if containerd_apparmor_template != 'auto'
+                   else 'v' ~ (containerd_apparmor_containerd.stdout | regex_search('[0-9]+[.][0-9]+')) }}
+
+          - name: Fail on a containerd without a known template
+            ansible.builtin.assert:
+              that:
+                - containerd_apparmor_variant in ['v2.2', 'v2.3']
+              fail_msg: >-
+                No template variant for containerd
+                {{ containerd_apparmor_containerd.stdout | default(containerd_apparmor_template) }}
+                on {{ inventory_hostname }}. Compare its contrib/apparmor/template.go
+                with the v2.2/v2.3 variants, then add one or set containerd_apparmor_template.
+
           - name: Check the includes containerd's template looks for
             ansible.builtin.stat:
               path: "{{ containerd_apparmor_dir }}/{{ item }}"
@@ -176,13 +222,14 @@ playbooks:
             ansible.builtin.debug:
               msg:
                 - "{{ containerd_apparmor_file }}: {{ containerd_apparmor_state }}, stacked-peer rules {{ containerd_apparmor_stacked_peers | bool and containerd_apparmor_state == 'present' }}"
+                - "containerd {{ containerd_apparmor_containerd.stdout | default('-') }}, template {{ containerd_apparmor_variant }}"
                 - "loaded raw_sha256 {{ containerd_apparmor_sha_before.stdout | default('-') }} -> {{ containerd_apparmor_sha_after.stdout | default('-') }}"
 
 templates:
   - name: cri-containerd.apparmor.d.j2
     file: |
       # Managed by sthings.baseos.containerd_apparmor (stuttgart-things/ansible).
-      # containerd's cri-containerd.apparmor.d (contrib/apparmor/template.go, {{ containerd_apparmor_template_version }})
+      # containerd's cri-containerd.apparmor.d (contrib/apparmor/template.go, containerd {{ containerd_apparmor_variant }})
       # stacked-peer rules of containerd#14487: {{ containerd_apparmor_render_stacked | bool | ternary('yes', 'no') }}
       {% if containerd_apparmor_abi %}
       abi <{{ containerd_apparmor_abi }}>,
@@ -231,12 +278,18 @@ templates:
 
         deny @{PROC}/* w,   # deny write for all files directly in /proc (not in a subdir)
         # deny write to files not in /proc/<number>/** or /proc/sys/**
+      {% if containerd_apparmor_variant == 'v2.2' %}
         deny @{PROC}/{[^1-9],[^1-9][^0-9],[^1-9s][^0-9y][^0-9s],[^1-9][^0-9][^0-9][^0-9]*}/** w,
+      {% else %}
+        deny @{PROC}/{[^1-9/],[^1-9/][^0-9/],[^1-9s/][^0-9y/][^0-9s/],[^1-9/][^0-9/][^0-9/][^0-9/]*}/** w,
+      {% endif %}
         deny @{PROC}/sys/[^k]** w,  # deny /proc/sys except /proc/sys/k* (effectively /proc/sys/kernel)
         deny @{PROC}/sys/kernel/{?,??,[^s][^h][^m]**} w,  # deny everything except shm* in /proc/sys/kernel/
         deny @{PROC}/sysrq-trigger rwklx,
+      {% if containerd_apparmor_variant == 'v2.2' %}
         deny @{PROC}/mem rwklx,
         deny @{PROC}/kmem rwklx,
+      {% endif %}
         deny @{PROC}/kcore rwklx,
 
         deny mount,
