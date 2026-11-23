@@ -1,0 +1,260 @@
+---
+playbooks:
+  - name: containerd_apparmor
+    play: |
+      ---
+      # containerd's default AppArmor profile, with the stacked-peer rules of
+      # containerd#14487 (stuttgart-things/stuttgart-things#4827).
+      #
+      # WHY. Ubuntu kernels from 7.0.0-42 on (LP #2172640) turn runc's
+      # change_onexec into a profile STACK when
+      # kernel.apparmor_restrict_unprivileged_unconfined=1 (the Ubuntu 26.04
+      # default): container processes run as
+      # `cri-containerd.apparmor.d//&unconfined` instead of
+      # `cri-containerd.apparmor.d`. The profile containerd generates only lets
+      # container processes signal and ptrace peers labelled
+      # `cri-containerd.apparmor.d`, so a container can no longer signal its own
+      # processes. PostgreSQL is the first to break: the postmaster cannot
+      # signal the checkpointer ("could not signal for checkpoint"),
+      # connections pile up ("too many clients"), the pod hangs or crashloops.
+      # Kernel -44 does not fix it.
+      #
+      # THE UPSTREAM FIX (containerd#14485 / PR #14487, merged 2026-11-16) adds
+      # two rules to the profile template:
+      #   signal (send,receive) peer=<name>//&unconfined,
+      #   ptrace (trace,tracedby,read,readby) peer=<name>//&unconfined,
+      # RKE2/k3s ship containerd 2.2 without it so far (k3s#13625).
+      #
+      # WHAT THIS DOES. Writes containerd's template -- rendered exactly as
+      # containerd renders it on the node (abi/tunables/abstractions by the same
+      # file checks, see loadData in contrib/apparmor/apparmor.go) plus the two
+      # rules -- to /etc/apparmor.d/cri-containerd.apparmor.d and replaces the
+      # loaded profile with `apparmor_parser -r`. Running containers keep their
+      # label; the new rules apply to them at once, no pod restart needed for
+      # the profile itself (a crashlooping database still has to come up again).
+      #
+      # WHY IT SURVIVES A REBOOT. containerd generates and loads its profile only
+      # when none of that name is loaded (LoadDefaultProfile -> isLoaded).
+      # apparmor.service loads every file in /etc/apparmor.d at boot, before
+      # rke2/k3s start containerd, so this copy is the one in the kernel.
+      #
+      # REMOVE IT once the cluster runs a containerd with #14487
+      # (-e containerd_apparmor_state=absent): it reloads containerd's
+      # original profile and deletes the file, nothing else to clean up.
+      #
+      # Template source: k3s-io/containerd v2.2.7-k3s1 (RKE2 v1.35.9+rke2r1,
+      # containerd://2.2.7-k3s1). Rendered with containerd_apparmor_stacked_peers
+      # false it compiles byte-identical to the profile containerd loaded on
+      # sthings-app (raw_sha256 8fd64492...); check that again on a node with a
+      # different containerd before rolling this out there.
+      #
+      # Usage (by hand, or as a ClusterStack baseos extraPlaybook):
+      #   ansible-playbook sthings.baseos.containerd_apparmor -i "10.100.136.66," -u sthings --become
+      #   ... --check --diff   # shows the file, loads nothing
+      #
+      # Idempotent: the reload runs every time (replacing an identical profile
+      # is a no-op for running containers), and reports `changed` only when the
+      # loaded policy's raw_sha256 changed.
+      - name: containerd AppArmor profile with stacked-peer rules
+        hosts: all
+        become: true
+
+        vars:
+          containerd_apparmor_state: present
+          containerd_apparmor_profile_name: cri-containerd.apparmor.d
+          containerd_apparmor_dir: /etc/apparmor.d
+          # The two rules of containerd#14487. false = containerd's own profile.
+          containerd_apparmor_stacked_peers: true
+          # containerd's own label (/proc/<containerd pid>/attr/current, cut at
+          # the first space). RKE2/k3s run it unconfined.
+          containerd_apparmor_daemon_profile: unconfined
+          # Path of a rootlesskit binary on containerd's PATH; empty on RKE2/k3s.
+          containerd_apparmor_rootlesskit: ""
+          containerd_apparmor_template_version: v2.2.7-k3s1
+
+        pre_tasks:
+          # The stage-time execute-ansible pipeline hands its vars file in as
+          # -e path_to_vars_file=<workdir>/vars (see dns_zones).
+          - name: Include vars
+            ansible.builtin.include_vars: "{{ path_to_vars_file }}.yaml"
+            when: path_to_vars_file is defined
+            tags: always
+
+        tasks:
+          - name: Check that AppArmor is enabled
+            ansible.builtin.stat:
+              path: /sys/kernel/security/apparmor/profiles
+            register: containerd_apparmor_kernel
+
+          - name: Fail without AppArmor
+            ansible.builtin.assert:
+              that:
+                - containerd_apparmor_kernel.stat.exists
+                - containerd_apparmor_state in ['present', 'absent']
+              fail_msg: >-
+                AppArmor is not enabled on {{ inventory_hostname }}
+                (or containerd_apparmor_state is not present/absent).
+
+          # containerd's loadData: abi only if abi/3.0 exists, tunables/global
+          # else a plain @{PROC} definition, abstractions/base if present.
+          - name: Check the includes containerd's template looks for
+            ansible.builtin.stat:
+              path: "{{ containerd_apparmor_dir }}/{{ item }}"
+            loop:
+              - abi/3.0
+              - tunables/global
+              - abstractions/base
+            register: containerd_apparmor_includes
+
+          - name: Set the template inputs
+            ansible.builtin.set_fact:
+              containerd_apparmor_abi: "{{ 'abi/3.0' if containerd_apparmor_includes.results[0].stat.exists else '' }}"
+              containerd_apparmor_tunables: "{{ containerd_apparmor_includes.results[1].stat.exists }}"
+              containerd_apparmor_base: "{{ containerd_apparmor_includes.results[2].stat.exists }}"
+              containerd_apparmor_file: "{{ containerd_apparmor_dir }}/{{ containerd_apparmor_profile_name }}"
+
+          - name: Check for an existing profile file
+            ansible.builtin.stat:
+              path: "{{ containerd_apparmor_file }}"
+            register: containerd_apparmor_existing
+
+          - name: Read the loaded policy hash before
+            ansible.builtin.shell: |
+              set -o pipefail
+              cat /sys/kernel/security/apparmor/policy/profiles/{{ containerd_apparmor_profile_name }}.*/raw_sha256 2>/dev/null | head -1 || true
+            args:
+              executable: /bin/bash
+            register: containerd_apparmor_sha_before
+            changed_when: false
+            check_mode: false
+
+          # absent with no file: nothing to do. absent with a file: write
+          # containerd's original content to it first, load that, then delete.
+          - name: Write the profile
+            ansible.builtin.template:
+              src: cri-containerd.apparmor.d.j2.yaml
+              dest: "{{ containerd_apparmor_file }}"
+              owner: root
+              group: root
+              mode: "0644"
+              # Parse only (-Q: no kernel load), so a broken render never
+              # replaces the file.
+              validate: apparmor_parser -Q -K %s
+            vars:
+              containerd_apparmor_render_stacked: "{{ containerd_apparmor_stacked_peers | bool and containerd_apparmor_state == 'present' }}"
+            when: containerd_apparmor_state == 'present' or containerd_apparmor_existing.stat.exists
+            register: containerd_apparmor_written
+
+          - name: Load the profile into the kernel
+            ansible.builtin.command: apparmor_parser -r -K {{ containerd_apparmor_file }}
+            when: containerd_apparmor_state == 'present' or containerd_apparmor_existing.stat.exists
+            changed_when: false
+
+          - name: Remove the profile file
+            ansible.builtin.file:
+              path: "{{ containerd_apparmor_file }}"
+              state: absent
+            when: containerd_apparmor_state == 'absent'
+
+          - name: Read the loaded policy hash after
+            ansible.builtin.shell: |
+              set -o pipefail
+              cat /sys/kernel/security/apparmor/policy/profiles/{{ containerd_apparmor_profile_name }}.*/raw_sha256 2>/dev/null | head -1 || true
+            args:
+              executable: /bin/bash
+            register: containerd_apparmor_sha_after
+            changed_when: containerd_apparmor_sha_after.stdout != containerd_apparmor_sha_before.stdout
+            check_mode: false
+
+          - name: Check that the profile is loaded in enforce mode
+            ansible.builtin.command: grep -Fx "{{ containerd_apparmor_profile_name }} (enforce)" /sys/kernel/security/apparmor/profiles
+            changed_when: false
+            check_mode: false
+            when: not ansible_check_mode
+
+          - name: Show the result
+            ansible.builtin.debug:
+              msg:
+                - "{{ containerd_apparmor_file }}: {{ containerd_apparmor_state }}, stacked-peer rules {{ containerd_apparmor_stacked_peers | bool and containerd_apparmor_state == 'present' }}"
+                - "loaded raw_sha256 {{ containerd_apparmor_sha_before.stdout | default('-') }} -> {{ containerd_apparmor_sha_after.stdout | default('-') }}"
+
+templates:
+  - name: cri-containerd.apparmor.d.j2
+    file: |
+      # Managed by sthings.baseos.containerd_apparmor (stuttgart-things/ansible).
+      # containerd's cri-containerd.apparmor.d (contrib/apparmor/template.go, {{ containerd_apparmor_template_version }})
+      # stacked-peer rules of containerd#14487: {{ containerd_apparmor_render_stacked | bool | ternary('yes', 'no') }}
+      {% if containerd_apparmor_abi %}
+      abi <{{ containerd_apparmor_abi }}>,
+      {% endif %}
+
+
+      {% if containerd_apparmor_tunables | bool %}
+      #include <tunables/global>
+      {% else %}
+      @{PROC}=/proc/
+      {% endif %}
+
+
+      profile {{ containerd_apparmor_profile_name }} flags=(attach_disconnected,mediate_deleted) {
+
+      {% if containerd_apparmor_base | bool %}
+        #include <abstractions/base>
+      {% endif %}
+
+
+        network,
+        capability,
+        file,
+        umount,
+        # Host (privileged) processes may send signals to container processes.
+        signal (receive) peer=unconfined,
+        # runc may send signals to container processes.
+        signal (receive) peer=runc,
+        # crun may send signals to container processes.
+        signal (receive) peer=crun,
+        # Manager may send signals to container processes.
+        signal (receive) peer={{ containerd_apparmor_daemon_profile }},
+        # Container processes may send signals amongst themselves.
+        signal (send,receive) peer={{ containerd_apparmor_profile_name }},
+      {% if containerd_apparmor_render_stacked | bool %}
+        # With kernel.apparmor_restrict_unprivileged_unconfined=1, an unprivileged
+        # profile change is converted to stacking, producing "{{ containerd_apparmor_profile_name }}//&unconfined".
+        # Allow signals to peers with this stacked label as well.
+        signal (send,receive) peer={{ containerd_apparmor_profile_name }}//&unconfined,
+      {% endif %}
+      {% if containerd_apparmor_rootlesskit %}
+        # https://github.com/containerd/nerdctl/issues/2730
+        signal (receive) peer={{ containerd_apparmor_rootlesskit }},
+      {% endif %}
+
+
+        deny @{PROC}/* w,   # deny write for all files directly in /proc (not in a subdir)
+        # deny write to files not in /proc/<number>/** or /proc/sys/**
+        deny @{PROC}/{[^1-9],[^1-9][^0-9],[^1-9s][^0-9y][^0-9s],[^1-9][^0-9][^0-9][^0-9]*}/** w,
+        deny @{PROC}/sys/[^k]** w,  # deny /proc/sys except /proc/sys/k* (effectively /proc/sys/kernel)
+        deny @{PROC}/sys/kernel/{?,??,[^s][^h][^m]**} w,  # deny everything except shm* in /proc/sys/kernel/
+        deny @{PROC}/sysrq-trigger rwklx,
+        deny @{PROC}/mem rwklx,
+        deny @{PROC}/kmem rwklx,
+        deny @{PROC}/kcore rwklx,
+
+        deny mount,
+
+        deny /sys/[^f]*/** wklx,
+        deny /sys/f[^s]*/** wklx,
+        deny /sys/fs/[^c]*/** wklx,
+        deny /sys/fs/c[^g]*/** wklx,
+        deny /sys/fs/cg[^r]*/** wklx,
+        deny /sys/firmware/** rwklx,
+        deny /sys/devices/virtual/powercap/** rwklx,
+        deny /sys/kernel/security/** rwklx,
+
+        # allow processes within the container to trace each other,
+        # provided all other LSM and yama setting allow it.
+        ptrace (trace,tracedby,read,readby) peer={{ containerd_apparmor_profile_name }},
+      {% if containerd_apparmor_render_stacked | bool %}
+        # Same stacked-label peer as the signal rule above.
+        ptrace (trace,tracedby,read,readby) peer={{ containerd_apparmor_profile_name }}//&unconfined,
+      {% endif %}
+      }
