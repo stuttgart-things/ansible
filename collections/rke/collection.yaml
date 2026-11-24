@@ -19,7 +19,12 @@ requirements: |
   roles:
     - src: https://github.com/stuttgart-things/deploy-configure-rke.git
       scm: git
-      version: 2026.11.02-1
+      # 2026.11.24 -- rke2_authentication_config_src: a complete
+      # AuthenticationConfiguration copied to the server nodes as it is, plus an
+      # issuer check before writing it (deploy-configure-rke#56,
+      # stuttgart-things#4879); worker label by name (#55); Cilium
+      # k8sServiceHost 127.0.0.1 on multinode RKE2 (#53).
+      version: 2026.11.24
     - src: https://github.com/stuttgart-things/configure-rke-node.git
       scm: git
       # 2026.11.19 -- inotify limits persisted in /etc/sysctl.d/90-inotify.conf
