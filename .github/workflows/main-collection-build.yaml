@@ -139,7 +139,7 @@ jobs:
       environment-name: k8s
       collection-directory: ${{ matrix.collection-directory }}
       dagger-module-version: v0.139.0
-      dagger-version: v0.21.11
+      dagger-version: v0.21.12
       # BUILD THE PUSHED COMMIT, NOT THE BRANCH TIP. THE INPUT IS PASSED STRAIGHT
       # TO actions/checkout ref, WHICH TAKES A SHA. WITH THE BRANCH NAME, RUNS OF
       # A MERGE BURST ALL CHECKED OUT WHATEVER main WAS WHEN THEY STARTED, GOT THE
