@@ -128,6 +128,7 @@ Profiles are used with `sthings.container.deploy_to_k8s -e profile=<name>`:
 | helm | 4.1.3 |
 | helmfile | 1.4.1 |
 | k9s | 0.50.18 |
+| kubectx, kubens | 0.11.0 |
 | kind | 0.31.0 |
 | cilium-cli | 0.19.2 |
 | dagger | 0.20.3 |
