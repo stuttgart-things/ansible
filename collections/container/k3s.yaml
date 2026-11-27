@@ -71,7 +71,7 @@ vars:
       cilium_version: 0.20.3 # datasource=github-tags depName=cilium/cilium-cli
       helm_version: 4.3.2 # datasource=github-tags depName=helm/helm
       kubectl_version: v1.30.2 # datasource=github-releases depName=kubernetes/kubernetes
-      k9s_version: 0.37.2 # datasource=github-tags depName=derailed/k9s
+      k9s_version: 0.51.0 # datasource=github-tags depName=derailed/k9s
 
       kube_proxy_replacement: true
       operator_replicas: 1
