@@ -23,6 +23,7 @@ vars:
       helm_version: 4.3.2 # datasource=github-tags depName=helm/helm
       kubectl_version: v1.35.0 # datasource=github-tags depName=kubernetes/kubectl
       k9s_version: 0.51.0 # datasource=github-tags depName=derailed/k9s
+      kubectx_version: 0.11.0 # datasource=github-tags depName=ahmetb/kubectx
       velero_version: 1.18.4 # datasource=github-tags depName=vmware-tanzu/velero
       kubectl_slice_version: 1.4.2 # datasource=github-tags depName=patrickdappollonio/kubectl-slice
       helmfile_version: 1.8.2 # datasource=github-tags depName=helmfile/helmfile
@@ -137,6 +138,26 @@ vars:
           bin_dir: "/usr/local/bin"
           version_cmd: " version --short"
           target_version: "v{{ k9s_version }}"
+        kubectx:
+          bin_name: kubectx
+          bin_version: "{{ kubectx_version }}"
+          check_bin_version_before_installing: true
+          source_url: "https://github.com/ahmetb/kubectx/releases/download/v{{ kubectx_version }}/kubectx_v{{ kubectx_version }}_linux_x86_64.tar.gz"
+          bin_to_copy: kubectx
+          to_remove: kubectx
+          bin_dir: "/usr/local/bin"
+          version_cmd: " --version"
+          target_version: "{{ kubectx_version }}"
+        kubens:
+          bin_name: kubens
+          bin_version: "{{ kubectx_version }}"
+          check_bin_version_before_installing: true
+          source_url: "https://github.com/ahmetb/kubectx/releases/download/v{{ kubectx_version }}/kubens_v{{ kubectx_version }}_linux_x86_64.tar.gz"
+          bin_to_copy: kubens
+          to_remove: kubens
+          bin_dir: "/usr/local/bin"
+          version_cmd: " --version"
+          target_version: "{{ kubectx_version }}"
         velero:
           bin_name: velero
           bin_version: "{{ velero_version }}"
