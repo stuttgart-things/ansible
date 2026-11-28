@@ -30,7 +30,7 @@ playbooks:
         gather_facts: true
 
         vars:
-          node_exporter_version: 1.12.1 # datasource=github-releases depName=prometheus/node_exporter
+          node_exporter_version: 1.13.1 # datasource=github-releases depName=prometheus/node_exporter
           # sha256 of node_exporter-<version>.linux-<arch>.tar.gz (sha256sums.txt
           # of the release) -- bump together with the version
           node_exporter_checksums:
